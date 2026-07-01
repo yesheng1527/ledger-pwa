@@ -864,25 +864,25 @@ button {
 }
 
 .entry-screen {
-  padding-top: 8px;
+  padding-top: 6px;
   padding-bottom: 96px;
 }
 
 .entry-screen.has-bottom-action {
-  padding-bottom: 102px;
+  padding-bottom: 104px;
 }
 
 .entry-screen .top-title {
-  padding: 6px 0 4px;
+  padding: 8px 0 6px;
 }
 
 .entry-screen .top-title h1 {
-  font-size: 20px;
+  font-size: 22px;
 }
 
 .entry-screen .card {
-  margin: 7px 0;
-  padding: 12px;
+  margin: 8px 0;
+  padding: 14px;
   border-radius: 16px;
 }
 
@@ -892,7 +892,9 @@ button {
 }
 
 .entry-screen .entry-form-card {
-  box-shadow: none;
+  display: grid;
+  gap: 10px;
+  box-shadow: var(--shadow);
 }
 
 .entry-screen .segmented {
@@ -910,8 +912,8 @@ button {
 }
 
 .entry-screen .field {
-  gap: 4px;
-  margin-bottom: 8px;
+  gap: 5px;
+  margin-bottom: 0;
 }
 
 .entry-screen .field label {
@@ -921,25 +923,49 @@ button {
 .entry-screen .field input,
 .entry-screen .field select,
 .entry-screen .field textarea {
-  min-height: 38px;
-  padding: 7px 10px;
+  min-height: 42px;
+  padding: 8px 10px;
   border-radius: 10px;
+  text-align: center;
+}
+
+.entry-amount-block {
+  display: grid;
+  gap: 6px;
+}
+
+.entry-amount-block label {
+  color: var(--muted);
+  font-weight: 900;
+  font-size: 14px;
 }
 
 .entry-screen .amount-input {
-  padding: 0 0 8px;
-  margin-bottom: 8px;
+  padding: 0 0 10px;
+  margin-bottom: 0;
 }
 
 .entry-screen .amount-input span,
 .entry-screen .amount-input input {
-  font-size: 30px;
+  font-size: 34px;
+}
+
+.entry-screen .amount-input span {
+  flex: 0 0 auto;
+}
+
+.entry-screen .amount-input input {
+  text-align: left;
 }
 
 .entry-date-time {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 118px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.entry-note-field {
+  margin-top: -1px;
 }
 
 .entry-screen .grid-2,
@@ -949,7 +975,7 @@ button {
 
 .entry-screen .select-card,
 .entry-screen .chip-card {
-  min-height: 46px;
+  min-height: 48px;
   padding: 7px;
   border-radius: 12px;
 }

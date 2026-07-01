@@ -4,7 +4,7 @@ const LOCAL_SESSION_KEY = "ledger-pwa-local-session-v1";
 const OFFLINE_EMAIL_KEY = "ledger-pwa-offline-email";
 const SUPABASE_STORAGE_KEY = "ledger-pwa-supabase-session";
 const SUPABASE_SESSION_BACKUP_KEY = "ledger-pwa-supabase-session-backup";
-const APP_VERSION = "31";
+const APP_VERSION = "32";
 const DEMO_TRANSACTION_IDS = new Set(["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10"]);
 
 clearLegacyDemoBills();
@@ -807,7 +807,7 @@ function statusBar() {
 
 function shell(content, activeTab, options = {}) {
   return `
-    <section class="screen ${options.bottomAction ? "has-bottom-action" : ""}">
+    <section class="screen ${options.screenClass || ""} ${options.bottomAction ? "has-bottom-action" : ""}">
       ${content}
     </section>
     ${options.bottomAction ? `<div class="bottom-action ${options.bottomActionClass || ""}">${options.bottomAction}</div>` : ""}
@@ -1048,10 +1048,10 @@ function renderEntry() {
   const categories = store.state.categories.filter((item) => item.type === draft.type);
   return shell(`
     ${backHead("记一笔")}
-    <section class="card"><div class="segmented"><button class="${draft.type === "expense" ? "active" : ""}" data-entry-type="expense">支出</button><button class="${draft.type === "income" ? "active" : ""}" data-entry-type="income">收入</button></div><div class="card" style="box-shadow:none;margin:12px 0 0"><div class="field"><label>金额</label></div><div class="amount-input"><span>¥</span><input id="entryAmount" inputmode="decimal" placeholder="0.00" /></div><div class="field"><label>日期</label><input id="entryDate" type="date" value="${selectedMonth()}-${String(monthInfo().days).padStart(2, "0")}" /></div><div class="field"><label>时间</label><input id="entryTime" type="time" value="${currentTimeValue()}" /></div><div class="field"><label>备注</label><input id="entryNote" placeholder="写点什么..." /></div></div></section>
-    <section class="card"><h2 class="section-title">支付渠道</h2><div class="grid-2">${store.state.accounts.map((account) => `<button class="select-card ${account.id === draft.accountId ? "active" : ""}" data-select-account="${account.id}"><span class="icon-bubble" style="background:${account.color}">${account.icon}</span><span><strong>${account.name}</strong><br><span class="muted">余额 ${account.balance.toFixed(2)}</span></span>${account.id === draft.accountId ? `<span class="check-dot">✓</span>` : ""}</button>`).join("")}</div></section>
+    <section class="card entry-form-card"><div class="segmented"><button class="${draft.type === "expense" ? "active" : ""}" data-entry-type="expense">支出</button><button class="${draft.type === "income" ? "active" : ""}" data-entry-type="income">收入</button></div><div class="entry-amount-block"><label>金额</label><div class="amount-input"><span>¥</span><input id="entryAmount" inputmode="decimal" placeholder="0.00" /></div></div><div class="entry-date-time"><div class="field"><label>日期</label><input id="entryDate" type="date" value="${selectedMonth()}-${String(monthInfo().days).padStart(2, "0")}" /></div><div class="field"><label>时间</label><input id="entryTime" type="time" value="${currentTimeValue()}" /></div></div><div class="field entry-note-field"><label>备注</label><input id="entryNote" placeholder="写点什么..." /></div></section>
+    <section class="card payment-card"><h2 class="section-title">支付渠道</h2><div class="grid-2">${store.state.accounts.map((account) => `<button class="select-card ${account.id === draft.accountId ? "active" : ""}" data-select-account="${account.id}"><span class="icon-bubble" style="background:${account.color}">${account.icon}</span><span><strong>${account.name}</strong><br><span class="muted">余额 ${account.balance.toFixed(2)}</span></span>${account.id === draft.accountId ? `<span class="check-dot">✓</span>` : ""}</button>`).join("")}</div></section>
     <section class="card"><h2 class="section-title">选择分类</h2><div class="grid-3">${categories.map((category) => `<button class="chip-card ${category.id === draft.categoryId ? "active" : ""}" data-select-category="${category.id}"><span class="small-symbol" style="color:${category.color}">${category.icon}</span><span>${category.name}</span></button>`).join("")}</div></section>
-  `, "", { hideNav: true, bottomAction: `<button class="primary-button" data-save-entry>保存</button>` });
+  `, "", { hideNav: true, screenClass: "entry-screen", bottomAction: `<button class="primary-button" data-save-entry>保存</button>` });
 }
 
 function renderCalendar() {
