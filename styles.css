@@ -249,6 +249,123 @@ button {
   margin: 12px 0;
 }
 
+.onboarding-card {
+  display: grid;
+  gap: 14px;
+}
+
+.onboarding-card p,
+.insight-card p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.budget-alert {
+  border: 1px solid rgba(0, 155, 143, 0.1);
+}
+
+.budget-alert.warn {
+  border-color: rgba(255, 157, 0, 0.3);
+}
+
+.budget-alert.danger {
+  border-color: rgba(255, 75, 37, 0.28);
+}
+
+.budget-progress {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.budget-progress-head,
+.budget-progress-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.budget-progress-head strong {
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.budget-progress.warn .budget-progress-head strong {
+  color: #b76700;
+}
+
+.budget-progress.danger .budget-progress-head strong {
+  color: var(--expense);
+}
+
+.budget-progress-track {
+  height: 12px;
+  background: #edf1f4;
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.budget-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #00a99b, #34c759);
+  transition: width 320ms ease;
+}
+
+.budget-progress.warn .budget-progress-fill {
+  background: linear-gradient(90deg, #ffbd4a, #ff9500);
+}
+
+.budget-progress.danger .budget-progress-fill {
+  background: linear-gradient(90deg, #ff775f, var(--expense));
+}
+
+.budget-progress.empty .budget-progress-fill {
+  background: #cfd8df;
+}
+
+.alert-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.alert-line {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #fff8ed;
+  color: #b76700;
+  font-weight: 850;
+}
+
+.alert-line.danger {
+  background: #fff1ee;
+  color: var(--expense);
+}
+
+.sync-card {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 16px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, var(--primary-soft), #fff);
+}
+
+.sync-card.error {
+  background: linear-gradient(145deg, #fff1ee, #fff);
+}
+
 .section-title {
   margin: 0 0 15px;
   font-size: 18px;
@@ -614,12 +731,62 @@ button {
 .field select,
 .field textarea {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   border: 1px solid var(--line);
   background: #f8fafc;
   border-radius: 12px;
   padding: 13px 14px;
   color: var(--text);
   outline-color: var(--primary);
+}
+
+.password-input {
+  position: relative;
+}
+
+.password-input input {
+  padding-right: 72px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 52px;
+  height: 34px;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+input[type="date"],
+input[type="time"],
+input[type="number"],
+input[inputmode="decimal"] {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+input[type="date"],
+input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  line-height: 1.4;
+}
+
+.plan-form-card {
+  overflow: hidden;
+}
+
+.plan-form-card .field {
+  min-width: 0;
 }
 
 .amount-input {
@@ -1055,6 +1222,27 @@ button {
   background: #eef5f5;
   color: var(--primary);
   font-weight: 850;
+}
+
+.secondary-button.danger-lite {
+  background: #fff3f0;
+  color: var(--expense);
+}
+
+.quick-amounts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.quick-amount {
+  min-height: 34px;
+  border-radius: 10px;
+  background: #eef5f5;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 850;
+  white-space: nowrap;
 }
 
 .mini-tabs {

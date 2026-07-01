@@ -4,7 +4,7 @@ const LOCAL_SESSION_KEY = "ledger-pwa-local-session-v1";
 const OFFLINE_EMAIL_KEY = "ledger-pwa-offline-email";
 const SUPABASE_STORAGE_KEY = "ledger-pwa-supabase-session";
 const SUPABASE_SESSION_BACKUP_KEY = "ledger-pwa-supabase-session-backup";
-const APP_VERSION = "42";
+const APP_VERSION = "52";
 const DEMO_TRANSACTION_IDS = new Set(["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10"]);
 
 clearLegacyDemoBills();
@@ -77,7 +77,7 @@ const supabaseClient = hasConfig && window.supabase
 
 let route = { name: "boot", params: {} };
 let session = null;
-let draft = { type: "expense", accountId: "", categoryId: "" };
+let draft = { type: "expense", accountId: "", categoryId: "", amount: "", note: "" };
 let syncStatus = { mode: "unknown", lastSyncedAt: null, error: "", counts: null };
 const COLOR_SWATCHES = ["#009b8f", "#11c95f", "#3487ff", "#e51b2a", "#ff9d00", "#ff9d1b", "#8b5be8", "#ff5c72", "#34c759", "#4d86f7"];
 
@@ -231,7 +231,7 @@ const store = {
     throwIfError(res);
   },
   async addTransaction(transaction) {
-    const id = `t${Date.now()}`;
+    const id = newId("t");
     if (isLocalMode()) {
       const account = this.state.accounts.find((item) => item.id === transaction.accountId);
       if (account) account.balance += transaction.type === "income" ? transaction.amount : -transaction.amount;
@@ -292,6 +292,63 @@ const store = {
       account.balance = nextBalance;
     }
     this.state.transactions = this.state.transactions.filter((item) => item.id !== id);
+    this.cache();
+    return true;
+  },
+  async updateTransaction(id, nextTransaction) {
+    const previous = this.state.transactions.find((item) => item.id === id);
+    if (!previous) return false;
+    const previousAccount = this.state.accounts.find((item) => item.id === previous.accountId);
+    const nextAccount = this.state.accounts.find((item) => item.id === nextTransaction.accountId);
+    const rollback = signedDelta(previous) * -1;
+    const nextDelta = signedDelta(nextTransaction);
+
+    if (isLocalMode()) {
+      if (previousAccount) previousAccount.balance = Number(previousAccount.balance || 0) + rollback;
+      if (nextAccount) nextAccount.balance = Number(nextAccount.balance || 0) + nextDelta;
+      this.state.transactions = this.state.transactions.map((item) => (item.id === id ? { ...nextTransaction, id } : item));
+      this.cache();
+      return true;
+    }
+
+    const row = {
+      type: nextTransaction.type,
+      amount: nextTransaction.amount,
+      title: nextTransaction.title,
+      category_id: nextTransaction.categoryId,
+      account_id: nextTransaction.accountId,
+      tx_date: nextTransaction.date,
+      tx_time: nextTransaction.time,
+      note: nextTransaction.note || ""
+    };
+    const txRes = await supabaseClient
+      .from("transactions")
+      .update(row)
+      .eq("user_id", session.user.id)
+      .eq("id", id);
+    throwIfError(txRes);
+
+    if (previousAccount) {
+      const nextPreviousBalance = Number(previousAccount.balance || 0) + rollback;
+      const previousRes = await supabaseClient
+        .from("accounts")
+        .update({ balance: nextPreviousBalance })
+        .eq("user_id", session.user.id)
+        .eq("id", previous.accountId);
+      throwIfError(previousRes);
+      previousAccount.balance = nextPreviousBalance;
+    }
+    if (nextAccount) {
+      const nextAccountBalance = Number(nextAccount.balance || 0) + nextDelta;
+      const nextRes = await supabaseClient
+        .from("accounts")
+        .update({ balance: nextAccountBalance })
+        .eq("user_id", session.user.id)
+        .eq("id", nextTransaction.accountId);
+      throwIfError(nextRes);
+      nextAccount.balance = nextAccountBalance;
+    }
+    this.state.transactions = this.state.transactions.map((item) => (item.id === id ? { ...nextTransaction, id } : item));
     this.cache();
     return true;
   },
@@ -431,6 +488,10 @@ const store = {
       const categoryRes = await supabaseClient.from("category_budgets").upsert(rows, { onConflict: "user_id,category_id" });
       throwIfError(categoryRes);
     }
+    const keepIds = Object.keys(categoryBudgets);
+    const deleteQuery = supabaseClient.from("category_budgets").delete().eq("user_id", session.user.id);
+    const deleteRes = keepIds.length ? await deleteQuery.not("category_id", "in", `(${keepIds.join(",")})`) : await deleteQuery;
+    throwIfError(deleteRes);
     this.state.budgets = { total, categories: categoryBudgets };
     this.cache();
   },
@@ -463,6 +524,13 @@ const store = {
     throwIfError(res);
     this.state.theme = theme;
     this.cache();
+  },
+  async replaceLocalState(nextState) {
+    if (!isLocalMode()) throw new Error("云端账号暂不支持直接导入本地备份");
+    this.state = normalizeLedgerState(nextState);
+    recalculateAccountBalances(this.state);
+    this.cache();
+    syncDraftDefaults();
   },
   async cleanupDemoData() {
     const cleaned = resetUserLedgerState(this.state);
@@ -597,7 +665,7 @@ function enterOfflineMode(message = "Supabase 连接失败，已进入本地模�
 function setBootDiagnostics(items) {
   const node = document.querySelector("#bootDiagnostics");
   if (!node) return;
-  node.innerHTML = items.map((item) => `<div>${item}</div>`).join("");
+  node.innerHTML = items.map((item) => `<div>${escapeHtml(item)}</div>`).join("");
 }
 
 function setSyncDiagnostics(items) {
@@ -674,14 +742,24 @@ function readCache() {
   }
 }
 
+function hasLegacyDemoBills(state) {
+  return (state?.transactions || []).some((tx) => DEMO_TRANSACTION_IDS.has(tx.id));
+}
+
 function cleanProductionState(state) {
-  if (!state) return state;
+  if (!state || !hasLegacyDemoBills(state)) return normalizeLedgerState(state);
+  const removed = (state.transactions || []).filter((tx) => DEMO_TRANSACTION_IDS.has(tx.id));
+  const balanceAdjustments = removed.reduce((map, tx) => {
+    map[tx.accountId] = (map[tx.accountId] || 0) + (tx.type === "income" ? -Number(tx.amount || 0) : Number(tx.amount || 0));
+    return map;
+  }, {});
   return normalizeLedgerState({
     ...state,
     transactions: (state.transactions || []).filter((tx) => !DEMO_TRANSACTION_IDS.has(tx.id)),
-    accounts: (state.accounts || []).map((account) => ({ ...account, balance: 0 })),
-    budgets: { total: 0, categories: {} },
-    savingPlans: []
+    accounts: (state.accounts || []).map((account) => ({
+      ...account,
+      balance: Number(account.balance || 0) + (balanceAdjustments[account.id] || 0)
+    }))
   });
 }
 
@@ -703,12 +781,12 @@ function clearLegacyDemoBills() {
   };
   try {
     const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
-    if (cached) localStorage.setItem(CACHE_KEY, JSON.stringify(cleanState(cached)));
+    if (cached && hasLegacyDemoBills(cached)) localStorage.setItem(CACHE_KEY, JSON.stringify(cleanState(cached)));
     Object.keys(localStorage)
       .filter((key) => key.startsWith("ledger-pwa-local-data:"))
       .forEach((key) => {
         const saved = JSON.parse(localStorage.getItem(key) || "null");
-        if (saved) localStorage.setItem(key, JSON.stringify(cleanState(saved)));
+        if (saved && hasLegacyDemoBills(saved)) localStorage.setItem(key, JSON.stringify(cleanState(saved)));
       });
   } catch {
     localStorage.removeItem(CACHE_KEY);
@@ -741,6 +819,23 @@ function money(value) {
 
 function signedMoney(tx) {
   return `${tx.type === "income" ? "+" : "-"}${money(tx.amount)}`;
+}
+
+function signedDelta(tx) {
+  return tx.type === "income" ? Number(tx.amount || 0) : -Number(tx.amount || 0);
+}
+
+function recalculateAccountBalances(state) {
+  const base = {};
+  (state.accounts || []).forEach((account) => {
+    base[account.id] = 0;
+  });
+  (state.transactions || []).forEach((tx) => {
+    if (base[tx.accountId] === undefined) return;
+    base[tx.accountId] += signedDelta(tx);
+  });
+  state.accounts = (state.accounts || []).map((account) => ({ ...account, balance: Number(base[account.id] || 0) }));
+  return state;
 }
 
 function currentMonthValue() {
@@ -812,6 +907,17 @@ function categoryTotals(type = "expense") {
     .sort((a, b) => b.amount - a.amount);
 }
 
+function donutBackground(categories) {
+  let cursor = 0;
+  const stops = categories.map((item) => {
+    const start = cursor;
+    cursor += clampPercent(item.percent);
+    return `${safeColor(item.color)} ${start}% ${cursor}%`;
+  });
+  if (cursor < 100) stops.push(`#edf1f4 ${cursor}% 100%`);
+  return `conic-gradient(${stops.join(", ")})`;
+}
+
 function monthTotals(month = selectedMonth()) {
   const txs = store.state.transactions.filter((tx) => tx.date?.startsWith(month));
   const income = txs.filter((tx) => tx.type === "income").reduce((sum, tx) => sum + tx.amount, 0);
@@ -822,7 +928,7 @@ function monthTotals(month = selectedMonth()) {
 function totals() {
   const current = monthTotals();
   const netAssets = store.state.accounts.reduce((sum, item) => sum + Number(item.balance || 0), 0);
-  return { income: current.income, expense: current.expense, balance: netAssets, netAssets };
+  return { income: current.income, expense: current.expense, balance: current.income - current.expense, netAssets };
 }
 
 function comparisonText(type) {
@@ -833,6 +939,116 @@ function comparisonText(type) {
   const percent = ((current - previous) / previous) * 100;
   if (!percent) return "较上月 持平";
   return `较上月 ${percent > 0 ? "+" : ""}${percent.toFixed(1)}% ${percent > 0 ? "↗" : "↘"}`;
+}
+
+function monthlyHeroSummary(total = totals()) {
+  const budget = monthlyBudgetSummary(total);
+  const balanceText = `本月结余 ${money(total.balance)}`;
+  if (budget.hasBudget) {
+    return {
+      label: budget.isOver ? "预算超支" : "预算结余",
+      amount: budget.remaining,
+      tone: budget.isOver ? "expense" : "income",
+      detail: balanceText
+    };
+  }
+  if (!total.income && !total.expense) {
+    return { label: "本月结余", amount: 0, tone: "income", detail: "本月还没有流水" };
+  }
+  if (total.balance > 0) {
+    return { label: "本月结余", amount: total.balance, tone: "income", detail: `本月净流入 ${money(total.balance)}` };
+  }
+  if (total.balance < 0) {
+    return { label: "本月结余", amount: total.balance, tone: "expense", detail: `本月净流出 ${money(Math.abs(total.balance))}` };
+  }
+  return { label: "本月结余", amount: 0, tone: "income", detail: "本月收支刚好持平" };
+}
+
+function monthlyBudgetSummary(total = totals()) {
+  const budget = Number(store.state.budgets.total || 0);
+  const expense = Number(total.expense || 0);
+  const remaining = budget - expense;
+  return {
+    budget,
+    expense,
+    remaining,
+    hasBudget: budget > 0,
+    isOver: budget > 0 && remaining < 0,
+    usedPercent: budget > 0 ? clampPercent((expense / budget) * 100) : 0
+  };
+}
+
+function budgetStatus() {
+  const budget = monthlyBudgetSummary();
+  if (!budget.hasBudget) {
+    return { level: "empty", title: "还没设置预算", detail: "设置一个本月预算，账本会自动提醒你接近超支。", usedPercent: 0 };
+  }
+  if (budget.isOver) {
+    return { level: "danger", title: "本月预算已超支", detail: `已经超出 ${money(Math.abs(budget.remaining))}`, usedPercent: 100 };
+  }
+  if (budget.usedPercent >= 80) {
+    return { level: "warn", title: "预算快用完了", detail: `还剩 ${money(budget.remaining)}，建议收一收。`, usedPercent: budget.usedPercent };
+  }
+  return { level: "ok", title: "预算状态良好", detail: `还剩 ${money(budget.remaining)}`, usedPercent: budget.usedPercent };
+}
+
+function budgetProgress(budget = monthlyBudgetSummary(), options = {}) {
+  const level = !budget.hasBudget ? "empty" : budget.isOver ? "danger" : budget.usedPercent >= 80 ? "warn" : "ok";
+  const displayPercent = budget.hasBudget ? Math.max(budget.usedPercent, budget.expense > 0 ? 2 : 0) : 0;
+  const stateText = !budget.hasBudget
+    ? "未设置预算"
+    : budget.isOver
+      ? `已超支 ${money(Math.abs(budget.remaining))}`
+      : `剩余 ${money(budget.remaining)}`;
+  return `
+    <div class="budget-progress ${level}">
+      <div class="budget-progress-head">
+        <span>已用 ${budget.hasBudget ? budget.usedPercent.toFixed(1) : "0.0"}%</span>
+        <strong>${stateText}</strong>
+      </div>
+      <div class="budget-progress-track" role="meter" aria-label="${escapeHtml(options.label || "预算使用进度")}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${budget.hasBudget ? budget.usedPercent.toFixed(1) : "0"}">
+        <span class="budget-progress-fill" style="width:${displayPercent}%"></span>
+      </div>
+      <div class="budget-progress-foot"><span>已支出 ${money(budget.expense)}</span><span>总预算 ${money(budget.budget)}</span></div>
+    </div>
+  `;
+}
+
+function categoryBudgetAlerts() {
+  const expenseTotals = categoryTotals("expense");
+  return expenseTotals
+    .map((item) => {
+      const budget = Number(store.state.budgets.categories[item.id] || 0);
+      if (!budget) return null;
+      const percent = (item.amount / budget) * 100;
+      if (percent < 80) return null;
+      return {
+        ...item,
+        budget,
+        percent: clampPercent(percent),
+        level: item.amount > budget ? "danger" : "warn"
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function statsInsight() {
+  const total = totals();
+  const categories = categoryTotals("expense");
+  if (!total.expense) return "本月还没有支出，统计会在你开始记账后自动生成。";
+  const top = categories[0];
+  const previousExpense = monthTotals(shiftMonth(selectedMonth(), -1)).expense || 0;
+  const topText = top ? `${top.name}占支出${clampPercent(top.percent).toFixed(0)}%` : "暂无分类占比";
+  if (!previousExpense) return `本月已支出${money(total.expense)}，${topText}。`;
+  const diff = ((total.expense - previousExpense) / previousExpense) * 100;
+  return `本月支出${money(total.expense)}，较上月${diff >= 0 ? "增加" : "减少"}${Math.abs(diff).toFixed(1)}%，${topText}。`;
+}
+
+function quickAmounts() {
+  const recent = currentMonthTx().filter((tx) => tx.type === draft.type).slice(0, 8).map((tx) => tx.amount);
+  const defaults = draft.type === "expense" ? [9.9, 15, 30, 50] : [100, 500, 1000, 5000];
+  return Array.from(new Set([...recent, ...defaults].filter((value) => value > 0))).slice(0, 4);
 }
 
 function compareTxDesc(a, b) {
@@ -846,6 +1062,13 @@ function formatDate(date) {
 
 function formatDateTime(tx) {
   return `${formatDate(tx.date)} ${tx.time || "09:41"}`;
+}
+
+function newId(prefix) {
+  const random = window.crypto?.getRandomValues
+    ? Array.from(window.crypto.getRandomValues(new Uint32Array(2)), (value) => value.toString(36)).join("")
+    : Math.random().toString(36).slice(2, 10);
+  return `${prefix}${Date.now().toString(36)}${random}`;
 }
 
 function todayDateValue() {
@@ -888,18 +1111,46 @@ function translateError(error) {
   if (lower.includes("email not confirmed")) return "邮箱还没有验证，请先去邮箱确认";
   if (lower.includes("user already registered") || lower.includes("already registered")) return "这个邮箱已经注册过";
   if (lower.includes("password") && lower.includes("6")) return "密码至少需要 6 位";
-  if (lower.includes("invalid email")) return "邮箱格式不正确";
+  if (lower.includes("invalid email") || lower.includes("unable to validate email address") || (lower.includes("email") && lower.includes("invalid format"))) return "邮箱格式不正确，请输入完整邮箱";
   if (lower.includes("rate limit")) return "操作太频繁，请稍后再试";
   if (lower.includes("network") || lower.includes("failed to fetch")) return "网络连接失败，请检查网络后重试";
   return message || "操作失败";
 }
 
 function numberValue(selector) {
-  return Number(document.querySelector(selector)?.value || 0);
+  const value = Number(document.querySelector(selector)?.value || 0);
+  return Number.isFinite(value) ? value : 0;
 }
 
 function textValue(selector) {
   return (document.querySelector(selector)?.value || "").trim();
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
+function escapeHtml(value) {
+  const chars = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  return String(value ?? "").replace(/[&<>"']/g, (char) => chars[char]);
+}
+
+function safeColor(value, fallback = "#009b8f") {
+  const color = String(value || "").trim();
+  return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
+}
+
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, Number(value) || 0));
+}
+
+function nonNegativeNumber(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? Math.max(0, number) : 0;
+}
+
+function shortSymbol(value, fallback) {
+  return Array.from(String(value || "").trim()).slice(0, 2).join("") || fallback;
 }
 
 function syncDraftDefaults() {
@@ -945,15 +1196,17 @@ function bottomNav(activeTab) {
 }
 
 function pageHead(title, subtitle = "", action = "", options = {}) {
+  const safeTitle = escapeHtml(title);
+  const safeSubtitle = escapeHtml(subtitle);
   const subtitleNode = subtitle
     ? options.subtitleRoute
-      ? `<button class="sub-title subtitle-button" data-route="${options.subtitleRoute}" ${options.subtitleReturnTo ? `data-return-to="${options.subtitleReturnTo}"` : ""}>${subtitle}<span class="chevron-down"></span></button>`
-      : `<div class="sub-title">${subtitle}<span class="chevron-down"></span></div>`
+      ? `<button class="sub-title subtitle-button" data-route="${escapeHtml(options.subtitleRoute)}" ${options.subtitleReturnTo ? `data-return-to="${escapeHtml(options.subtitleReturnTo)}"` : ""}>${safeSubtitle}<span class="chevron-down"></span></button>`
+      : `<div class="sub-title">${safeSubtitle}<span class="chevron-down"></span></div>`
     : "";
   return `
     <header class="page-head">
       <div class="title-stack">
-        <h1 class="page-title">${title}</h1>
+        <h1 class="page-title">${safeTitle}</h1>
         ${subtitleNode}
       </div>
       ${action}
@@ -965,7 +1218,7 @@ function backHead(title) {
   return `
     <div class="top-title">
       <button class="back-button" data-back aria-label="返回">‹</button>
-      <h1>${title}</h1>
+      <h1>${escapeHtml(title)}</h1>
       <span></span>
     </div>
   `;
@@ -1001,7 +1254,7 @@ function renderLogin() {
     <section class="card" style="margin-top:32px">
       <h1 class="section-title">登录轻账本</h1>
       <div class="field"><label>邮箱</label><input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com" /></div>
-      <div class="field"><label>密码</label><input id="authPassword" type="password" autocomplete="current-password" placeholder="至少 6 位" /></div>
+      <div class="field"><label>密码</label><div class="password-input"><input id="authPassword" type="password" autocomplete="current-password" placeholder="至少 6 位" /><button type="button" class="password-toggle" data-toggle-password aria-label="显示密码" aria-pressed="false">显示</button></div></div>
       <div class="grid-2">
         <button class="primary-button" data-auth-login>登录</button>
         <button class="secondary-button" style="height:54px" data-auth-signup>注册</button>
@@ -1015,26 +1268,33 @@ function renderLogin() {
 function categoryList(limit, ranked = false) {
   const items = categoryTotals("expense").slice(0, limit || 99);
   if (!items.length) return `<div class="empty">当前月份暂无支出分类数据</div>`;
-  return `<div class="bar-list">${items.map((item, index) => `
-    <button class="category-row" data-category-detail="${item.id}" style="background:transparent;padding:0;text-align:left">
-      ${ranked ? `<span class="rank-badge">${index + 1}</span>` : `<span class="icon-bubble" style="background:${item.color}">${item.icon}</span>`}
+  return `<div class="bar-list">${items.map((item, index) => {
+    const color = safeColor(item.color);
+    const icon = escapeHtml(item.icon || "类");
+    const name = escapeHtml(item.name || "未分类");
+    const percent = clampPercent(item.percent);
+    return `
+    <button class="category-row" data-category-detail="${escapeHtml(item.id)}" style="background:transparent;padding:0;text-align:left">
+      ${ranked ? `<span class="rank-badge">${index + 1}</span>` : `<span class="icon-bubble" style="background:${color}">${icon}</span>`}
       <span>
-        <span class="category-name">${ranked ? `<span class="icon-bubble" style="width:28px;height:28px;display:inline-grid;margin-right:8px;background:${item.color};font-size:15px">${item.icon}</span>` : ""}${item.name}</span>
-        <span class="progress-track"><span class="progress-fill" style="width:${item.percent}%;background:${item.color}"></span></span>
+        <span class="category-name">${ranked ? `<span class="icon-bubble" style="width:28px;height:28px;display:inline-grid;margin-right:8px;background:${color};font-size:15px">${icon}</span>` : ""}${name}</span>
+        <span class="progress-track"><span class="progress-fill" style="width:${percent}%;background:${color}"></span></span>
       </span>
-      <span class="category-metric"><span class="amount-text expense">${money(item.amount)}</span><span class="muted">${item.percent.toFixed(1)}%</span></span>
+      <span class="category-metric"><span class="amount-text expense">${money(item.amount)}</span><span class="muted">${percent.toFixed(1)}%</span></span>
     </button>
-  `).join("")}</div>`;
+  `;
+  }).join("")}</div>`;
 }
 
 function txRows(txs) {
   if (!txs.length) return `<div class="empty">暂无记录</div>`;
   return `<div class="tx-list">${txs.map((tx) => {
     const category = txCategory(tx);
+    const color = safeColor(category.color);
     return `
-      <button class="tx-row tx-button" data-transaction-detail="${tx.id}">
-        <span class="icon-bubble" style="background:${category.color}">${category.icon}</span>
-        <span><div class="tx-title">${tx.title}</div><div class="tx-meta">${formatDateTime(tx)} · ${category.name}</div></span>
+      <button class="tx-row tx-button" data-transaction-detail="${escapeHtml(tx.id)}">
+        <span class="icon-bubble" style="background:${color}">${escapeHtml(category.icon || "类")}</span>
+        <span><div class="tx-title">${escapeHtml(tx.title || "记账")}</div><div class="tx-meta">${escapeHtml(formatDateTime(tx))} · ${escapeHtml(category.name || "未分类")}</div></span>
         <strong class="${tx.type === "income" ? "income" : "expense"}">${signedMoney(tx)}</strong>
       </button>
     `;
@@ -1051,16 +1311,23 @@ function groupedTxRows(txs) {
   return Object.entries(groups).map(([date, items]) => {
     const income = items.filter((tx) => tx.type === "income").reduce((sum, tx) => sum + tx.amount, 0);
     const expense = items.filter((tx) => tx.type === "expense").reduce((sum, tx) => sum + tx.amount, 0);
-    return `<div style="margin-bottom:18px"><div class="row-between" style="margin-bottom:10px"><strong>${formatDate(date)}</strong><span class="muted">收入 ${money(income)} · 支出 ${money(expense)}</span></div>${txRows(items)}</div>`;
+    return `<div style="margin-bottom:18px"><div class="row-between" style="margin-bottom:10px"><strong>${escapeHtml(formatDate(date))}</strong><span class="muted">收入 ${money(income)} · 支出 ${money(expense)}</span></div>${txRows(items)}</div>`;
   }).join("");
 }
 
 function renderHome() {
   const total = totals();
   const recent = [...currentMonthTx()].sort(compareTxDesc).slice(0, 3);
+  const hasTx = store.state.transactions.length > 0;
+  const budget = budgetStatus();
+  const budgetSummary = monthlyBudgetSummary(total);
+  const hero = monthlyHeroSummary(total);
+  const alerts = categoryBudgetAlerts();
   return shell(`
     ${pageHead("本月总览", monthRangeLabel(), `<button class="pill-button" data-route="calendar">▣ 日历视图</button>`, { subtitleRoute: "period", subtitleReturnTo: "home" })}
-    <section class="card money-hero">${walletArt()}<div class="balance-label">结余(元) ◎</div><div class="balance-main">${money(total.balance)}</div><div class="summary-box"><div><div class="metric-title">收入(元)</div><div class="metric-value income">${money(total.income)}</div><div class="muted">${comparisonText("income")}</div></div><div class="divider"></div><div><div class="metric-title">支出(元)</div><div class="metric-value expense">${money(total.expense)}</div><div class="muted">${comparisonText("expense")}</div></div></div></section>
+    ${hasTx ? "" : `<section class="card onboarding-card"><div><h2 class="section-title">先记第一笔</h2><p class="muted">不用把账本搭完整，先把今天最大的一笔记下来。</p></div><button class="primary-button" data-route="entry">马上记一笔</button></section>`}
+    <section class="card money-hero">${walletArt()}<div class="balance-label">${hero.label}</div><div class="balance-main ${hero.tone}">${money(hero.amount)}</div><div class="muted" style="margin:-12px 0 18px">${hero.detail} · 净资产 ${money(total.netAssets)}</div><div class="summary-box"><div><div class="metric-title">收入(元)</div><div class="metric-value income">${money(total.income)}</div><div class="muted">${comparisonText("income")}</div></div><div class="divider"></div><div><div class="metric-title">支出(元)</div><div class="metric-value expense">${money(total.expense)}</div><div class="muted">${comparisonText("expense")}</div></div></div></section>
+    <section class="card budget-alert ${budget.level}"><div class="row-between"><div><h2 class="section-title">${escapeHtml(budget.title)}</h2><div class="muted">${escapeHtml(budget.detail)}</div></div><button class="secondary-button" data-route="budget">设置</button></div>${budgetProgress(budgetSummary, { label: "首页预算使用进度" })}${alerts.length ? `<div class="alert-list">${alerts.map((item) => `<div class="alert-line ${item.level}"><span>${escapeHtml(item.icon || "类")} ${escapeHtml(item.name)}</span><strong>${item.percent.toFixed(0)}%</strong></div>`).join("")}</div>` : ""}</section>
     <section class="card"><div class="card-head"><h2 class="section-title">支出分类TOP5</h2><button class="link-button" data-route="categoriesAll">查看全部 ›</button></div>${categoryList(5)}</section>
     <section class="card"><div class="card-head"><h2 class="section-title">当月收支</h2><button class="link-button" data-route="transactions">查看全部 ›</button></div>${txRows(recent)}</section>
   `, "home");
@@ -1068,11 +1335,11 @@ function renderHome() {
 
 function renderLedger() {
   const total = totals();
-  const usedPercent = store.state.budgets.total ? Math.min(100, (total.expense / store.state.budgets.total) * 100) : 0;
+  const budget = monthlyBudgetSummary(total);
   return shell(`
     ${pageHead("账本资产")}
-    <section class="card"><div class="card-head"><h2 class="section-title">预算管理</h2><button class="link-button income" data-route="budget">预算设置 ›</button></div><div class="row-between"><div><div class="muted">本月已用</div><div class="metric-value expense">${usedPercent.toFixed(1)}%</div></div><div style="text-align:right"><div class="muted">剩余预算</div><div class="metric-value">${money(store.state.budgets.total - total.expense)}</div></div></div><div class="progress-track" style="height:10px;margin:16px 0"><span class="progress-fill" style="width:${usedPercent}%;background:var(--expense)"></span></div><div class="muted">总预算 ${money(store.state.budgets.total)} · 已支出 ${money(total.expense)}</div></section>
-    <section class="card"><div class="card-head"><h2 class="section-title">账户资产</h2><button class="link-button income" data-route="accounts">账户管理 ›</button></div><div class="card" style="margin:0 0 12px;background:linear-gradient(145deg,var(--primary-soft),#fff);box-shadow:none">${walletArt()}<div class="metric-title income">净资产</div><div class="balance-main income" style="font-size:34px;margin:8px 0 0">${money(total.netAssets)}</div></div><div class="account-grid">${store.state.accounts.map((account) => `<div class="asset-card"><div class="row"><span class="icon-bubble" style="background:${account.color}">${account.icon}</span><div><strong>${account.name}</strong><div>${money(account.balance)}</div>${account.isDefault ? `<span class="tag">默认账户</span>` : ""}</div></div></div>`).join("")}</div></section>
+    <section class="card"><div class="card-head"><h2 class="section-title">预算管理</h2><button class="link-button income" data-route="budget">预算设置 ›</button></div><div class="row-between"><div><div class="muted">本月已用</div><div class="metric-value expense">${budget.usedPercent.toFixed(1)}%</div></div><div style="text-align:right"><div class="muted">预算结余</div><div class="metric-value ${budget.isOver ? "expense" : ""}">${money(budget.hasBudget ? budget.remaining : 0)}</div></div></div>${budgetProgress(budget, { label: "账本预算使用进度" })}</section>
+    <section class="card"><div class="card-head"><h2 class="section-title">账户资产</h2><button class="link-button income" data-route="accounts">账户管理 ›</button></div><div class="card" style="margin:0 0 12px;background:linear-gradient(145deg,var(--primary-soft),#fff);box-shadow:none">${walletArt()}<div class="metric-title income">净资产</div><div class="balance-main income" style="font-size:34px;margin:8px 0 0">${money(total.netAssets)}</div></div><div class="account-grid">${store.state.accounts.map((account) => `<div class="asset-card"><div class="row"><span class="icon-bubble" style="background:${safeColor(account.color)}">${escapeHtml(account.icon || "账")}</span><div><strong>${escapeHtml(account.name || "账户")}</strong><div>${money(account.balance)}</div>${account.isDefault ? `<span class="tag">默认账户</span>` : ""}</div></div></div>`).join("")}</div></section>
     <section class="card"><div class="card-head"><h2 class="section-title">存钱计划</h2><button class="link-button" data-route="savingPlans">查看全部 ›</button></div>${savingPlanList(2)}</section>
   `, "ledger");
 }
@@ -1081,8 +1348,8 @@ function savingPlanList(limit) {
   const plans = store.state.savingPlans.slice(0, limit || 99);
   if (!plans.length) return `<div class="empty">暂无存钱计划</div>`;
   return `<div class="bar-list">${plans.map((plan) => {
-    const percent = plan.target ? Math.min(100, (plan.saved / plan.target) * 100) : 0;
-    return `<button class="row" data-edit-plan="${plan.id}" style="align-items:flex-start;width:100%;background:transparent;text-align:left;padding:0"><span class="icon-bubble soft" style="font-size:18px">${plan.icon}</span><div style="flex:1;min-width:0"><div class="row-between"><strong>${plan.name}</strong><strong class="income">${percent.toFixed(percent % 1 ? 1 : 0)}%</strong></div><div class="muted">目标日 ${plan.dueDate}</div><div class="progress-track"><span class="progress-fill" style="width:${percent}%"></span></div><div class="muted">${money(plan.saved)} / ${money(plan.target)}</div></div></button>`;
+    const percent = clampPercent(plan.target ? (plan.saved / plan.target) * 100 : 0);
+    return `<button class="row" data-edit-plan="${escapeHtml(plan.id)}" style="align-items:flex-start;width:100%;background:transparent;text-align:left;padding:0"><span class="icon-bubble soft" style="font-size:18px">${escapeHtml(plan.icon || "标")}</span><div style="flex:1;min-width:0"><div class="row-between"><strong>${escapeHtml(plan.name || "存钱计划")}</strong><strong class="income">${percent.toFixed(percent % 1 ? 1 : 0)}%</strong></div><div class="muted">目标日 ${escapeHtml(plan.dueDate || "-")}</div><div class="progress-track"><span class="progress-fill" style="width:${percent}%"></span></div><div class="muted">${money(plan.saved)} / ${money(plan.target)}</div></div></button>`;
   }).join("")}</div>`;
 }
 
@@ -1094,8 +1361,9 @@ function renderStats() {
   const categories = categoryTotals("expense");
   return shell(`
     ${pageHead("统计分析", monthDisplay(), "", { subtitleRoute: "period", subtitleReturnTo: "stats" })}
+    <section class="card insight-card"><h2 class="section-title">本月洞察</h2><p>${escapeHtml(statsInsight())}</p></section>
     <section class="card"><h2 class="section-title">本月总览</h2><div class="summary-box"><div><div class="metric-title">日均支出 ⓘ</div><div class="metric-value expense">${money(total.expense / monthInfo().days)}</div></div><div class="divider"></div><div><div class="metric-title">最大单笔 ⓘ</div><div class="metric-value">${money(maxExpense)}</div></div></div></section>
-    <section class="card"><h2 class="section-title">支出分类占比</h2>${categories.length ? `<div class="donut-wrap"><div class="donut"></div><div class="legend">${categories.slice(0, 5).map((item) => `<div class="row-between"><span class="row"><span class="icon-bubble" style="width:28px;height:28px;background:${item.color};font-size:14px">${item.icon}</span>${item.name}</span><span class="muted">${item.percent.toFixed(1)}%</span></div>`).join("")}</div></div>` : `<div class="empty">当前月份暂无支出分类数据</div>`}</section>
+    <section class="card"><h2 class="section-title">支出分类占比</h2>${categories.length ? `<div class="donut-wrap"><div class="donut" style="background:${donutBackground(categories)}"></div><div class="legend">${categories.slice(0, 5).map((item) => `<div class="row-between"><span class="row"><span class="icon-bubble" style="width:28px;height:28px;background:${safeColor(item.color)};font-size:14px">${escapeHtml(item.icon || "类")}</span>${escapeHtml(item.name || "未分类")}</span><span class="muted">${clampPercent(item.percent).toFixed(1)}%</span></div>`).join("")}</div></div>` : `<div class="empty">当前月份暂无支出分类数据</div>`}</section>
     <section class="card"><div class="card-head"><h2 class="section-title">支出趋势</h2><div class="mini-tabs">${[["day", "日"], ["week", "周"], ["month", "月"]].map(([value, label]) => `<button class="${mode === value ? "active" : ""}" data-stats-mode="${value}">${label}</button>`).join("")}</div></div>${trendChart(mode)}</section>
     <section class="card"><h2 class="section-title">支出分类TOP5</h2>${categoryList(5, true)}</section>
   `, "stats");
@@ -1139,18 +1407,21 @@ function trendChart(mode) {
 function renderMine() {
   const { profile } = store.state;
   const isCloud = syncStatus.mode === "cloud";
+  const authAction = isLocalMode()
+    ? `<button class="setting-row" data-auth-switch style="width:100%;background:transparent;text-align:left"><span class="icon-bubble soft">登</span><strong>切换登录方式</strong><span class="muted" style="font-size:28px">›</span></button>`
+    : `<button class="setting-row" data-auth-logout style="width:100%;background:transparent;text-align:left"><span class="icon-bubble soft">退</span><strong>退出登录</strong><span class="muted" style="font-size:28px">›</span></button>`;
   const statusTitle = isCloud ? "云端已同步" : syncStatus.mode === "error" ? "云端同步异常" : "本地缓存模式";
   const statusDetail = isCloud
-    ? `${session?.user?.email || ""}${syncStatus.lastSyncedAt ? ` · ${syncStatus.lastSyncedAt}` : ""}`
+    ? `${escapeHtml(session?.user?.email || "")}${syncStatus.lastSyncedAt ? ` · ${escapeHtml(syncStatus.lastSyncedAt)}` : ""}`
     : syncStatus.mode === "error"
-      ? syncStatus.error
+      ? escapeHtml(syncStatus.error)
       : "当前显示的是本机缓存数据";
   const statusIcon = isCloud ? "云" : syncStatus.mode === "error" ? "!" : "本";
   return shell(`
     <header class="page-head"><h1 style="margin:0;font-size:30px;font-weight:950">我的</h1></header>
-    <button class="profile-head" data-route="profile" style="width:100%;background:transparent;text-align:left"><span class="avatar">${profile.avatar}</span><span><strong style="font-size:20px">${profile.name}</strong><div class="muted" style="margin-top:8px">${profile.bio}</div></span><span class="muted" style="font-size:30px">›</span></button>
-    <section class="card"><h2 class="section-title">同步状态</h2><div class="card" style="margin:0;background:linear-gradient(145deg,var(--primary-soft),#fff);box-shadow:none"><div class="row"><span class="icon-bubble soft">${statusIcon}</span><span><strong class="${isCloud ? "income" : "muted"}">${statusTitle}</strong><div class="muted" style="margin-top:8px">${statusDetail}</div></span></div></div></section>
-    <section class="card"><h2 class="section-title">个人设置</h2>${settingRow("类", "分类管理", "categoriesManage")}${settingRow("账", "账户管理", "accounts")}${settingRow("导", "数据导出", "export")}${settingRow("题", "主题设置", "theme")}<button class="setting-row" data-auth-logout style="width:100%;background:transparent;text-align:left"><span class="icon-bubble soft">退</span><strong>退出登录</strong><span class="muted" style="font-size:28px">›</span></button></section>
+    <button class="profile-head" data-route="profile" style="width:100%;background:transparent;text-align:left"><span class="avatar">${escapeHtml(profile.avatar || "人")}</span><span><strong style="font-size:20px">${escapeHtml(profile.name || "小明")}</strong><div class="muted" style="margin-top:8px">${escapeHtml(profile.bio || "")}</div></span><span class="muted" style="font-size:30px">›</span></button>
+    <section class="card"><h2 class="section-title">同步状态</h2><div class="sync-card ${syncStatus.mode === "error" ? "error" : ""}"><div class="row"><span class="icon-bubble soft">${statusIcon}</span><span><strong class="${isCloud ? "income" : "muted"}">${statusTitle}</strong><div class="muted" style="margin-top:8px">${statusDetail}</div></span></div>${supabaseClient && !isLocalMode() ? `<button class="secondary-button" data-sync-retry>重试同步</button>` : ""}</div></section>
+    <section class="card"><h2 class="section-title">个人设置</h2>${settingRow("类", "分类管理", "categoriesManage")}${settingRow("账", "账户管理", "accounts")}${settingRow("导", "备份导出", "export")}${settingRow("题", "主题设置", "theme")}${authAction}</section>
   `, "mine");
 }
 
@@ -1161,15 +1432,28 @@ function settingRow(icon, label, target) {
 function renderEntry() {
   store.state = normalizeLedgerState(store.state);
   syncDraftDefaults();
+  const editing = store.state.transactions.find((item) => item.id === route.params.edit);
+  if (editing && draft.editingId !== editing.id) {
+    draft = {
+      editingId: editing.id,
+      type: editing.type,
+      accountId: editing.accountId,
+      categoryId: editing.categoryId,
+      amount: String(editing.amount),
+      note: editing.note || "",
+      date: editing.date,
+      time: editing.time || currentTimeValue()
+    };
+  }
   const categories = store.state.categories.filter((item) => item.type === draft.type);
-  const categoryOptions = categories.length ? categories : defaultCategories().filter((item) => item.type === draft.type);
   const accountOptions = store.state.accounts.length ? store.state.accounts : defaultAccounts();
+  const amounts = quickAmounts();
   return shell(`
-    ${backHead("记一笔")}
-    <section class="card entry-form-card"><div class="segmented"><button class="${draft.type === "expense" ? "active" : ""}" data-entry-type="expense">支出</button><button class="${draft.type === "income" ? "active" : ""}" data-entry-type="income">收入</button></div><div class="entry-amount-block"><label>金额</label><div class="amount-input"><span>¥</span><input id="entryAmount" inputmode="decimal" placeholder="0.00" /></div></div><div class="entry-date-time"><div class="field"><label>日期</label><input id="entryDate" type="date" value="${todayDateValue()}" /></div><div class="field"><label>时间</label><input id="entryTime" type="time" value="${currentTimeValue()}" /></div></div><div class="field entry-note-field"><label>备注</label><input id="entryNote" placeholder="写点什么..." /></div></section>
-    <section class="card entry-choice-card category-choice-card"><h2 class="section-title">选择分类</h2><div class="entry-choice-scroll">${categoryOptions.map((category) => `<button class="chip-card ${category.id === draft.categoryId ? "active" : ""}" data-select-category="${category.id}"><span class="small-symbol" style="color:${category.color}">${category.icon}</span><span>${category.name}</span></button>`).join("")}</div></section>
-    <section class="card payment-card entry-choice-card"><h2 class="section-title">支付渠道</h2><div class="entry-choice-scroll">${accountOptions.map((account) => `<button class="select-card ${account.id === draft.accountId ? "active" : ""}" data-select-account="${account.id}"><span class="icon-bubble" style="background:${account.color}">${account.icon}</span><span><strong>${account.name}</strong><br><span class="muted">余额 ${Number(account.balance || 0).toFixed(2)}</span></span>${account.id === draft.accountId ? `<span class="check-dot">✓</span>` : ""}</button>`).join("")}</div></section>
-  `, "", { hideNav: true, screenClass: "entry-screen", bottomAction: `<button class="primary-button" data-save-entry>保存</button>` });
+    ${backHead(editing ? "编辑记录" : "记一笔")}
+    <section class="card entry-form-card"><div class="segmented"><button class="${draft.type === "expense" ? "active" : ""}" data-entry-type="expense">支出</button><button class="${draft.type === "income" ? "active" : ""}" data-entry-type="income">收入</button></div><div class="entry-amount-block"><label>金额</label><div class="amount-input"><span>¥</span><input id="entryAmount" inputmode="decimal" placeholder="0.00" value="${escapeHtml(draft.amount || "")}" /></div><div class="quick-amounts">${amounts.map((amount) => `<button class="quick-amount" data-quick-amount="${amount}">${money(amount)}</button>`).join("")}</div></div><div class="entry-date-time"><div class="field"><label>日期</label><input id="entryDate" type="date" value="${escapeHtml(draft.date || todayDateValue())}" /></div><div class="field"><label>时间</label><input id="entryTime" type="time" value="${escapeHtml(draft.time || currentTimeValue())}" /></div></div><div class="field entry-note-field"><label>备注</label><input id="entryNote" placeholder="写点什么..." value="${escapeHtml(draft.note || "")}" /></div></section>
+    <section class="card entry-choice-card category-choice-card"><h2 class="section-title">选择分类</h2>${categories.length ? `<div class="entry-choice-scroll">${categories.map((category) => `<button class="chip-card ${category.id === draft.categoryId ? "active" : ""}" data-select-category="${escapeHtml(category.id)}"><span class="small-symbol" style="color:${safeColor(category.color)}">${escapeHtml(category.icon || "类")}</span><span>${escapeHtml(category.name || "未分类")}</span></button>`).join("")}</div>` : `<div class="empty">请先在“我的-分类管理”新增一个${draft.type === "income" ? "收入" : "支出"}分类</div>`}</section>
+    <section class="card payment-card entry-choice-card"><h2 class="section-title">支付渠道</h2><div class="entry-choice-scroll">${accountOptions.map((account) => `<button class="select-card ${account.id === draft.accountId ? "active" : ""}" data-select-account="${escapeHtml(account.id)}"><span class="icon-bubble" style="background:${safeColor(account.color)}">${escapeHtml(account.icon || "账")}</span><span><strong>${escapeHtml(account.name || "账户")}</strong><br><span class="muted">余额 ${Number(account.balance || 0).toFixed(2)}</span></span>${account.id === draft.accountId ? `<span class="check-dot">✓</span>` : ""}</button>`).join("")}</div></section>
+  `, "", { hideNav: true, screenClass: "entry-screen", bottomAction: `<button class="primary-button" data-save-entry>${editing ? "保存修改" : "保存"}</button>` });
 }
 
 function renderCalendar() {
@@ -1198,7 +1482,7 @@ function renderTransactions() {
   if (type !== "all") txs = txs.filter((tx) => tx.type === type);
   if (category !== "all") txs = txs.filter((tx) => tx.categoryId === category);
   if (query) txs = txs.filter((tx) => `${tx.title}${tx.note}`.includes(query));
-  return detailShell(`${monthDisplay()}收支`, `<section class="card filter-card"><input class="search-input" id="searchTx" value="${query}" placeholder="搜索流水" /><div class="filter-segment">${[["all", "全部"], ["expense", "支出"], ["income", "收入"]].map(([value, label]) => `<button class="${type === value ? "active" : ""}" data-filter-type="${value}">${label}</button>`).join("")}</div><div class="category-scroll"><button class="filter-chip ${category === "all" ? "active" : ""}" data-filter-category="all">全部分类</button>${store.state.categories.filter((item) => type === "all" || item.type === type).map((item) => `<button class="filter-chip ${category === item.id ? "active" : ""}" data-filter-category="${item.id}"><span style="background:${item.color}">${item.icon}</span>${item.name}</button>`).join("")}</div></section><section class="card">${groupedTxRows(txs)}</section>`);
+  return detailShell(`${monthDisplay()}收支`, `<section class="card filter-card"><input class="search-input" id="searchTx" value="${escapeHtml(query)}" placeholder="搜索流水" /><div class="filter-segment">${[["all", "全部"], ["expense", "支出"], ["income", "收入"]].map(([value, label]) => `<button class="${type === value ? "active" : ""}" data-filter-type="${value}">${label}</button>`).join("")}</div><div class="category-scroll"><button class="filter-chip ${category === "all" ? "active" : ""}" data-filter-category="all">全部分类</button>${store.state.categories.filter((item) => type === "all" || item.type === type).map((item) => `<button class="filter-chip ${category === item.id ? "active" : ""}" data-filter-category="${escapeHtml(item.id)}"><span style="background:${safeColor(item.color)}">${escapeHtml(item.icon || "类")}</span>${escapeHtml(item.name || "未分类")}</button>`).join("")}</div></section><section class="card">${groupedTxRows(txs)}</section>`);
 }
 
 function renderTransactionDetail() {
@@ -1208,8 +1492,8 @@ function renderTransactionDetail() {
   const account = txAccount(tx);
   return detailShell(
     "记录详情",
-    `<section class="card"><div class="row" style="align-items:flex-start"><span class="icon-bubble" style="background:${category.color || "var(--primary)"}">${category.icon || "记"}</span><div style="flex:1;min-width:0"><div class="muted">${tx.type === "income" ? "收入" : "支出"}</div><div class="balance-main ${tx.type === "income" ? "income" : "expense"}" style="font-size:34px;margin:8px 0">${signedMoney(tx)}</div><h2 class="section-title" style="margin-top:4px">${tx.title}</h2></div></div></section><section class="card detail-card"><div class="detail-row"><span class="icon-bubble soft">类</span><strong>分类</strong><span class="detail-value">${category.name || "-"}</span></div><div class="detail-row"><span class="icon-bubble soft">账</span><strong>账户</strong><span class="detail-value">${account.name || "-"}</span></div><div class="detail-row"><span class="icon-bubble soft">时</span><strong>时间</strong><span class="detail-value">${formatDateTime(tx)}</span></div><div class="detail-row"><span class="icon-bubble soft">注</span><strong>备注</strong><span class="detail-value">${tx.note || "无"}</span></div></section>`,
-    { bottomAction: `<button class="danger-button" data-delete-transaction="${tx.id}">删除记录</button>` }
+    `<section class="card"><div class="row" style="align-items:flex-start"><span class="icon-bubble" style="background:${safeColor(category.color, "var(--primary)") }">${escapeHtml(category.icon || "记")}</span><div style="flex:1;min-width:0"><div class="muted">${tx.type === "income" ? "收入" : "支出"}</div><div class="balance-main ${tx.type === "income" ? "income" : "expense"}" style="font-size:34px;margin:8px 0">${signedMoney(tx)}</div><h2 class="section-title" style="margin-top:4px">${escapeHtml(tx.title || "记账")}</h2></div></div></section><section class="card detail-card"><div class="detail-row"><span class="icon-bubble soft">类</span><strong>分类</strong><span class="detail-value">${escapeHtml(category.name || "-")}</span></div><div class="detail-row"><span class="icon-bubble soft">账</span><strong>账户</strong><span class="detail-value">${escapeHtml(account.name || "-")}</span></div><div class="detail-row"><span class="icon-bubble soft">时</span><strong>时间</strong><span class="detail-value">${escapeHtml(formatDateTime(tx))}</span></div><div class="detail-row"><span class="icon-bubble soft">注</span><strong>备注</strong><span class="detail-value">${escapeHtml(tx.note || "无")}</span></div></section>`,
+    { bottomAction: `<button class="primary-button" data-edit-transaction="${escapeHtml(tx.id)}">编辑记录</button><button class="secondary-button danger-lite" data-delete-transaction="${escapeHtml(tx.id)}">删除</button>`, bottomActionClass: "split" }
   );
 }
 
@@ -1219,43 +1503,44 @@ function renderCategoriesAll() {
 
 function renderCategoryDetail() {
   const category = store.state.categories.find((item) => item.id === route.params.id) || store.state.categories[0];
-  const txs = store.state.transactions.filter((tx) => tx.categoryId === category.id);
+  if (!category) return detailShell("分类详情", `<section class="card"><div class="empty">分类不存在</div></section>`);
+  const txs = currentMonthTx().filter((tx) => tx.categoryId === category.id);
   const amount = txs.reduce((sum, tx) => sum + tx.amount, 0);
-  return detailShell(category.name, `<section class="card"><div class="row"><span class="icon-bubble" style="background:${category.color}">${category.icon}</span><div><div class="muted">本月合计</div><div class="balance-main expense" style="font-size:34px;margin:6px 0">${money(amount)}</div></div></div></section><section class="card"><h2 class="section-title">分类流水</h2>${txRows(txs)}</section>`);
+  return detailShell(category.name, `<section class="card"><div class="row"><span class="icon-bubble" style="background:${safeColor(category.color)}">${escapeHtml(category.icon || "类")}</span><div><div class="muted">本月合计</div><div class="balance-main expense" style="font-size:34px;margin:6px 0">${money(amount)}</div></div></div></section><section class="card"><h2 class="section-title">分类流水</h2>${txRows(txs)}</section>`);
 }
 
 function renderBudget() {
-  return detailShell("预算设置", `<section class="card"><div class="field"><label>本月总预算</label><input id="totalBudget" inputmode="decimal" value="${store.state.budgets.total}" /></div>${store.state.categories.filter((item) => item.type === "expense").map((category) => `<div class="field"><label>${category.icon} ${category.name}</label><input class="categoryBudget" data-id="${category.id}" inputmode="decimal" value="${store.state.budgets.categories[category.id] || 0}" /></div>`).join("")}</section>`, { bottomAction: `<button class="primary-button" data-save-budget>保存预算</button>` });
+  return detailShell("预算设置", `<section class="card"><div class="field"><label>本月总预算</label><input id="totalBudget" inputmode="decimal" value="${Number(store.state.budgets.total || 0)}" /></div>${store.state.categories.filter((item) => item.type === "expense").map((category) => `<div class="field"><label>${escapeHtml(category.icon || "类")} ${escapeHtml(category.name || "未分类")}</label><input class="categoryBudget" data-id="${escapeHtml(category.id)}" inputmode="decimal" value="${Number(store.state.budgets.categories[category.id] || 0)}" /></div>`).join("")}</section>`, { bottomAction: `<button class="primary-button" data-save-budget>保存预算</button>` });
 }
 
 function renderAccounts() {
   const editing = Boolean(route.params.edit);
-  return detailShell("账户管理", `<section class="card"><div class="card-head"><h2 class="section-title">账户列表</h2><button class="secondary-button" data-add-account>新增</button></div><div class="bar-list">${store.state.accounts.map((account) => `<button class="select-card" data-edit-account="${account.id}"><span class="icon-bubble" style="background:${account.color}">${account.icon}</span><span><strong>${account.name}</strong><br><span class="muted">${money(account.balance)} ${account.isDefault ? "· 默认" : ""}</span></span></button>`).join("")}</div></section>${accountForm(route.params.edit)}`, { bottomAction: editing ? `<button class="primary-button" data-save-account="${route.params.edit}">保存账户</button><button class="secondary-button" data-delete-account="${route.params.edit}">删除</button>` : `<button class="primary-button" data-save-account="">保存账户</button>`, bottomActionClass: editing ? "split" : "" });
+  return detailShell("账户管理", `<section class="card"><div class="card-head"><h2 class="section-title">账户列表</h2><button class="secondary-button" data-add-account>新增</button></div><div class="bar-list">${store.state.accounts.map((account) => `<button class="select-card" data-edit-account="${escapeHtml(account.id)}"><span class="icon-bubble" style="background:${safeColor(account.color)}">${escapeHtml(account.icon || "账")}</span><span><strong>${escapeHtml(account.name || "账户")}</strong><br><span class="muted">${money(account.balance)} ${account.isDefault ? "· 默认" : ""}</span></span></button>`).join("")}</div></section>${accountForm(route.params.edit)}`, { bottomAction: editing ? `<button class="primary-button" data-save-account="${escapeHtml(route.params.edit)}">保存账户</button><button class="secondary-button" data-delete-account="${escapeHtml(route.params.edit)}">删除</button>` : `<button class="primary-button" data-save-account="">保存账户</button>`, bottomActionClass: editing ? "split" : "" });
 }
 
 function accountForm(id) {
   const account = store.state.accounts.find((item) => item.id === id) || { id: "", name: "", balance: 0, color: "#009b8f", icon: "账", isDefault: false };
-  return `<section class="card"><h2 class="section-title">${id ? "编辑账户" : "新增账户"}</h2><div class="field"><label>账户名称</label><input id="accountName" value="${account.name}" placeholder="例如 招商银行卡" /></div><div class="field"><label>余额</label><input id="accountBalance" inputmode="decimal" value="${account.balance}" /></div><div class="field"><label>图标</label><input id="accountIcon" value="${account.icon}" /></div>${colorPicker("accountColor", account.color)}<label class="row" style="margin-bottom:16px"><input id="accountDefault" type="checkbox" ${account.isDefault ? "checked" : ""}/> 设为默认账户</label></section>`;
+  return `<section class="card"><h2 class="section-title">${id ? "编辑账户" : "新增账户"}</h2><div class="field"><label>账户名称</label><input id="accountName" value="${escapeHtml(account.name)}" placeholder="例如 招商银行卡" /></div><div class="field"><label>余额</label><input id="accountBalance" inputmode="decimal" value="${Number(account.balance || 0)}" /></div><div class="field"><label>图标</label><input id="accountIcon" value="${escapeHtml(account.icon || "账")}" /></div>${colorPicker("accountColor", account.color)}<label class="row" style="margin-bottom:16px"><input id="accountDefault" type="checkbox" ${account.isDefault ? "checked" : ""}/> 设为默认账户</label></section>`;
 }
 
 function colorPicker(fieldId, current) {
-  const value = current || COLOR_SWATCHES[0];
-  return `<div class="field color-field"><label>颜色</label><input id="${fieldId}" type="hidden" value="${value}" /><div class="color-swatches">${COLOR_SWATCHES.map((color) => `<button class="color-swatch ${color.toLowerCase() === value.toLowerCase() ? "active" : ""}" data-color-choice="${color}" data-color-field="${fieldId}" aria-label="${color}" style="--swatch:${color}"></button>`).join("")}</div></div>`;
+  const value = safeColor(current || COLOR_SWATCHES[0]);
+  return `<div class="field color-field"><label>颜色</label><input id="${escapeHtml(fieldId)}" type="hidden" value="${value}" /><div class="color-swatches">${COLOR_SWATCHES.map((color) => `<button class="color-swatch ${color.toLowerCase() === value.toLowerCase() ? "active" : ""}" data-color-choice="${color}" data-color-field="${escapeHtml(fieldId)}" aria-label="${color}" style="--swatch:${color}"></button>`).join("")}</div></div>`;
 }
 
 function renderSavingPlans() {
   const plan = store.state.savingPlans.find((item) => item.id === route.params.edit) || { id: "", name: "", icon: "标", target: 0, saved: 0, dueDate: "2026-12-31" };
-  return detailShell("存钱计划", `<section class="card"><div class="card-head"><h2 class="section-title">计划列表</h2><button class="secondary-button" data-route="savingPlans">新增</button></div>${savingPlanList(99)}</section><section class="card"><h2 class="section-title">${route.params.edit ? "编辑计划" : "新增计划"}</h2><div class="field"><label>计划名称</label><input id="planName" value="${plan.name}" placeholder="例如 旅行基金" /></div><div class="field"><label>图标</label><input id="planIcon" value="${plan.icon}" /></div><div class="field"><label>目标金额</label><input id="planTarget" inputmode="decimal" value="${plan.target}" /></div><div class="field"><label>已存金额</label><input id="planSaved" inputmode="decimal" value="${plan.saved}" /></div><div class="field"><label>目标日</label><input id="planDue" type="date" value="${plan.dueDate}" /></div></section>`, { bottomAction: `<button class="primary-button" data-save-plan="${plan.id}">保存计划</button>` });
+  return detailShell("存钱计划", `<section class="card"><div class="card-head"><h2 class="section-title">计划列表</h2><button class="secondary-button" data-route="savingPlans">新增</button></div>${savingPlanList(99)}</section><section class="card plan-form-card"><h2 class="section-title">${route.params.edit ? "编辑计划" : "新增计划"}</h2><div class="field"><label>计划名称</label><input id="planName" value="${escapeHtml(plan.name)}" placeholder="例如 旅行基金" /></div><div class="field"><label>图标</label><input id="planIcon" value="${escapeHtml(plan.icon || "标")}" /></div><div class="field"><label>目标金额</label><input id="planTarget" inputmode="decimal" value="${Number(plan.target || 0)}" /></div><div class="field"><label>已存金额</label><input id="planSaved" inputmode="decimal" value="${Number(plan.saved || 0)}" /></div><div class="field"><label>目标日</label><input id="planDue" type="date" value="${escapeHtml(plan.dueDate || "2026-12-31")}" /></div></section>`, { bottomAction: `<button class="primary-button" data-save-plan="${escapeHtml(plan.id)}">保存计划</button>` });
 }
 
 function renderCategoriesManage() {
   const type = route.params.type || "expense";
   const category = store.state.categories.find((item) => item.id === route.params.edit) || { id: "", type, name: "", color: type === "expense" ? "#ff9d1b" : "#009b8f", icon: type === "expense" ? "类" : "收" };
-  return detailShell("分类管理", `<section class="card"><div class="segmented"><button class="${type === "expense" ? "active" : ""}" data-category-tab="expense">支出</button><button class="${type === "income" ? "active" : ""}" data-category-tab="income">收入</button></div><div class="bar-list" style="margin-top:14px">${store.state.categories.filter((item) => item.type === type).map((item) => `<button class="select-card" data-edit-category="${item.id}"><span class="icon-bubble" style="background:${item.color}">${item.icon}</span><strong>${item.name}</strong></button>`).join("")}</div></section><section class="card"><h2 class="section-title">${category.id ? "编辑分类" : "新增分类"}</h2><div class="field"><label>分类名称</label><input id="categoryName" value="${category.name}" /></div><div class="field"><label>图标</label><input id="categoryIcon" value="${category.icon}" /></div>${colorPicker("categoryColor", category.color)}</section>`, { bottomAction: category.id ? `<button class="primary-button" data-save-category="${category.id}">保存分类</button><button class="secondary-button" data-delete-category="${category.id}">删除</button>` : `<button class="primary-button" data-save-category="">保存分类</button>`, bottomActionClass: category.id ? "split" : "" });
+  return detailShell("分类管理", `<section class="card"><div class="segmented"><button class="${type === "expense" ? "active" : ""}" data-category-tab="expense">支出</button><button class="${type === "income" ? "active" : ""}" data-category-tab="income">收入</button></div><div class="bar-list" style="margin-top:14px">${store.state.categories.filter((item) => item.type === type).map((item) => `<button class="select-card" data-edit-category="${escapeHtml(item.id)}"><span class="icon-bubble" style="background:${safeColor(item.color)}">${escapeHtml(item.icon || "类")}</span><strong>${escapeHtml(item.name || "未分类")}</strong></button>`).join("")}</div></section><section class="card"><h2 class="section-title">${category.id ? "编辑分类" : "新增分类"}</h2><div class="field"><label>分类名称</label><input id="categoryName" value="${escapeHtml(category.name)}" /></div><div class="field"><label>图标</label><input id="categoryIcon" value="${escapeHtml(category.icon || "类")}" /></div>${colorPicker("categoryColor", category.color)}</section>`, { bottomAction: category.id ? `<button class="primary-button" data-save-category="${escapeHtml(category.id)}">保存分类</button><button class="secondary-button" data-delete-category="${escapeHtml(category.id)}">删除</button>` : `<button class="primary-button" data-save-category="">保存分类</button>`, bottomActionClass: category.id ? "split" : "" });
 }
 
 function renderExport() {
-  return detailShell("数据导出", `<section class="card"><h2 class="section-title">导出范围</h2><div class="field"><label>开始日期</label><input id="exportStart" type="date" value="${selectedMonth()}-01" /></div><div class="field"><label>结束日期</label><input id="exportEnd" type="date" value="${selectedMonth()}-${String(monthInfo().days).padStart(2, "0")}" /></div><p class="muted">会在浏览器中生成当前账号数据 CSV。</p></section>`, { bottomAction: `<button class="primary-button" data-export-csv>导出 CSV</button>` });
+  return detailShell("备份导出", `<section class="card"><h2 class="section-title">表格导出</h2><div class="field"><label>开始日期</label><input id="exportStart" type="date" value="${selectedMonth()}-01" /></div><div class="field"><label>结束日期</label><input id="exportEnd" type="date" value="${selectedMonth()}-${String(monthInfo().days).padStart(2, "0")}" /></div><p class="muted">CSV 适合用 Excel 查看，不适合完整恢复。</p><button class="secondary-button" style="width:100%" data-export-csv>导出 CSV</button></section><section class="card"><h2 class="section-title">完整备份</h2><p class="muted">JSON 会包含账户、分类、流水、预算和存钱计划，适合换设备前保存。</p><div class="grid-2"><button class="primary-button" data-export-json>导出备份</button><button class="secondary-button" style="height:54px" data-import-json>导入备份</button></div>${isLocalMode() ? "" : `<p class="muted" style="margin-top:12px">云端账号暂不支持直接导入本地备份，请先使用本地模式恢复。</p>`}</section>`);
 }
 
 function renderTheme() {
@@ -1265,7 +1550,7 @@ function renderTheme() {
 
 function renderProfile() {
   const { profile } = store.state;
-  return detailShell("个人资料", `<section class="card"><div class="field"><label>头像</label><input id="profileAvatar" value="${profile.avatar}" /></div><div class="field"><label>昵称</label><input id="profileName" value="${profile.name}" /></div><div class="field"><label>签名</label><textarea id="profileBio" rows="3">${profile.bio}</textarea></div></section>`, { bottomAction: `<button class="primary-button" data-save-profile>保存资料</button>` });
+  return detailShell("个人资料", `<section class="card"><div class="field"><label>头像</label><input id="profileAvatar" value="${escapeHtml(profile.avatar || "人")}" /></div><div class="field"><label>昵称</label><input id="profileName" value="${escapeHtml(profile.name || "小明")}" /></div><div class="field"><label>签名</label><textarea id="profileBio" rows="3">${escapeHtml(profile.bio || "")}</textarea></div></section>`, { bottomAction: `<button class="primary-button" data-save-profile>保存资料</button>` });
 }
 
 function detailShell(title, body, options = {}) {
@@ -1297,12 +1582,17 @@ const renderers = {
 };
 
 function navigate(name, params = {}) {
+  if (name === "entry" && !params.edit && draft.editingId) {
+    draft = { type: draft.type || "expense", accountId: draft.accountId || "", categoryId: draft.categoryId || "", amount: "", note: "" };
+    syncDraftDefaults();
+  }
   route = { name, params };
   render();
   window.scrollTo({ top: 0, behavior: "instant" });
 }
 
 function goBack() {
+  if (route.name === "entry" && route.params.edit) return navigate("transactionDetail", { id: route.params.edit });
   if (route.name === "period") return navigate(route.params.returnTo || "home");
   if (route.name === "transactionDetail") return navigate("transactions");
   if (["budget", "accounts", "savingPlans"].includes(route.name)) return navigate("ledger");
@@ -1359,6 +1649,13 @@ function bindEvents() {
         draft.categoryId = store.state.categories.find((item) => item.type === draft.type)?.id || "";
         return render();
       }
+      const quickAmount = event.target.closest("[data-quick-amount]");
+      if (quickAmount) {
+        const input = document.querySelector("#entryAmount");
+        if (input) input.value = quickAmount.dataset.quickAmount;
+        draft.amount = quickAmount.dataset.quickAmount;
+        return;
+      }
       const accountSelect = event.target.closest("[data-select-account]");
       if (accountSelect) {
         draft.accountId = accountSelect.dataset.selectAccount;
@@ -1372,9 +1669,14 @@ function bindEvents() {
       if (event.target.closest("[data-auth-login]")) return authLogin(false);
       if (event.target.closest("[data-auth-signup]")) return authLogin(true);
       if (event.target.closest("[data-auth-offline]")) return authOffline();
+      const passwordToggle = event.target.closest("[data-toggle-password]");
+      if (passwordToggle) return togglePasswordVisibility(passwordToggle);
+      if (event.target.closest("[data-auth-switch]")) return authSwitch();
       if (event.target.closest("[data-auth-logout]")) return authLogout();
       const deleteTx = event.target.closest("[data-delete-transaction]");
       if (deleteTx) return deleteTransaction(deleteTx.dataset.deleteTransaction);
+      const editTx = event.target.closest("[data-edit-transaction]");
+      if (editTx) return editTransaction(editTx.dataset.editTransaction);
       if (event.target.closest("[data-save-entry]")) return saveEntry();
       if (event.target.closest("[data-save-budget]")) return saveBudget();
       const savePeriodButton = event.target.closest("[data-save-period]");
@@ -1402,6 +1704,9 @@ function bindEvents() {
       const deleteCategory = event.target.closest("[data-delete-category]");
       if (deleteCategory) return deleteCategoryData(deleteCategory.dataset.deleteCategory);
       if (event.target.closest("[data-export-csv]")) return exportCsv();
+      if (event.target.closest("[data-export-json]")) return exportJson();
+      if (event.target.closest("[data-import-json]")) return importJson();
+      if (event.target.closest("[data-sync-retry]")) return retrySync();
       const colorChoice = event.target.closest("[data-color-choice]");
       if (colorChoice) return selectColor(colorChoice);
       const theme = event.target.closest("[data-theme]");
@@ -1425,12 +1730,21 @@ function bindEvents() {
       navigate("transactions", { type: route.params.type || "all", category: route.params.category || "all", query: textValue("#searchTx") });
     }
   });
+
+  app.addEventListener("input", (event) => {
+    if (route.name !== "entry") return;
+    if (event.target.id === "entryAmount") draft.amount = event.target.value;
+    if (event.target.id === "entryNote") draft.note = event.target.value;
+    if (event.target.id === "entryDate") draft.date = event.target.value;
+    if (event.target.id === "entryTime") draft.time = event.target.value;
+  });
 }
 
 async function authLogin(isSignup) {
   const email = textValue("#authEmail");
   const password = textValue("#authPassword");
   if (!email || !password) return showToast("请输入邮箱和密码");
+  if (!isValidEmail(email)) return showToast("邮箱格式不正确，请输入完整邮箱");
   if (!supabaseClient) {
     const normalizedEmail = email.toLowerCase();
     const users = readLocalUsers();
@@ -1475,12 +1789,39 @@ async function authLogin(isSignup) {
 }
 
 async function authLogout() {
-  if (supabaseClient) await supabaseClient.auth.signOut();
+  if (supabaseClient) {
+    try {
+      await supabaseClient.auth.signOut();
+    } catch (error) {
+      console.error(error);
+    }
+  }
   localStorage.removeItem(LOCAL_SESSION_KEY);
   clearSupabaseSessionBackup();
   session = null;
   localStorage.removeItem(CACHE_KEY);
   store.state = fallbackState;
+  navigate("login");
+}
+
+function togglePasswordVisibility(button) {
+  const input = document.querySelector("#authPassword");
+  if (!input) return;
+  const shouldShow = input.type === "password";
+  input.type = shouldShow ? "text" : "password";
+  button.textContent = shouldShow ? "隐藏" : "显示";
+  button.setAttribute("aria-label", shouldShow ? "隐藏密码" : "显示密码");
+  button.setAttribute("aria-pressed", String(shouldShow));
+  input.focus({ preventScroll: true });
+}
+
+function authSwitch() {
+  if (isLocalMode() && session?.user?.email) store.cache();
+  localStorage.removeItem(LOCAL_SESSION_KEY);
+  localStorage.removeItem(OFFLINE_EMAIL_KEY);
+  session = null;
+  syncStatus = { mode: "unknown", lastSyncedAt: null, error: "", counts: null };
+  showToast("账本已保留，可重新登录");
   navigate("login");
 }
 
@@ -1494,6 +1835,22 @@ async function deleteTransaction(id) {
   if (!deleted) return showToast("记录不存在或已删除");
   showToast("记录已删除");
   navigate("transactions");
+}
+
+function editTransaction(id) {
+  const tx = store.state.transactions.find((item) => item.id === id);
+  if (!tx) return showToast("记录不存在或已删除");
+  draft = {
+    editingId: id,
+    type: tx.type,
+    accountId: tx.accountId,
+    categoryId: tx.categoryId,
+    amount: String(tx.amount),
+    note: tx.note || "",
+    date: tx.date,
+    time: tx.time || currentTimeValue()
+  };
+  navigate("entry", { edit: id });
 }
 
 async function cleanupDemoData() {
@@ -1527,10 +1884,12 @@ async function cleanupDemoData() {
 }
 
 async function saveEntry() {
-  const amount = numberValue("#entryAmount");
-  if (!amount) return showToast("请输入金额");
+  const amount = nonNegativeNumber(numberValue("#entryAmount"));
+  if (amount <= 0) return showToast("请输入大于 0 的金额");
   const category = store.state.categories.find((item) => item.id === draft.categoryId);
-  await store.addTransaction({
+  if (!category) return showToast("请先选择或新增分类");
+  if (!store.state.accounts.some((item) => item.id === draft.accountId)) return showToast("请先选择或新增账户");
+  const nextTransaction = {
     type: draft.type,
     amount,
     title: textValue("#entryNote") || category?.name || "记账",
@@ -1539,7 +1898,21 @@ async function saveEntry() {
     date: document.querySelector("#entryDate").value || todayDateValue(),
     time: document.querySelector("#entryTime").value || currentTimeValue(),
     note: textValue("#entryNote")
-  });
+  };
+  if (draft.editingId) {
+    const updated = await store.updateTransaction(draft.editingId, nextTransaction);
+    if (!updated) return showToast("记录不存在或已删除");
+    const updatedId = draft.editingId;
+    draft = { type: nextTransaction.type, accountId: nextTransaction.accountId, categoryId: nextTransaction.categoryId, amount: "", note: "" };
+    showToast("记录已更新");
+    navigate("transactionDetail", { id: updatedId });
+    return;
+  }
+  await store.addTransaction(nextTransaction);
+  draft.amount = "";
+  draft.note = "";
+  draft.date = "";
+  draft.time = "";
   showToast("已保存一笔");
   navigate("home");
 }
@@ -1554,20 +1927,21 @@ async function savePeriod(returnTo = "home") {
 async function saveBudget() {
   const categoryBudgets = {};
   document.querySelectorAll(".categoryBudget").forEach((input) => {
-    categoryBudgets[input.dataset.id] = Number(input.value || 0);
+    const amount = nonNegativeNumber(input.value);
+    if (amount > 0) categoryBudgets[input.dataset.id] = amount;
   });
-  await store.saveBudget(numberValue("#totalBudget"), categoryBudgets);
+  await store.saveBudget(nonNegativeNumber(numberValue("#totalBudget")), categoryBudgets);
   showToast("预算已保存");
   navigate("ledger");
 }
 
 async function saveAccountData(id) {
   await store.upsertAccount({
-    id: id || `a${Date.now()}`,
+    id: id || newId("a"),
     name: textValue("#accountName") || "新账户",
     balance: numberValue("#accountBalance"),
-    color: textValue("#accountColor") || "#009b8f",
-    icon: textValue("#accountIcon") || "账",
+    color: safeColor(textValue("#accountColor")),
+    icon: shortSymbol(textValue("#accountIcon"), "账"),
     isDefault: document.querySelector("#accountDefault").checked
   });
   showToast("账户已保存");
@@ -1597,11 +1971,11 @@ async function deleteAccountData(id) {
 
 async function savePlanData(id) {
   await store.upsertSavingPlan({
-    id: id || `sp${Date.now()}`,
+    id: id || newId("sp"),
     name: textValue("#planName") || "新计划",
-    icon: textValue("#planIcon") || "标",
-    target: numberValue("#planTarget"),
-    saved: numberValue("#planSaved"),
+    icon: shortSymbol(textValue("#planIcon"), "标"),
+    target: nonNegativeNumber(numberValue("#planTarget")),
+    saved: nonNegativeNumber(numberValue("#planSaved")),
     dueDate: document.querySelector("#planDue").value || "2026-12-31"
   });
   showToast("计划已保存");
@@ -1611,11 +1985,11 @@ async function savePlanData(id) {
 async function saveCategoryData(id) {
   const type = route.params.type || "expense";
   await store.upsertCategory({
-    id: id || `c${Date.now()}`,
+    id: id || newId("c"),
     type,
     name: textValue("#categoryName") || "新分类",
-    color: textValue("#categoryColor") || (type === "expense" ? "#ff9d1b" : "#009b8f"),
-    icon: textValue("#categoryIcon") || "类"
+    color: safeColor(textValue("#categoryColor"), type === "expense" ? "#ff9d1b" : "#009b8f"),
+    icon: shortSymbol(textValue("#categoryIcon"), "类")
   });
   showToast("分类已保存");
   navigate("categoriesManage", { type });
@@ -1632,7 +2006,7 @@ async function deleteCategoryData(id) {
 
 async function saveProfile() {
   await store.saveProfile({
-    avatar: textValue("#profileAvatar") || "人",
+    avatar: shortSymbol(textValue("#profileAvatar"), "人"),
     name: textValue("#profileName") || "小明",
     bio: textValue("#profileBio") || "记录每一笔，掌控每一天"
   });
@@ -1641,8 +2015,8 @@ async function saveProfile() {
 }
 
 function exportCsv() {
-  const start = document.querySelector("#exportStart").value;
-  const end = document.querySelector("#exportEnd").value;
+  const start = document.querySelector("#exportStart").value || `${selectedMonth()}-01`;
+  const end = document.querySelector("#exportEnd").value || `${selectedMonth()}-${String(monthInfo().days).padStart(2, "0")}`;
   const rows = store.state.transactions
     .filter((tx) => tx.date >= start && tx.date <= end)
     .map((tx) => [tx.date, tx.time || "09:41", tx.type, tx.title, txCategory(tx).name, txAccount(tx).name, tx.amount, tx.note]);
@@ -1650,13 +2024,74 @@ function exportCsv() {
     .map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(","))
     .join("\n");
   const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
+  downloadBlob(blob, `轻账本-${start}-${end}.csv`);
+  showToast("CSV 已生成");
+}
+
+function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `轻账本-${start}-${end}.csv`;
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
-  showToast("CSV 已生成");
+}
+
+function exportJson() {
+  const payload = {
+    app: "ledger-pwa",
+    version: APP_VERSION,
+    exportedAt: new Date().toISOString(),
+    state: normalizeLedgerState(store.state)
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  downloadBlob(blob, `轻账本备份-${todayDateValue()}.json`);
+  showToast("备份已生成");
+}
+
+function validateBackupPayload(payload) {
+  const state = payload?.state || payload;
+  if (!state || !Array.isArray(state.accounts) || !Array.isArray(state.categories) || !Array.isArray(state.transactions)) {
+    throw new Error("备份文件格式不正确");
+  }
+  return normalizeLedgerState(state);
+}
+
+async function importJson() {
+  if (!isLocalMode()) return showToast("云端账号暂不支持直接导入备份");
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "application/json,.json";
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const nextState = validateBackupPayload(JSON.parse(text));
+      if (!window.confirm("导入后会覆盖当前本地账本，确定继续吗？")) return;
+      await store.replaceLocalState(nextState);
+      showToast("备份已导入");
+      navigate("home");
+    } catch (error) {
+      console.error(error);
+      showToast(translateError(error));
+    }
+  });
+  input.click();
+}
+
+async function retrySync() {
+  if (!session) return showToast("请先登录");
+  try {
+    await store.load();
+    showToast(isLocalMode() ? "本地数据已刷新" : "云端同步成功");
+    render();
+  } catch (error) {
+    console.error(error);
+    syncStatus = { mode: "error", lastSyncedAt: syncStatus.lastSyncedAt, error: translateError(error), counts: syncStatus.counts };
+    showToast(translateError(error));
+    render();
+  }
 }
 
 async function boot() {
@@ -1671,6 +2106,8 @@ async function boot() {
       session = localSessionFromEmail(localEmail);
       await store.load();
       navigate("home");
+    } else if (hasCachedLedgerData() || localStorage.getItem(OFFLINE_EMAIL_KEY) || localEmail) {
+      enterOfflineMode("已使用本地缓存打开");
     } else {
       navigate("login");
     }

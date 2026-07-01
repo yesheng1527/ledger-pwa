@@ -135,10 +135,10 @@ begin
 
   insert into public.accounts(id, user_id, name, balance, color, icon, is_default)
   values
-    ($10.00, '#11c95f', '微', true),
-    ($10.00, '#3487ff', '支', false),
-    ($10.00, '#e51b2a', '招', false),
-    ($10.00, '#ff9d00', '现', false)
+    ('wechat', target_user, '微信钱包', 0.00, '#11c95f', '微', true),
+    ('alipay', target_user, '支付宝账户', 0.00, '#3487ff', '支', false),
+    ('cmb', target_user, '招商银行储蓄卡', 0.00, '#e51b2a', '招', false),
+    ('cash', target_user, '现金', 0.00, '#ff9d00', '现', false)
   on conflict (user_id, id) do nothing;
 
   insert into public.categories(id, user_id, type, name, color, icon)
