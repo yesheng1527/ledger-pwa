@@ -4,7 +4,7 @@ const LOCAL_SESSION_KEY = "ledger-pwa-local-session-v1";
 const OFFLINE_EMAIL_KEY = "ledger-pwa-offline-email";
 const SUPABASE_STORAGE_KEY = "ledger-pwa-supabase-session";
 const SUPABASE_SESSION_BACKUP_KEY = "ledger-pwa-supabase-session-backup";
-const APP_VERSION = "33";
+const APP_VERSION = "34";
 const DEMO_TRANSACTION_IDS = new Set(["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10"]);
 
 clearLegacyDemoBills();
@@ -23,27 +23,28 @@ const fallbackState = {
   savingPlans: []
 };
 
+function normalizeLedgerState(state) {
+  const fallback = seedLocalState();
+  const normalized = { ...fallback, ...(state || {}) };
+  normalized.accounts = (normalized.accounts || []).length ? normalized.accounts : defaultAccounts();
+  normalized.categories = (normalized.categories || []).length ? normalized.categories : defaultCategories();
+  normalized.transactions = normalized.transactions || [];
+  normalized.budgets = normalized.budgets || { total: 0, categories: {} };
+  normalized.budgets.categories = normalized.budgets.categories || {};
+  normalized.savingPlans = normalized.savingPlans || [];
+  if (!normalized.accounts.some((account) => account.isDefault) && normalized.accounts[0]) {
+    normalized.accounts = normalized.accounts.map((account, index) => ({ ...account, isDefault: index === 0 }));
+  }
+  return normalized;
+}
+
 function seedLocalState() {
   return {
     theme: "teal",
     period: { month: "2024-06" },
     profile: { name: "小明", bio: "记录每一笔，掌控每一天", avatar: "人" },
-    accounts: [
-      { id: "wechat", name: "微信钱包", balance: 0, color: "#11c95f", icon: "微", isDefault: true },
-      { id: "alipay", name: "支付宝账户", balance: 0, color: "#3487ff", icon: "支", isDefault: false },
-      { id: "cmb", name: "招商银行储蓄卡", balance: 0, color: "#e51b2a", icon: "招", isDefault: false },
-      { id: "cash", name: "现金", balance: 0, color: "#ff9d00", icon: "现", isDefault: false }
-    ],
-    categories: [
-      { id: "food", type: "expense", name: "餐饮美食", color: "#ff9d1b", icon: "食" },
-      { id: "transport", type: "expense", name: "交通出行", color: "#4d86f7", icon: "车" },
-      { id: "shopping", type: "expense", name: "购物消费", color: "#27be72", icon: "购" },
-      { id: "home", type: "expense", name: "居家生活", color: "#8b5be8", icon: "家" },
-      { id: "fun", type: "expense", name: "休闲娱乐", color: "#ff5c72", icon: "乐" },
-      { id: "network", type: "expense", name: "通讯网络", color: "#ff7a1a", icon: "网" },
-      { id: "salary", type: "income", name: "工资收入", color: "#009b8f", icon: "工" },
-      { id: "bonus", type: "income", name: "奖金红包", color: "#34c759", icon: "奖" }
-    ],
+    accounts: defaultAccounts(),
+    categories: defaultCategories(),
     transactions: [],
     budgets: { total: 0, categories: {} },
     savingPlans: []
@@ -78,6 +79,28 @@ let session = null;
 let draft = { type: "expense", accountId: "", categoryId: "" };
 let syncStatus = { mode: "unknown", lastSyncedAt: null, error: "", counts: null };
 
+function defaultAccounts() {
+  return [
+    { id: "wechat", name: "微信钱包", balance: 0, color: "#11c95f", icon: "微", isDefault: true },
+    { id: "alipay", name: "支付宝账户", balance: 0, color: "#3487ff", icon: "支", isDefault: false },
+    { id: "cmb", name: "招商银行储蓄卡", balance: 0, color: "#e51b2a", icon: "招", isDefault: false },
+    { id: "cash", name: "现金", balance: 0, color: "#ff9d00", icon: "现", isDefault: false }
+  ];
+}
+
+function defaultCategories() {
+  return [
+    { id: "food", type: "expense", name: "餐饮美食", color: "#ff9d1b", icon: "食" },
+    { id: "transport", type: "expense", name: "交通出行", color: "#4d86f7", icon: "车" },
+    { id: "shopping", type: "expense", name: "购物消费", color: "#27be72", icon: "购" },
+    { id: "home", type: "expense", name: "居家生活", color: "#8b5be8", icon: "家" },
+    { id: "fun", type: "expense", name: "休闲娱乐", color: "#ff5c72", icon: "乐" },
+    { id: "network", type: "expense", name: "通讯网络", color: "#ff7a1a", icon: "网" },
+    { id: "salary", type: "income", name: "工资收入", color: "#009b8f", icon: "工" },
+    { id: "bonus", type: "income", name: "奖金红包", color: "#34c759", icon: "奖" }
+  ];
+}
+
 const store = {
   state: readCache(),
   async load() {
@@ -85,7 +108,7 @@ const store = {
     if (isLocalMode()) {
       const key = localUserDataKey(session.user.email);
       const saved = localStorage.getItem(key);
-      this.state = saved ? { ...seedLocalState(), ...JSON.parse(saved) } : seedLocalState();
+      this.state = normalizeLedgerState(saved ? { ...seedLocalState(), ...JSON.parse(saved) } : seedLocalState());
       syncStatus = { mode: "local", lastSyncedAt: null, error: "", counts: null };
       this.cache();
       syncDraftDefaults();
@@ -97,7 +120,7 @@ const store = {
       await this.ensureDefaults(userId);
       data = await this.fetchRemoteState(userId);
     }
-    this.state = data.state;
+    this.state = normalizeLedgerState(data.state);
     syncStatus = {
       mode: "cloud",
       lastSyncedAt: new Date().toLocaleString("zh-CN"),
@@ -154,7 +177,7 @@ const store = {
 
     return {
       needsSeed,
-      state: {
+      state: normalizeLedgerState({
         theme: profileRes.data?.theme || fallback.theme,
         period: { month: profileRes.data?.current_month || fallback.period.month },
         profile: {
@@ -170,7 +193,7 @@ const store = {
           categories: categoryBudgetMap
         },
         savingPlans: (plansRes.data || []).map(mapSavingPlan)
-      }
+      })
     };
   },
   cache() {
@@ -605,32 +628,32 @@ async function diagnoseSupabase() {
 
 function readCache() {
   try {
-    return { ...fallbackState, ...JSON.parse(localStorage.getItem(CACHE_KEY) || "{}") };
+    return normalizeLedgerState({ ...fallbackState, ...JSON.parse(localStorage.getItem(CACHE_KEY) || "{}") });
   } catch {
-    return fallbackState;
+    return normalizeLedgerState(fallbackState);
   }
 }
 
 function cleanProductionState(state) {
   if (!state) return state;
-  return {
+  return normalizeLedgerState({
     ...state,
     transactions: (state.transactions || []).filter((tx) => !DEMO_TRANSACTION_IDS.has(tx.id)),
     accounts: (state.accounts || []).map((account) => ({ ...account, balance: 0 })),
     budgets: { total: 0, categories: {} },
     savingPlans: []
-  };
+  });
 }
 
 function resetUserLedgerState(state) {
   if (!state) return state;
-  return {
+  return normalizeLedgerState({
     ...state,
     transactions: [],
     accounts: (state.accounts || []).map((account) => ({ ...account, balance: 0 })),
     budgets: { total: 0, categories: {} },
     savingPlans: []
-  };
+  });
 }
 
 function clearLegacyDemoBills() {
@@ -1044,13 +1067,16 @@ function settingRow(icon, label, target) {
 }
 
 function renderEntry() {
+  store.state = normalizeLedgerState(store.state);
   syncDraftDefaults();
   const categories = store.state.categories.filter((item) => item.type === draft.type);
+  const categoryOptions = categories.length ? categories : defaultCategories().filter((item) => item.type === draft.type);
+  const accountOptions = store.state.accounts.length ? store.state.accounts : defaultAccounts();
   return shell(`
     ${backHead("记一笔")}
     <section class="card entry-form-card"><div class="segmented"><button class="${draft.type === "expense" ? "active" : ""}" data-entry-type="expense">支出</button><button class="${draft.type === "income" ? "active" : ""}" data-entry-type="income">收入</button></div><div class="entry-amount-block"><label>金额</label><div class="amount-input"><span>¥</span><input id="entryAmount" inputmode="decimal" placeholder="0.00" /></div></div><div class="entry-date-time"><div class="field"><label>日期</label><input id="entryDate" type="date" value="${selectedMonth()}-${String(monthInfo().days).padStart(2, "0")}" /></div><div class="field"><label>时间</label><input id="entryTime" type="time" value="${currentTimeValue()}" /></div></div><div class="field entry-note-field"><label>备注</label><input id="entryNote" placeholder="写点什么..." /></div></section>
-    <section class="card payment-card"><h2 class="section-title">支付渠道</h2><div class="grid-2">${store.state.accounts.map((account) => `<button class="select-card ${account.id === draft.accountId ? "active" : ""}" data-select-account="${account.id}"><span class="icon-bubble" style="background:${account.color}">${account.icon}</span><span><strong>${account.name}</strong><br><span class="muted">余额 ${account.balance.toFixed(2)}</span></span>${account.id === draft.accountId ? `<span class="check-dot">✓</span>` : ""}</button>`).join("")}</div></section>
-    <section class="card"><h2 class="section-title">选择分类</h2><div class="grid-3">${categories.map((category) => `<button class="chip-card ${category.id === draft.categoryId ? "active" : ""}" data-select-category="${category.id}"><span class="small-symbol" style="color:${category.color}">${category.icon}</span><span>${category.name}</span></button>`).join("")}</div></section>
+    <section class="card entry-choice-card"><h2 class="section-title">选择分类</h2><div class="entry-choice-scroll">${categoryOptions.map((category) => `<button class="chip-card ${category.id === draft.categoryId ? "active" : ""}" data-select-category="${category.id}"><span class="small-symbol" style="color:${category.color}">${category.icon}</span><span>${category.name}</span></button>`).join("")}</div></section>
+    <section class="card payment-card entry-choice-card"><h2 class="section-title">支付渠道</h2><div class="entry-choice-scroll">${accountOptions.map((account) => `<button class="select-card ${account.id === draft.accountId ? "active" : ""}" data-select-account="${account.id}"><span class="icon-bubble" style="background:${account.color}">${account.icon}</span><span><strong>${account.name}</strong><br><span class="muted">余额 ${Number(account.balance || 0).toFixed(2)}</span></span>${account.id === draft.accountId ? `<span class="check-dot">✓</span>` : ""}</button>`).join("")}</div></section>
   `, "", { hideNav: true, screenClass: "entry-screen", bottomAction: `<button class="primary-button" data-save-entry>保存</button>` });
 }
 
