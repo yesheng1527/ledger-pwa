@@ -6,7 +6,7 @@ create table if not exists public.profiles (
   bio text not null default '记录每一笔，掌控每一天',
   avatar text not null default '人',
   theme text not null default 'teal',
-  current_month text not null default '2024-06',
+  current_month text not null default to_char(current_date, 'YYYY-MM'),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

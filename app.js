@@ -4,7 +4,7 @@ const LOCAL_SESSION_KEY = "ledger-pwa-local-session-v1";
 const OFFLINE_EMAIL_KEY = "ledger-pwa-offline-email";
 const SUPABASE_STORAGE_KEY = "ledger-pwa-supabase-session";
 const SUPABASE_SESSION_BACKUP_KEY = "ledger-pwa-supabase-session-backup";
-const APP_VERSION = "36";
+const APP_VERSION = "38";
 const DEMO_TRANSACTION_IDS = new Set(["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10"]);
 
 clearLegacyDemoBills();
@@ -14,7 +14,7 @@ const toastNode = document.querySelector("#toast");
 
 const fallbackState = {
   theme: "teal",
-  period: { month: "2024-06" },
+  period: { month: currentMonthValue() },
   profile: { name: "小明", bio: "记录每一笔，掌控每一天", avatar: "人" },
   accounts: [],
   categories: [],
@@ -26,6 +26,7 @@ const fallbackState = {
 function normalizeLedgerState(state) {
   const fallback = seedLocalState();
   const normalized = { ...fallback, ...(state || {}) };
+  normalized.period = normalizePeriod(normalized.period);
   normalized.accounts = (normalized.accounts || []).length ? normalized.accounts : defaultAccounts();
   normalized.categories = (normalized.categories || []).length ? normalized.categories : defaultCategories();
   normalized.transactions = normalized.transactions || [];
@@ -41,7 +42,7 @@ function normalizeLedgerState(state) {
 function seedLocalState() {
   return {
     theme: "teal",
-    period: { month: "2024-06" },
+    period: { month: currentMonthValue() },
     profile: { name: "小明", bio: "记录每一笔，掌控每一天", avatar: "人" },
     accounts: defaultAccounts(),
     categories: defaultCategories(),
@@ -78,6 +79,7 @@ let route = { name: "boot", params: {} };
 let session = null;
 let draft = { type: "expense", accountId: "", categoryId: "" };
 let syncStatus = { mode: "unknown", lastSyncedAt: null, error: "", counts: null };
+const COLOR_SWATCHES = ["#009b8f", "#11c95f", "#3487ff", "#e51b2a", "#ff9d00", "#ff9d1b", "#8b5be8", "#ff5c72", "#34c759", "#4d86f7"];
 
 function defaultAccounts() {
   return [
@@ -121,6 +123,7 @@ const store = {
       data = await this.fetchRemoteState(userId);
     }
     this.state = normalizeLedgerState(data.state);
+    await this.syncCurrentMonthIfNeeded(data.state.period?.month);
     syncStatus = {
       mode: "cloud",
       lastSyncedAt: new Date().toLocaleString("zh-CN"),
@@ -221,6 +224,12 @@ const store = {
     await supabaseClient.from("profiles").update({ current_month: month }).eq("user_id", session.user.id);
     this.cache();
   },
+  async syncCurrentMonthIfNeeded(remoteMonth) {
+    const normalizedMonth = selectedMonth();
+    if (isLocalMode() || remoteMonth === normalizedMonth) return;
+    const res = await supabaseClient.from("profiles").update({ current_month: normalizedMonth }).eq("user_id", session.user.id);
+    throwIfError(res);
+  },
   async addTransaction(transaction) {
     const id = `t${Date.now()}`;
     if (isLocalMode()) {
@@ -316,6 +325,37 @@ const store = {
     throwIfError(res);
     upsertLocal(this.state.accounts, account);
     this.cache();
+  },
+  async deleteAccount(id) {
+    if (this.state.accounts.length <= 1) return "last";
+    const used = this.state.transactions.some((tx) => tx.accountId === id);
+    if (used) return "used";
+    const account = this.state.accounts.find((item) => item.id === id);
+    if (!account) return "missing";
+    const remaining = this.state.accounts.filter((item) => item.id !== id);
+    const nextDefault = remaining.some((item) => item.isDefault)
+      ? remaining
+      : remaining.map((item, index) => ({ ...item, isDefault: index === 0 }));
+    if (isLocalMode()) {
+      this.state.accounts = nextDefault;
+      this.cache();
+      return true;
+    }
+    const deleteRes = await supabaseClient.from("accounts").delete().eq("user_id", session.user.id).eq("id", id);
+    throwIfError(deleteRes);
+    if (account.isDefault && nextDefault[0]) {
+      const clearRes = await supabaseClient.from("accounts").update({ is_default: false }).eq("user_id", session.user.id);
+      throwIfError(clearRes);
+      const defaultRes = await supabaseClient
+        .from("accounts")
+        .update({ is_default: true })
+        .eq("user_id", session.user.id)
+        .eq("id", nextDefault[0].id);
+      throwIfError(defaultRes);
+    }
+    this.state.accounts = nextDefault;
+    this.cache();
+    return true;
   },
   async upsertSavingPlan(plan) {
     if (isLocalMode()) {
@@ -703,8 +743,23 @@ function signedMoney(tx) {
   return `${tx.type === "income" ? "+" : "-"}${money(tx.amount)}`;
 }
 
+function currentMonthValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function normalizeMonthValue(month) {
+  const value = String(month || "");
+  if (/^\d{4}-\d{2}$/.test(value) && value !== "2024-06") return value;
+  return currentMonthValue();
+}
+
+function normalizePeriod(period) {
+  return { ...(period || {}), month: normalizeMonthValue(period?.month) };
+}
+
 function selectedMonth() {
-  return store.state.period?.month || "2024-06";
+  return normalizeMonthValue(store.state.period?.month);
 }
 
 async function setSelectedMonth(month) {
@@ -775,6 +830,11 @@ function formatDate(date) {
 
 function formatDateTime(tx) {
   return `${formatDate(tx.date)} ${tx.time || "09:41"}`;
+}
+
+function todayDateValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function currentTimeValue() {
@@ -1074,7 +1134,7 @@ function renderEntry() {
   const accountOptions = store.state.accounts.length ? store.state.accounts : defaultAccounts();
   return shell(`
     ${backHead("记一笔")}
-    <section class="card entry-form-card"><div class="segmented"><button class="${draft.type === "expense" ? "active" : ""}" data-entry-type="expense">支出</button><button class="${draft.type === "income" ? "active" : ""}" data-entry-type="income">收入</button></div><div class="entry-amount-block"><label>金额</label><div class="amount-input"><span>¥</span><input id="entryAmount" inputmode="decimal" placeholder="0.00" /></div></div><div class="entry-date-time"><div class="field"><label>日期</label><input id="entryDate" type="date" value="${selectedMonth()}-${String(monthInfo().days).padStart(2, "0")}" /></div><div class="field"><label>时间</label><input id="entryTime" type="time" value="${currentTimeValue()}" /></div></div><div class="field entry-note-field"><label>备注</label><input id="entryNote" placeholder="写点什么..." /></div></section>
+    <section class="card entry-form-card"><div class="segmented"><button class="${draft.type === "expense" ? "active" : ""}" data-entry-type="expense">支出</button><button class="${draft.type === "income" ? "active" : ""}" data-entry-type="income">收入</button></div><div class="entry-amount-block"><label>金额</label><div class="amount-input"><span>¥</span><input id="entryAmount" inputmode="decimal" placeholder="0.00" /></div></div><div class="entry-date-time"><div class="field"><label>日期</label><input id="entryDate" type="date" value="${todayDateValue()}" /></div><div class="field"><label>时间</label><input id="entryTime" type="time" value="${currentTimeValue()}" /></div></div><div class="field entry-note-field"><label>备注</label><input id="entryNote" placeholder="写点什么..." /></div></section>
     <section class="card entry-choice-card category-choice-card"><h2 class="section-title">选择分类</h2><div class="entry-choice-scroll">${categoryOptions.map((category) => `<button class="chip-card ${category.id === draft.categoryId ? "active" : ""}" data-select-category="${category.id}"><span class="small-symbol" style="color:${category.color}">${category.icon}</span><span>${category.name}</span></button>`).join("")}</div></section>
     <section class="card payment-card entry-choice-card"><h2 class="section-title">支付渠道</h2><div class="entry-choice-scroll">${accountOptions.map((account) => `<button class="select-card ${account.id === draft.accountId ? "active" : ""}" data-select-account="${account.id}"><span class="icon-bubble" style="background:${account.color}">${account.icon}</span><span><strong>${account.name}</strong><br><span class="muted">余额 ${Number(account.balance || 0).toFixed(2)}</span></span>${account.id === draft.accountId ? `<span class="check-dot">✓</span>` : ""}</button>`).join("")}</div></section>
   `, "", { hideNav: true, screenClass: "entry-screen", bottomAction: `<button class="primary-button" data-save-entry>保存</button>` });
@@ -1094,7 +1154,7 @@ function renderPeriod() {
   const month = route.params.month || selectedMonth();
   const expanded = route.params.expanded === "1";
   const returnTo = route.params.returnTo || "home";
-  const months = Array.from({ length: 48 }, (_, index) => shiftMonth("2023-01", index));
+  const months = Array.from({ length: 48 }, (_, index) => shiftMonth(currentMonthValue(), index - 35));
   return detailShell("选择月份", `<section class="card"><button class="picker-summary" data-toggle-month-picker aria-expanded="${expanded}"><span>统计月份</span><strong data-selected-month="${month}">${monthDisplay(month)}</strong><i class="${expanded ? "up" : ""}" aria-hidden="true"></i></button>${expanded ? `<div class="month-panel">${months.map((item) => `<button class="month-row ${item === month ? "active" : ""}" data-quick-month="${item}"><span>${monthDisplay(item)}</span>${item === month ? "<b>已选</b>" : ""}</button>`).join("")}</div>` : ""}</section>`, { bottomAction: `<button class="primary-button" data-save-period data-return-to="${returnTo}">应用月份</button>` });
 }
 
@@ -1137,12 +1197,18 @@ function renderBudget() {
 }
 
 function renderAccounts() {
-  return detailShell("账户管理", `<section class="card"><div class="card-head"><h2 class="section-title">账户列表</h2><button class="secondary-button" data-add-account>新增</button></div><div class="bar-list">${store.state.accounts.map((account) => `<button class="select-card" data-edit-account="${account.id}"><span class="icon-bubble" style="background:${account.color}">${account.icon}</span><span><strong>${account.name}</strong><br><span class="muted">${money(account.balance)} ${account.isDefault ? "· 默认" : ""}</span></span></button>`).join("")}</div></section>${accountForm(route.params.edit)}`, { bottomAction: `<button class="primary-button" data-save-account="${route.params.edit || ""}">保存账户</button>` });
+  const editing = Boolean(route.params.edit);
+  return detailShell("账户管理", `<section class="card"><div class="card-head"><h2 class="section-title">账户列表</h2><button class="secondary-button" data-add-account>新增</button></div><div class="bar-list">${store.state.accounts.map((account) => `<button class="select-card" data-edit-account="${account.id}"><span class="icon-bubble" style="background:${account.color}">${account.icon}</span><span><strong>${account.name}</strong><br><span class="muted">${money(account.balance)} ${account.isDefault ? "· 默认" : ""}</span></span></button>`).join("")}</div></section>${accountForm(route.params.edit)}`, { bottomAction: editing ? `<button class="primary-button" data-save-account="${route.params.edit}">保存账户</button><button class="secondary-button" data-delete-account="${route.params.edit}">删除</button>` : `<button class="primary-button" data-save-account="">保存账户</button>`, bottomActionClass: editing ? "split" : "" });
 }
 
 function accountForm(id) {
   const account = store.state.accounts.find((item) => item.id === id) || { id: "", name: "", balance: 0, color: "#009b8f", icon: "账", isDefault: false };
-  return `<section class="card"><h2 class="section-title">${id ? "编辑账户" : "新增账户"}</h2><div class="field"><label>账户名称</label><input id="accountName" value="${account.name}" placeholder="例如 招商银行卡" /></div><div class="field"><label>余额</label><input id="accountBalance" inputmode="decimal" value="${account.balance}" /></div><div class="field"><label>图标</label><input id="accountIcon" value="${account.icon}" /></div><div class="field"><label>颜色</label><input id="accountColor" value="${account.color}" /></div><label class="row" style="margin-bottom:16px"><input id="accountDefault" type="checkbox" ${account.isDefault ? "checked" : ""}/> 设为默认账户</label></section>`;
+  return `<section class="card"><h2 class="section-title">${id ? "编辑账户" : "新增账户"}</h2><div class="field"><label>账户名称</label><input id="accountName" value="${account.name}" placeholder="例如 招商银行卡" /></div><div class="field"><label>余额</label><input id="accountBalance" inputmode="decimal" value="${account.balance}" /></div><div class="field"><label>图标</label><input id="accountIcon" value="${account.icon}" /></div>${colorPicker("accountColor", account.color)}<label class="row" style="margin-bottom:16px"><input id="accountDefault" type="checkbox" ${account.isDefault ? "checked" : ""}/> 设为默认账户</label></section>`;
+}
+
+function colorPicker(fieldId, current) {
+  const value = current || COLOR_SWATCHES[0];
+  return `<div class="field color-field"><label>颜色</label><input id="${fieldId}" type="hidden" value="${value}" /><div class="color-swatches">${COLOR_SWATCHES.map((color) => `<button class="color-swatch ${color.toLowerCase() === value.toLowerCase() ? "active" : ""}" data-color-choice="${color}" data-color-field="${fieldId}" aria-label="${color}" style="--swatch:${color}"></button>`).join("")}</div></div>`;
 }
 
 function renderSavingPlans() {
@@ -1153,7 +1219,7 @@ function renderSavingPlans() {
 function renderCategoriesManage() {
   const type = route.params.type || "expense";
   const category = store.state.categories.find((item) => item.id === route.params.edit) || { id: "", type, name: "", color: type === "expense" ? "#ff9d1b" : "#009b8f", icon: type === "expense" ? "类" : "收" };
-  return detailShell("分类管理", `<section class="card"><div class="segmented"><button class="${type === "expense" ? "active" : ""}" data-category-tab="expense">支出</button><button class="${type === "income" ? "active" : ""}" data-category-tab="income">收入</button></div><div class="bar-list" style="margin-top:14px">${store.state.categories.filter((item) => item.type === type).map((item) => `<button class="select-card" data-edit-category="${item.id}"><span class="icon-bubble" style="background:${item.color}">${item.icon}</span><strong>${item.name}</strong></button>`).join("")}</div></section><section class="card"><h2 class="section-title">${category.id ? "编辑分类" : "新增分类"}</h2><div class="field"><label>分类名称</label><input id="categoryName" value="${category.name}" /></div><div class="field"><label>图标</label><input id="categoryIcon" value="${category.icon}" /></div><div class="field"><label>颜色</label><input id="categoryColor" value="${category.color}" /></div></section>`, { bottomAction: category.id ? `<button class="primary-button" data-save-category="${category.id}">保存分类</button><button class="secondary-button" data-delete-category="${category.id}">删除</button>` : `<button class="primary-button" data-save-category="">保存分类</button>`, bottomActionClass: category.id ? "split" : "" });
+  return detailShell("分类管理", `<section class="card"><div class="segmented"><button class="${type === "expense" ? "active" : ""}" data-category-tab="expense">支出</button><button class="${type === "income" ? "active" : ""}" data-category-tab="income">收入</button></div><div class="bar-list" style="margin-top:14px">${store.state.categories.filter((item) => item.type === type).map((item) => `<button class="select-card" data-edit-category="${item.id}"><span class="icon-bubble" style="background:${item.color}">${item.icon}</span><strong>${item.name}</strong></button>`).join("")}</div></section><section class="card"><h2 class="section-title">${category.id ? "编辑分类" : "新增分类"}</h2><div class="field"><label>分类名称</label><input id="categoryName" value="${category.name}" /></div><div class="field"><label>图标</label><input id="categoryIcon" value="${category.icon}" /></div>${colorPicker("categoryColor", category.color)}</section>`, { bottomAction: category.id ? `<button class="primary-button" data-save-category="${category.id}">保存分类</button><button class="secondary-button" data-delete-category="${category.id}">删除</button>` : `<button class="primary-button" data-save-category="">保存分类</button>`, bottomActionClass: category.id ? "split" : "" });
 }
 
 function renderExport() {
@@ -1286,6 +1352,8 @@ function bindEvents() {
       if (event.target.closest("[data-add-account]")) return navigate("accounts");
       const saveAccount = event.target.closest("[data-save-account]");
       if (saveAccount) return saveAccountData(saveAccount.dataset.saveAccount);
+      const deleteAccount = event.target.closest("[data-delete-account]");
+      if (deleteAccount) return deleteAccountData(deleteAccount.dataset.deleteAccount);
       const savePlan = event.target.closest("[data-save-plan]");
       if (savePlan) return savePlanData(savePlan.dataset.savePlan);
       const editPlan = event.target.closest("[data-edit-plan]");
@@ -1302,6 +1370,8 @@ function bindEvents() {
       const deleteCategory = event.target.closest("[data-delete-category]");
       if (deleteCategory) return deleteCategoryData(deleteCategory.dataset.deleteCategory);
       if (event.target.closest("[data-export-csv]")) return exportCsv();
+      const colorChoice = event.target.closest("[data-color-choice]");
+      if (colorChoice) return selectColor(colorChoice);
       const theme = event.target.closest("[data-theme]");
       if (theme) {
         await store.saveTheme(theme.dataset.theme);
@@ -1434,7 +1504,7 @@ async function saveEntry() {
     title: textValue("#entryNote") || category?.name || "记账",
     categoryId: draft.categoryId,
     accountId: draft.accountId,
-    date: document.querySelector("#entryDate").value || `${selectedMonth()}-${String(monthInfo().days).padStart(2, "0")}`,
+    date: document.querySelector("#entryDate").value || todayDateValue(),
     time: document.querySelector("#entryTime").value || currentTimeValue(),
     note: textValue("#entryNote")
   });
@@ -1470,6 +1540,27 @@ async function saveAccountData(id) {
   });
   showToast("账户已保存");
   navigate("accounts");
+}
+
+function selectColor(button) {
+  const input = document.querySelector(`#${button.dataset.colorField}`);
+  if (!input) return;
+  input.value = button.dataset.colorChoice;
+  button.closest(".color-swatches")?.querySelectorAll(".color-swatch").forEach((item) => item.classList.remove("active"));
+  button.classList.add("active");
+}
+
+async function deleteAccountData(id) {
+  if (!window.confirm("确定删除这个账户吗？已有流水的账户不能删除。")) return;
+  const result = await store.deleteAccount(id);
+  if (result === true) {
+    showToast("账户已删除");
+    navigate("accounts");
+    return;
+  }
+  if (result === "used") return showToast("这个账户已有流水，不能删除");
+  if (result === "last") return showToast("至少保留一个账户");
+  showToast("账户不存在或已删除");
 }
 
 async function savePlanData(id) {
