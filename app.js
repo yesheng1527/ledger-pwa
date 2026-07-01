@@ -4,7 +4,7 @@ const LOCAL_SESSION_KEY = "ledger-pwa-local-session-v1";
 const OFFLINE_EMAIL_KEY = "ledger-pwa-offline-email";
 const SUPABASE_STORAGE_KEY = "ledger-pwa-supabase-session";
 const SUPABASE_SESSION_BACKUP_KEY = "ledger-pwa-supabase-session-backup";
-const APP_VERSION = "40";
+const APP_VERSION = "41";
 const DEMO_TRANSACTION_IDS = new Set(["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10"]);
 
 clearLegacyDemoBills();
@@ -853,6 +853,13 @@ function todayDateValue() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
+function selectedCalendarDay(month, daysInMonth) {
+  const requestedDay = Number(route.params.day || 0);
+  if (requestedDay) return Math.min(Math.max(requestedDay, 1), daysInMonth);
+  if (month === currentMonthValue()) return Math.min(new Date().getDate(), daysInMonth);
+  return 1;
+}
+
 function currentTimeValue() {
   const now = new Date();
   return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -1160,7 +1167,7 @@ function renderCalendar() {
   const { year, monthNumber, days: daysInMonth } = monthInfo(month);
   const days = Array.from({ length: daysInMonth }, (_, index) => index + 1);
   const leading = (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7;
-  const selected = Math.min(route.params.day || Math.min(20, daysInMonth), daysInMonth);
+  const selected = selectedCalendarDay(month, daysInMonth);
   const txs = store.state.transactions.filter((tx) => tx.date === `${month}-${String(selected).padStart(2, "0")}`);
   return detailShell("日历视图", `<section class="card"><div class="calendar-head"><button class="secondary-button" data-month-nav="-12">«</button><button class="secondary-button" data-month-nav="-1">‹</button><h2 class="section-title" style="margin:0">${monthDisplay(month)}</h2><button class="secondary-button" data-month-nav="1">›</button><button class="secondary-button" data-month-nav="12">»</button></div><div class="calendar-grid">${["一", "二", "三", "四", "五", "六", "日"].map((day) => `<div class="weekday">${day}</div>`).join("")}${Array.from({ length: leading }, () => `<div></div>`).join("")}${days.map((day) => { const date = `${month}-${String(day).padStart(2, "0")}`; const amount = store.state.transactions.filter((tx) => tx.date === date).reduce((sum, tx) => sum + (tx.type === "income" ? tx.amount : -tx.amount), 0); return `<button class="day-cell ${selected === day ? "active" : ""}" data-calendar-day="${day}"><div class="day-num">${day}</div>${amount ? `<div class="day-sum">${amount > 0 ? "+" : ""}${Math.round(amount)}</div>` : ""}</button>`; }).join("")}</div></section><section class="card"><h2 class="section-title">${monthNumber}月${selected}日流水</h2>${txRows(txs)}</section>`);
 }
