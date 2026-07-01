@@ -1,11 +1,11 @@
-const CACHE_NAME = "ledger-pwa-v52";
+const CACHE_NAME = "ledger-pwa-v53";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=52",
-  "./app.js?v=52",
+  "./styles.css?v=53",
+  "./app.js?v=53",
   "./supabase-config.js",
-  "./manifest.webmanifest?v=52",
+  "./manifest.webmanifest?v=53",
   "./app-icon.svg"
 ];
 

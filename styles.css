@@ -76,6 +76,10 @@ button {
   padding-bottom: 118px;
 }
 
+.fixed-head-screen {
+  padding-top: calc(96px + env(safe-area-inset-top));
+}
+
 .status-bar {
   height: 30px;
   display: flex;
@@ -681,16 +685,32 @@ button {
 }
 
 .top-title {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  width: min(100%, 430px);
   display: grid;
   grid-template-columns: 42px 1fr 42px;
   align-items: center;
-  padding: 22px 0 12px;
+  min-height: 72px;
+  padding: calc(18px + env(safe-area-inset-top)) 18px 12px;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.96), transparent 28%),
+    linear-gradient(150deg, rgba(244, 255, 251, 0.97), rgba(231, 247, 245, 0.97));
+  border-bottom: 1px solid rgba(226, 232, 240, 0.82);
+  backdrop-filter: blur(14px);
 }
 
 .top-title h1 {
   margin: 0;
   text-align: center;
   font-size: 22px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .segmented {
@@ -1045,7 +1065,7 @@ input[type="time"] {
 }
 
 .entry-screen {
-  padding-top: 6px;
+  padding-top: calc(76px + env(safe-area-inset-top));
   padding-bottom: 96px;
 }
 
@@ -1054,7 +1074,9 @@ input[type="time"] {
 }
 
 .entry-screen .top-title {
-  padding: 8px 0 6px;
+  min-height: 58px;
+  padding-top: calc(10px + env(safe-area-inset-top));
+  padding-bottom: 8px;
 }
 
 .entry-screen .top-title h1 {
