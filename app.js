@@ -4,7 +4,7 @@ const LOCAL_SESSION_KEY = "ledger-pwa-local-session-v1";
 const OFFLINE_EMAIL_KEY = "ledger-pwa-offline-email";
 const SUPABASE_STORAGE_KEY = "ledger-pwa-supabase-session";
 const SUPABASE_SESSION_BACKUP_KEY = "ledger-pwa-supabase-session-backup";
-const APP_VERSION = "34";
+const APP_VERSION = "35";
 const DEMO_TRANSACTION_IDS = new Set(["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10"]);
 
 clearLegacyDemoBills();
@@ -1075,7 +1075,7 @@ function renderEntry() {
   return shell(`
     ${backHead("记一笔")}
     <section class="card entry-form-card"><div class="segmented"><button class="${draft.type === "expense" ? "active" : ""}" data-entry-type="expense">支出</button><button class="${draft.type === "income" ? "active" : ""}" data-entry-type="income">收入</button></div><div class="entry-amount-block"><label>金额</label><div class="amount-input"><span>¥</span><input id="entryAmount" inputmode="decimal" placeholder="0.00" /></div></div><div class="entry-date-time"><div class="field"><label>日期</label><input id="entryDate" type="date" value="${selectedMonth()}-${String(monthInfo().days).padStart(2, "0")}" /></div><div class="field"><label>时间</label><input id="entryTime" type="time" value="${currentTimeValue()}" /></div></div><div class="field entry-note-field"><label>备注</label><input id="entryNote" placeholder="写点什么..." /></div></section>
-    <section class="card entry-choice-card"><h2 class="section-title">选择分类</h2><div class="entry-choice-scroll">${categoryOptions.map((category) => `<button class="chip-card ${category.id === draft.categoryId ? "active" : ""}" data-select-category="${category.id}"><span class="small-symbol" style="color:${category.color}">${category.icon}</span><span>${category.name}</span></button>`).join("")}</div></section>
+    <section class="card entry-choice-card category-choice-card"><h2 class="section-title">选择分类</h2><div class="entry-choice-scroll">${categoryOptions.map((category) => `<button class="chip-card ${category.id === draft.categoryId ? "active" : ""}" data-select-category="${category.id}"><span class="small-symbol" style="color:${category.color}">${category.icon}</span><span>${category.name}</span></button>`).join("")}</div></section>
     <section class="card payment-card entry-choice-card"><h2 class="section-title">支付渠道</h2><div class="entry-choice-scroll">${accountOptions.map((account) => `<button class="select-card ${account.id === draft.accountId ? "active" : ""}" data-select-account="${account.id}"><span class="icon-bubble" style="background:${account.color}">${account.icon}</span><span><strong>${account.name}</strong><br><span class="muted">余额 ${Number(account.balance || 0).toFixed(2)}</span></span>${account.id === draft.accountId ? `<span class="check-dot">✓</span>` : ""}</button>`).join("")}</div></section>
   `, "", { hideNav: true, screenClass: "entry-screen", bottomAction: `<button class="primary-button" data-save-entry>保存</button>` });
 }

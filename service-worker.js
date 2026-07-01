@@ -1,4 +1,4 @@
-const CACHE_NAME = "ledger-pwa-v34";
+const CACHE_NAME = "ledger-pwa-v35";
 
 self.addEventListener("install", () => {
   self.skipWaiting();

@@ -917,20 +917,18 @@ button {
 
 .entry-screen .entry-choice-card {
   padding: 12px 14px;
+  overflow: hidden;
 }
 
 .entry-choice-scroll {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 1px 1px 4px;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
+  min-width: 0;
 }
 
-.entry-choice-scroll::-webkit-scrollbar {
-  display: none;
+.payment-card .entry-choice-scroll {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .entry-screen .field {
@@ -1003,9 +1001,9 @@ button {
 
 .entry-screen .select-card,
 .entry-screen .chip-card {
-  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
   min-height: 48px;
-  width: 132px;
   padding: 7px;
   border-radius: 12px;
 }
@@ -1013,7 +1011,6 @@ button {
 .entry-screen .chip-card {
   justify-content: center;
   gap: 7px;
-  width: 104px;
 }
 
 .entry-screen .icon-bubble {
