@@ -4,7 +4,7 @@ const LOCAL_SESSION_KEY = "ledger-pwa-local-session-v1";
 const OFFLINE_EMAIL_KEY = "ledger-pwa-offline-email";
 const SUPABASE_STORAGE_KEY = "ledger-pwa-supabase-session";
 const SUPABASE_SESSION_BACKUP_KEY = "ledger-pwa-supabase-session-backup";
-const APP_VERSION = "38";
+const APP_VERSION = "39";
 const DEMO_TRANSACTION_IDS = new Set(["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10"]);
 
 clearLegacyDemoBills();
@@ -812,11 +812,27 @@ function categoryTotals(type = "expense") {
     .sort((a, b) => b.amount - a.amount);
 }
 
-function totals() {
-  const txs = currentMonthTx();
+function monthTotals(month = selectedMonth()) {
+  const txs = store.state.transactions.filter((tx) => tx.date?.startsWith(month));
   const income = txs.filter((tx) => tx.type === "income").reduce((sum, tx) => sum + tx.amount, 0);
   const expense = txs.filter((tx) => tx.type === "expense").reduce((sum, tx) => sum + tx.amount, 0);
-  return { income, expense, balance: income - expense, netAssets: store.state.accounts.reduce((sum, item) => sum + item.balance, 0) };
+  return { income, expense };
+}
+
+function totals() {
+  const current = monthTotals();
+  const netAssets = store.state.accounts.reduce((sum, item) => sum + Number(item.balance || 0), 0);
+  return { income: current.income, expense: current.expense, balance: netAssets, netAssets };
+}
+
+function comparisonText(type) {
+  const current = monthTotals()[type] || 0;
+  const previous = monthTotals(shiftMonth(selectedMonth(), -1))[type] || 0;
+  if (!current && !previous) return "较上月 持平";
+  if (!previous) return "较上月 新增";
+  const percent = ((current - previous) / previous) * 100;
+  if (!percent) return "较上月 持平";
+  return `较上月 ${percent > 0 ? "+" : ""}${percent.toFixed(1)}% ${percent > 0 ? "↗" : "↘"}`;
 }
 
 function compareTxDesc(a, b) {
@@ -1028,7 +1044,7 @@ function renderHome() {
   const recent = [...currentMonthTx()].sort(compareTxDesc).slice(0, 3);
   return shell(`
     ${pageHead("本月总览", monthRangeLabel(), `<button class="pill-button" data-route="calendar">▣ 日历视图</button>`, { subtitleRoute: "period", subtitleReturnTo: "home" })}
-    <section class="card money-hero">${walletArt()}<div class="balance-label">结余(元) ◎</div><div class="balance-main">${money(total.balance)}</div><div class="summary-box"><div><div class="metric-title">收入(元)</div><div class="metric-value income">${money(total.income)}</div><div class="muted">较上月 +15.6% ↗</div></div><div class="divider"></div><div><div class="metric-title">支出(元)</div><div class="metric-value expense">${money(total.expense)}</div><div class="muted">较上月 -8.3% ↘</div></div></div></section>
+    <section class="card money-hero">${walletArt()}<div class="balance-label">结余(元) ◎</div><div class="balance-main">${money(total.balance)}</div><div class="summary-box"><div><div class="metric-title">收入(元)</div><div class="metric-value income">${money(total.income)}</div><div class="muted">${comparisonText("income")}</div></div><div class="divider"></div><div><div class="metric-title">支出(元)</div><div class="metric-value expense">${money(total.expense)}</div><div class="muted">${comparisonText("expense")}</div></div></div></section>
     <section class="card"><div class="card-head"><h2 class="section-title">支出分类TOP5</h2><button class="link-button" data-route="categoriesAll">查看全部 ›</button></div>${categoryList(5)}</section>
     <section class="card"><div class="card-head"><h2 class="section-title">当月收支</h2><button class="link-button" data-route="transactions">查看全部 ›</button></div>${txRows(recent)}</section>
   `, "home");
