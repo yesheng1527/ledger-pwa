@@ -4,7 +4,7 @@ const LOCAL_SESSION_KEY = "ledger-pwa-local-session-v1";
 const OFFLINE_EMAIL_KEY = "ledger-pwa-offline-email";
 const SUPABASE_STORAGE_KEY = "ledger-pwa-supabase-session";
 const SUPABASE_SESSION_BACKUP_KEY = "ledger-pwa-supabase-session-backup";
-const APP_VERSION = "29";
+const APP_VERSION = "30";
 const DEMO_TRANSACTION_IDS = new Set(["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10"]);
 
 clearLegacyDemoBills();
@@ -1035,7 +1035,6 @@ function renderMine() {
     <header class="page-head"><h1 style="margin:0;font-size:30px;font-weight:950">我的</h1></header>
     <button class="profile-head" data-route="profile" style="width:100%;background:transparent;text-align:left"><span class="avatar">${profile.avatar}</span><span><strong style="font-size:20px">${profile.name}</strong><div class="muted" style="margin-top:8px">${profile.bio}</div></span><span class="muted" style="font-size:30px">›</span></button>
     <section class="card"><h2 class="section-title">同步状态</h2><div class="card" style="margin:0;background:linear-gradient(145deg,var(--primary-soft),#fff);box-shadow:none"><div class="row"><span class="icon-bubble soft">${statusIcon}</span><span><strong class="${isCloud ? "income" : "muted"}">${statusTitle}</strong><div class="muted" style="margin-top:8px">${statusDetail}</div></span></div></div></section>
-    <section class="card danger-zone"><h2 class="section-title">上线清理</h2><p class="muted">清空当前账号的测试账单、余额、预算和存钱计划，保留账户名称、分类和个人资料。</p><button class="danger-button" data-cleanup-demo>清空测试数据</button></section>
     <section class="card"><h2 class="section-title">个人设置</h2>${settingRow("类", "分类管理", "categoriesManage")}${settingRow("账", "账户管理", "accounts")}${settingRow("导", "数据导出", "export")}${settingRow("题", "主题设置", "theme")}<button class="setting-row" data-auth-logout style="width:100%;background:transparent;text-align:left"><span class="icon-bubble soft">退</span><strong>退出登录</strong><span class="muted" style="font-size:28px">›</span></button></section>
   `, "mine");
 }
@@ -1250,7 +1249,6 @@ function bindEvents() {
       if (event.target.closest("[data-auth-signup]")) return authLogin(true);
       if (event.target.closest("[data-auth-offline]")) return authOffline();
       if (event.target.closest("[data-auth-logout]")) return authLogout();
-      if (event.target.closest("[data-cleanup-demo]")) return cleanupDemoData();
       const deleteTx = event.target.closest("[data-delete-transaction]");
       if (deleteTx) return deleteTransaction(deleteTx.dataset.deleteTransaction);
       if (event.target.closest("[data-save-entry]")) return saveEntry();
