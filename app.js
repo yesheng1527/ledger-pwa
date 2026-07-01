@@ -4,7 +4,7 @@ const LOCAL_SESSION_KEY = "ledger-pwa-local-session-v1";
 const OFFLINE_EMAIL_KEY = "ledger-pwa-offline-email";
 const SUPABASE_STORAGE_KEY = "ledger-pwa-supabase-session";
 const SUPABASE_SESSION_BACKUP_KEY = "ledger-pwa-supabase-session-backup";
-const APP_VERSION = "41";
+const APP_VERSION = "42";
 const DEMO_TRANSACTION_IDS = new Set(["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10"]);
 
 clearLegacyDemoBills();
@@ -860,6 +860,16 @@ function selectedCalendarDay(month, daysInMonth) {
   return 1;
 }
 
+function availableMonths() {
+  const current = currentMonthValue();
+  const months = new Set([current]);
+  store.state.transactions.forEach((tx) => {
+    const month = String(tx.date || "").slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(month) && month <= current) months.add(month);
+  });
+  return Array.from(months).sort((a, b) => b.localeCompare(a));
+}
+
 function currentTimeValue() {
   const now = new Date();
   return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -1176,7 +1186,7 @@ function renderPeriod() {
   const month = route.params.month || selectedMonth();
   const expanded = route.params.expanded === "1";
   const returnTo = route.params.returnTo || "home";
-  const months = Array.from({ length: 48 }, (_, index) => shiftMonth(currentMonthValue(), index - 35));
+  const months = availableMonths();
   return detailShell("选择月份", `<section class="card"><button class="picker-summary" data-toggle-month-picker aria-expanded="${expanded}"><span>统计月份</span><strong data-selected-month="${month}">${monthDisplay(month)}</strong><i class="${expanded ? "up" : ""}" aria-hidden="true"></i></button>${expanded ? `<div class="month-panel">${months.map((item) => `<button class="month-row ${item === month ? "active" : ""}" data-quick-month="${item}"><span>${monthDisplay(item)}</span>${item === month ? "<b>已选</b>" : ""}</button>`).join("")}</div>` : ""}</section>`, { bottomAction: `<button class="primary-button" data-save-period data-return-to="${returnTo}">应用月份</button>` });
 }
 
