@@ -4,7 +4,7 @@ const LOCAL_SESSION_KEY = "ledger-pwa-local-session-v1";
 const OFFLINE_EMAIL_KEY = "ledger-pwa-offline-email";
 const SUPABASE_STORAGE_KEY = "ledger-pwa-supabase-session";
 const SUPABASE_SESSION_BACKUP_KEY = "ledger-pwa-supabase-session-backup";
-const APP_VERSION = "30";
+const APP_VERSION = "31";
 const DEMO_TRANSACTION_IDS = new Set(["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10"]);
 
 clearLegacyDemoBills();
@@ -1562,7 +1562,6 @@ async function boot() {
   navigate("home");
   store.load()
     .then(() => {
-      showToast("云端数据已同步");
       if (route.name !== "login") render();
     })
     .catch((error) => {
