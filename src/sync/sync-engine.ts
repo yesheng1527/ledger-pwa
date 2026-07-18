@@ -40,8 +40,18 @@ function defaultIsOnline(): boolean {
 }
 
 function errorSummary(error: unknown): string {
-  const detail = error instanceof Error ? error.message : String(error);
-  return /fetch|network|econnreset/i.test(detail) ? NETWORK_ERROR_MESSAGE : SYNC_ERROR_MESSAGE;
+  let detail: string | null = typeof error === 'string' ? error : null;
+  if (detail === null && error !== null && (typeof error === 'object' || typeof error === 'function')) {
+    try {
+      const message = Reflect.get(error, 'message');
+      if (typeof message === 'string') detail = message;
+    } catch {
+      detail = null;
+    }
+  }
+  return detail !== null && /fetch|network|econnreset/i.test(detail)
+    ? NETWORK_ERROR_MESSAGE
+    : SYNC_ERROR_MESSAGE;
 }
 
 function compareDecimalCursors(left: string, right: string): number {
@@ -95,7 +105,13 @@ export class SyncEngine {
 
   private setStatus(next: Partial<SyncStatus>): void {
     this.status = { ...this.status, ...next };
-    for (const listener of this.listeners) listener(this.getStatus());
+    for (const listener of this.listeners) {
+      try {
+        listener(this.getStatus());
+      } catch {
+        // Subscriber failures must not change synchronization state.
+      }
+    }
   }
 
   private async setError(error: unknown): Promise<void> {
@@ -108,6 +124,7 @@ export class SyncEngine {
     this.setStatus({
       mode: 'error',
       pendingCount,
+      lastSyncedAt: null,
       message: errorSummary(error),
     });
   }
@@ -166,6 +183,7 @@ export class SyncEngine {
         this.setStatus({
           mode: 'conflict',
           pendingCount: finalPendingCount,
+          lastSyncedAt: null,
           message: CONFLICT_MESSAGE,
         });
         return;

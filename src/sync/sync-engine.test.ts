@@ -128,6 +128,58 @@ describe('SyncEngine', () => {
     expect(api.pullChanges).not.toHaveBeenCalled();
   });
 
+  it('maps a plain object network message to the Chinese network summary', async () => {
+    const operation = expenseOperation(12);
+    await repo.saveOperation(operation);
+    api.applyOperation.mockRejectedValue({ message: 'Failed to fetch' });
+
+    await engine.syncNow();
+
+    expect(await db.outbox.get(operation.operationId)).toMatchObject({
+      status: 'pending',
+      lastError: '网络连接失败，稍后会自动重试',
+    });
+    expect(engine.getStatus()).toMatchObject({
+      mode: 'error',
+      message: '网络连接失败，稍后会自动重试',
+    });
+  });
+
+  it('maps a string network rejection to the Chinese network summary', async () => {
+    const operation = expenseOperation(16);
+    await repo.saveOperation(operation);
+    api.applyOperation.mockRejectedValue('ECONNRESET');
+
+    await engine.syncNow();
+
+    expect(await db.outbox.get(operation.operationId)).toMatchObject({
+      status: 'pending',
+      lastError: '网络连接失败，稍后会自动重试',
+    });
+    expect(engine.getStatus()).toMatchObject({
+      mode: 'error',
+      message: '网络连接失败，稍后会自动重试',
+    });
+  });
+
+  it('falls back to a generic summary when error inspection throws', async () => {
+    const operation = expenseOperation(13);
+    await repo.saveOperation(operation);
+    const hostileError = Object.defineProperties({}, {
+      message: { get: () => { throw new Error('message getter failed'); } },
+      toString: { value: () => { throw new Error('toString failed'); } },
+    });
+    api.applyOperation.mockRejectedValue(hostileError);
+
+    await expect(engine.syncNow()).resolves.toBeUndefined();
+
+    expect(await db.outbox.get(operation.operationId)).toMatchObject({
+      status: 'pending',
+      lastError: '同步失败，请稍后重试',
+    });
+    expect(engine.getStatus()).toMatchObject({ mode: 'error', message: '同步失败，请稍后重试' });
+  });
+
   it('does not call the API while offline and reports every retained operation', async () => {
     const operation = expenseOperation(3);
     await repo.saveOperation(operation);
@@ -230,6 +282,45 @@ describe('SyncEngine', () => {
     });
   });
 
+  it('clears a previous success timestamp after an upload error', async () => {
+    await engine.syncNow();
+    expect(engine.getStatus().lastSyncedAt).toBe(syncTime.toISOString());
+    const operation = expenseOperation(10);
+    await repo.saveOperation(operation);
+    api.applyOperation.mockRejectedValue(new Error('network unavailable'));
+
+    await engine.syncNow();
+
+    expect(engine.getStatus()).toMatchObject({ mode: 'error', lastSyncedAt: null });
+  });
+
+  it('clears a previous success timestamp after a pull error', async () => {
+    await engine.syncNow();
+    expect(engine.getStatus().lastSyncedAt).toBe(syncTime.toISOString());
+    api.pullChanges.mockRejectedValue(new Error('service unavailable'));
+
+    await engine.syncNow();
+
+    expect(engine.getStatus()).toMatchObject({ mode: 'error', lastSyncedAt: null });
+  });
+
+  it('clears a previous success timestamp after a conflict', async () => {
+    await engine.syncNow();
+    expect(engine.getStatus().lastSyncedAt).toBe(syncTime.toISOString());
+    const operation = expenseOperation(11);
+    await repo.saveOperation(operation);
+    api.applyOperation.mockResolvedValue({
+      status: 'conflict',
+      transactionId: operation.transaction.id,
+      server: { id: operation.transaction.id, version: 2 },
+      local: operation.transaction,
+    });
+
+    await engine.syncNow();
+
+    expect(engine.getStatus()).toMatchObject({ mode: 'conflict', lastSyncedAt: null });
+  });
+
   it('rejects a non-advancing cursor before applying a non-empty page', async () => {
     const serverAccount = bank({ name: '不会落库', version: 2 });
     api.pullChanges.mockResolvedValue({
@@ -267,6 +358,28 @@ describe('SyncEngine', () => {
     expect(api.applyOperation).toHaveBeenCalledOnce();
   });
 
+  it('uploads due operations in repository order with at most one active request', async () => {
+    const earlier = expenseOperation(14);
+    const later = expenseOperation(15);
+    await repo.saveOperation(later);
+    await repo.saveOperation(earlier);
+    let activeCalls = 0;
+    let maxActiveCalls = 0;
+    api.applyOperation.mockImplementation(async (operation) => {
+      activeCalls += 1;
+      maxActiveCalls = Math.max(maxActiveCalls, activeCalls);
+      await Promise.resolve();
+      activeCalls -= 1;
+      return { status: 'applied', entityId: operation.operationId, serverVersion: 1 };
+    });
+
+    await engine.syncNow();
+
+    expect(api.applyOperation.mock.calls.map(([operation]) => operation.operationId))
+      .toEqual([earlier.operationId, later.operationId]);
+    expect(maxActiveCalls).toBe(1);
+  });
+
   it('notifies subscribers of status changes and supports unsubscribe', async () => {
     const listener = vi.fn();
     const unsubscribe = engine.subscribe(listener);
@@ -278,5 +391,20 @@ describe('SyncEngine', () => {
     online = false;
     await engine.syncNow();
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it('isolates throwing subscribers so synchronization and later subscribers continue', async () => {
+    const operation = expenseOperation(9);
+    await repo.saveOperation(operation);
+    engine.subscribe(() => {
+      throw new Error('listener failed');
+    });
+    const laterListener = vi.fn();
+    engine.subscribe(laterListener);
+
+    await expect(engine.syncNow()).resolves.toBeUndefined();
+
+    expect(await db.outbox.get(operation.operationId)).toBeUndefined();
+    expect(laterListener.mock.calls.map(([status]) => status.mode)).toEqual(['syncing', 'idle']);
   });
 });
