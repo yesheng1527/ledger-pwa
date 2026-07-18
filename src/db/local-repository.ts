@@ -306,7 +306,7 @@ export class LocalLedgerRepository {
     await this.db.transaction('rw', [this.db.outbox, this.db.conflicts], async () => {
       const outbox = await this.db.outbox.get(operationId);
       if (!outbox) return;
-      await this.db.outbox.update(operationId, { status: 'conflict', lastError: '瀛樺湪闇€瑕佸鐞嗙殑鏁版嵁鍐茬獊' });
+      await this.db.outbox.update(operationId, { status: 'conflict', lastError: '存在需要处理的数据冲突' });
       await this.db.conflicts.put({
         id: operationId,
         ledgerId: outbox.ledgerId,

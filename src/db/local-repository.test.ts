@@ -156,11 +156,11 @@ describe('LocalLedgerRepository', () => {
   it('keeps a failed operation pending with a Chinese summary', async () => {
     const operation = expenseOperation(7);
     await repo.saveOperation(operation);
-    await repo.markOperationFailed(operation.operationId, '缃戠粶杩炴帴澶辫触锛岀◢鍚庝細鑷姩閲嶈瘯');
+    await repo.markOperationFailed(operation.operationId, '网络连接失败，稍后会自动重试');
 
     expect(await db.outbox.get(operation.operationId)).toMatchObject({
       status: 'pending',
-      lastError: '缃戠粶杩炴帴澶辫触锛岀◢鍚庝細鑷姩閲嶈瘯',
+      lastError: '网络连接失败，稍后会自动重试',
     });
     expect(await repo.getPendingOperationCount()).toBe(1);
   });
@@ -170,7 +170,10 @@ describe('LocalLedgerRepository', () => {
     await repo.saveOperation(operation);
     await repo.markOperationConflict(operation.operationId, { version: 2 });
 
-    expect(await db.outbox.get(operation.operationId)).toMatchObject({ status: 'conflict' });
+    expect(await db.outbox.get(operation.operationId)).toMatchObject({
+      status: 'conflict',
+      lastError: '存在需要处理的数据冲突',
+    });
     expect(await db.conflicts.get(operation.operationId)).toMatchObject({
       entityId: operation.transaction.id,
       operation,
