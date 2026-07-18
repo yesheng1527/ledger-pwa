@@ -29,6 +29,8 @@ function bank(id = bankId, targetLedgerId = ledgerId): Account {
 function expenseOperation(
   index: number,
   createdAt = `2026-07-18T08:00:0${index}.000Z`,
+  targetLedgerId = ledgerId,
+  targetBankId = bankId,
 ): TransactionCreateOperation {
   const suffix = String(index).padStart(12, '0');
   const operationId = `00000000-0000-4000-8001-${suffix}`;
@@ -36,13 +38,13 @@ function expenseOperation(
   return {
     schemaVersion: 1,
     operationId,
-    ledgerId,
+    ledgerId: targetLedgerId,
     createdAt,
     kind: 'transaction.create',
     transaction: {
       id: transactionId,
       operationId,
-      ledgerId,
+      ledgerId: targetLedgerId,
       type: 'expense',
       amountCents: 6800,
       categoryId: null,
@@ -52,7 +54,7 @@ function expenseOperation(
       version: 1,
       deletedAt: null,
     },
-    entries: [{ accountId: bankId, deltaCents: -6800 }],
+    entries: [{ accountId: targetBankId, deltaCents: -6800 }],
   };
 }
 
@@ -94,8 +96,32 @@ describe('LocalLedgerRepository', () => {
     await repo.saveOperation(newer);
     await repo.saveOperation(older);
 
-    expect((await repo.listPendingOperations('2026-07-18T09:00:00.000Z')).map((item) => item.operationId))
+    expect((await repo.listPendingOperations(ledgerId, '2026-07-18T09:00:00.000Z'))
+      .map((item) => item.operationId))
       .toEqual([older.operationId, newer.operationId]);
+  });
+
+  it('lists and counts outbox operations only for the requested ledger', async () => {
+    const otherLedgerId = '00000000-0000-4000-8000-000000000002';
+    const otherBankId = '00000000-0000-4000-8000-000000000102';
+    await db.accounts.put(bank(otherBankId, otherLedgerId));
+    const ledgerDue = expenseOperation(12, '2026-07-18T08:00:00.000Z');
+    const ledgerFuture = expenseOperation(13, '2026-07-18T08:00:01.000Z');
+    const otherDue = expenseOperation(14, '2026-07-18T08:00:02.000Z', otherLedgerId, otherBankId);
+    const otherFuture = expenseOperation(15, '2026-07-18T08:00:03.000Z', otherLedgerId, otherBankId);
+    await repo.saveOperation(otherFuture);
+    await repo.saveOperation(ledgerFuture);
+    await repo.saveOperation(otherDue);
+    await repo.saveOperation(ledgerDue);
+    await db.outbox.update(ledgerFuture.operationId, { notBefore: '2026-07-18T10:00:00.000Z' });
+    await db.outbox.update(otherFuture.operationId, { notBefore: '2026-07-18T10:00:00.000Z' });
+
+    expect((await repo.listPendingOperations(ledgerId, '2026-07-18T09:00:00.000Z'))
+      .map((item) => item.operationId)).toEqual([ledgerDue.operationId]);
+    expect((await repo.listPendingOperations(otherLedgerId, '2026-07-18T09:00:00.000Z'))
+      .map((item) => item.operationId)).toEqual([otherDue.operationId]);
+    expect(await repo.getPendingOperationCount(ledgerId)).toBe(2);
+    expect(await repo.getPendingOperationCount(otherLedgerId)).toBe(2);
   });
 
   it('delays a tombstone for eight seconds and can undo it locally', async () => {
@@ -114,7 +140,7 @@ describe('LocalLedgerRepository', () => {
     };
     await repo.saveOperation(deletion);
 
-    expect(await repo.listPendingOperations('2026-07-18T08:01:07.999Z')).toEqual([]);
+    expect(await repo.listPendingOperations(ledgerId, '2026-07-18T08:01:07.999Z')).toEqual([]);
     expect(await db.transactions.get(create.transaction.id)).toMatchObject({ deletedAt: deletion.deletedAt });
 
     await repo.undoTransactionDelete(create.transaction.id, '2026-07-18T08:01:04.000Z');
@@ -190,7 +216,7 @@ describe('LocalLedgerRepository', () => {
       status: 'pending',
       lastError: '网络连接失败，稍后会自动重试',
     });
-    expect(await repo.getPendingOperationCount()).toBe(1);
+    expect(await repo.getPendingOperationCount(ledgerId)).toBe(1);
   });
 
   it('stores a conflict without removing its outbox operation', async () => {

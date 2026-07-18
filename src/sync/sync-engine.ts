@@ -15,8 +15,8 @@ export type SyncStatus = {
 };
 
 export interface SyncRepository {
-  listPendingOperations(now?: string): Promise<OutboxRecord[]>;
-  getPendingOperationCount(): Promise<number>;
+  listPendingOperations(ledgerId: string, now?: string): Promise<OutboxRecord[]>;
+  getPendingOperationCount(ledgerId: string): Promise<number>;
   hasUnresolvedConflicts(ledgerId: string): Promise<boolean>;
   markOperationFailed(operationId: string, message: string): Promise<void>;
   markOperationConflict(operationId: string, serverRecord: unknown): Promise<void>;
@@ -129,7 +129,7 @@ export class SyncEngine {
   private async setError(error: unknown): Promise<void> {
     let pendingCount = this.status.pendingCount;
     try {
-      pendingCount = await this.repository.getPendingOperationCount();
+      pendingCount = await this.repository.getPendingOperationCount(this.ledgerId);
     } catch {
       // Keep the last known count when local status storage is unavailable.
     }
@@ -163,7 +163,7 @@ export class SyncEngine {
   private async run(): Promise<void> {
     let currentOperation: OutboxRecord | null = null;
     try {
-      const pendingCount = await this.repository.getPendingOperationCount();
+      const pendingCount = await this.repository.getPendingOperationCount(this.ledgerId);
       if (!this.isOnline()) {
         this.setStatus({ mode: 'offline', pendingCount, message: null });
         return;
@@ -173,7 +173,7 @@ export class SyncEngine {
       let hasConflict = await this.repository.hasUnresolvedConflicts(this.ledgerId);
       const operations = hasConflict
         ? []
-        : await this.repository.listPendingOperations(this.now().toISOString());
+        : await this.repository.listPendingOperations(this.ledgerId, this.now().toISOString());
 
       for (const operation of operations) {
         currentOperation = operation;
@@ -191,7 +191,7 @@ export class SyncEngine {
       }
 
       await this.pullAllChanges();
-      const finalPendingCount = await this.repository.getPendingOperationCount();
+      const finalPendingCount = await this.repository.getPendingOperationCount(this.ledgerId);
       if (hasConflict) {
         this.setStatus({
           mode: 'conflict',

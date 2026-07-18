@@ -274,8 +274,11 @@ export class LocalLedgerRepository {
     });
   }
 
-  async listPendingOperations(now = new Date().toISOString()): Promise<OutboxRecord[]> {
-    const records = await this.db.outbox.toArray();
+  async listPendingOperations(
+    ledgerId: string,
+    now = new Date().toISOString(),
+  ): Promise<OutboxRecord[]> {
+    const records = await this.db.outbox.where('ledgerId').equals(ledgerId).toArray();
     return records
       .filter((record) => (
         record.status === 'pending' && (record.notBefore === null || record.notBefore <= now)
@@ -294,8 +297,8 @@ export class LocalLedgerRepository {
     return null;
   }
 
-  async getPendingOperationCount(): Promise<number> {
-    return this.db.outbox.count();
+  async getPendingOperationCount(ledgerId: string): Promise<number> {
+    return this.db.outbox.where('ledgerId').equals(ledgerId).count();
   }
 
   async hasUnresolvedConflicts(ledgerId: string): Promise<boolean> {

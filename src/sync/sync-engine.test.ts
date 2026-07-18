@@ -37,7 +37,11 @@ function bank(overrides: Partial<Account> = {}): Account {
   };
 }
 
-function expenseOperation(index: number): TransactionCreateOperation {
+function expenseOperation(
+  index: number,
+  targetLedgerId = ledgerId,
+  targetBankId = bankId,
+): TransactionCreateOperation {
   const suffix = String(index).padStart(12, '0');
   const operationId = `00000000-0000-4000-8001-${suffix}`;
   const transactionId = `00000000-0000-4000-8002-${suffix}`;
@@ -45,13 +49,13 @@ function expenseOperation(index: number): TransactionCreateOperation {
   return {
     schemaVersion: 1,
     operationId,
-    ledgerId,
+    ledgerId: targetLedgerId,
     createdAt,
     kind: 'transaction.create',
     transaction: {
       id: transactionId,
       operationId,
-      ledgerId,
+      ledgerId: targetLedgerId,
       type: 'expense',
       amountCents: 6800,
       categoryId: null,
@@ -61,12 +65,12 @@ function expenseOperation(index: number): TransactionCreateOperation {
       version: 1,
       deletedAt: null,
     },
-    entries: [{ accountId: bankId, deltaCents: -6800 }],
+    entries: [{ accountId: targetBankId, deltaCents: -6800 }],
   };
 }
 
-function makeEngine(): SyncEngine {
-  return new SyncEngine(ledgerId, repo, api satisfies SyncApi, () => online, () => syncTime);
+function makeEngine(targetLedgerId = ledgerId): SyncEngine {
+  return new SyncEngine(targetLedgerId, repo, api satisfies SyncApi, () => online, () => syncTime);
 }
 
 beforeEach(async () => {
@@ -99,13 +103,33 @@ describe('SyncEngine', () => {
 
     expect(api.applyOperation).toHaveBeenCalledOnce();
     expect(api.applyOperation).toHaveBeenCalledWith(operation);
-    expect(await repo.listPendingOperations(syncTime.toISOString())).toEqual([]);
+    expect(await repo.listPendingOperations(ledgerId, syncTime.toISOString())).toEqual([]);
     expect(engine.getStatus()).toEqual({
       mode: 'idle',
       pendingCount: 0,
       lastSyncedAt: syncTime.toISOString(),
       message: null,
     });
+  });
+
+  it('uploads and counts outbox operations only for its bound ledger', async () => {
+    const otherLedgerId = '00000000-0000-4000-8000-000000000002';
+    const otherBankId = '00000000-0000-4000-8000-000000000102';
+    await db.accounts.put(bank({ id: otherBankId, ledgerId: otherLedgerId }));
+    const ledgerOperation = expenseOperation(21);
+    const otherOperation = expenseOperation(22, otherLedgerId, otherBankId);
+    await repo.saveOperation(ledgerOperation);
+    await repo.saveOperation(otherOperation);
+    const otherEngine = makeEngine(otherLedgerId);
+
+    await otherEngine.syncNow();
+
+    expect(api.applyOperation.mock.calls.map(([operation]) => operation.operationId))
+      .toEqual([otherOperation.operationId]);
+    expect(await db.outbox.get(ledgerOperation.operationId)).toMatchObject({ status: 'pending' });
+    expect(await db.outbox.get(otherOperation.operationId)).toBeUndefined();
+    expect(otherEngine.getStatus()).toMatchObject({ mode: 'idle', pendingCount: 0 });
+    expect(api.pullChanges).toHaveBeenCalledWith(otherLedgerId, '0');
   });
 
   it('keeps a failed operation pending with a Chinese network summary', async () => {
