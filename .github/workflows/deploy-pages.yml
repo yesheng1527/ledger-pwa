@@ -1,9 +1,6 @@
 name: Deploy GitHub Pages
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -28,10 +25,14 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
+      - name: Verify frozen legacy site
+        working-directory: legacy
+        run: sha256sum --check SHA256SUMS.txt
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: legacy
 
       - name: Deploy to GitHub Pages
         id: deployment
