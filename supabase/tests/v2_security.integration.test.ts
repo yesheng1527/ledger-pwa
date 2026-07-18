@@ -336,14 +336,19 @@ describe('Supabase v2 ledger security and atomic operations', () => {
   });
 
   it('pulls committed changes once using a monotonic sequence cursor', async () => {
-    const first = await userA.rpc('v2_pull_changes', { p_ledger_id: ledgerId, p_after_seq: 0 });
+    const first = await userA.rpc('v2_pull_changes', { p_ledger_id: ledgerId, p_after_seq: '0' });
     if (first.error) throw first.error;
-    expect(Number(first.data.nextCursor)).toBeGreaterThan(0);
+    expect(first.data.nextCursor).toMatch(/^[1-9]\d*$/);
+    expect(first.data.changes.length).toBeGreaterThan(0);
+    expect(first.data.changes.every((change: { changeSeq: unknown }) => (
+      typeof change.changeSeq === 'string' && /^\d+$/.test(change.changeSeq)
+    ))).toBe(true);
     const second = await userA.rpc('v2_pull_changes', {
       p_ledger_id: ledgerId,
       p_after_seq: first.data.nextCursor,
     });
     expect(second.error).toBeNull();
     expect(second.data.changes).toEqual([]);
+    expect(second.data.nextCursor).toBe(first.data.nextCursor);
   });
 });

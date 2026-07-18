@@ -802,7 +802,7 @@ begin
   )
   select
     coalesce(jsonb_agg(jsonb_build_object(
-      'changeSeq', change_seq,
+      'changeSeq', change_seq::text,
       'entityType', entity_type,
       'entityId', entity_id,
       'version', entity_version,
@@ -813,7 +813,7 @@ begin
   into changes, next_cursor
   from page;
 
-  return jsonb_build_object('changes', changes, 'nextCursor', next_cursor);
+  return jsonb_build_object('changes', changes, 'nextCursor', next_cursor::text);
 end;
 $$;
 

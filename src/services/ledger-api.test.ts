@@ -35,7 +35,7 @@ const records = {
     user_id: '00000000-0000-4000-8000-000000000002',
     ledger_id: ledgerId,
     role: 'owner',
-    version: 3,
+    version: 2,
   },
   account: {
     id: '00000000-0000-4000-8000-000000000104',
@@ -151,9 +151,9 @@ describe('LedgerApi', () => {
     const entityTypes = Object.keys(records) as Array<keyof typeof records>;
     const rpc = vi.fn().mockResolvedValue({
       data: {
-        nextCursor: 12,
+        nextCursor: '10',
         changes: entityTypes.map((entityType, index) => ({
-          changeSeq: index + 1,
+          changeSeq: String(index + 1),
           entityType,
           entityId: records[entityType].id,
           version: entityType === 'profile' ? 1 : 2,
@@ -168,14 +168,14 @@ describe('LedgerApi', () => {
     const page = await api.pullChanges(ledgerId, '0');
 
     expect(page).toEqual({
-      nextCursor: '12',
+      nextCursor: '10',
       changes: [
         { entityType: 'profile', entityId: records.profile.id, version: 1, tombstone: false,
           record: { id: records.profile.id, displayName: '海风', settings: { weekStartsOn: 1 } } },
         { entityType: 'ledger', entityId: ledgerId, version: 2, tombstone: false,
           record: { id: ledgerId, ownerUserId: records.ledger.owner_user_id, name: '家庭账本', currency: 'CNY', version: 2 } },
         { entityType: 'member', entityId: records.member.id, version: 2, tombstone: false,
-          record: { id: records.member.id, userId: records.member.user_id, ledgerId, role: 'owner', version: 3 } },
+          record: { id: records.member.id, userId: records.member.user_id, ledgerId, role: 'owner', version: 2 } },
         { entityType: 'account', entityId: records.account.id, version: 2, tombstone: false,
           record: { id: records.account.id, ledgerId, name: '储蓄卡', kind: 'debit_card', accountClass: 'asset', currency: 'CNY', openingBalanceCents: 120_000, sortOrder: 4, version: 2, archivedAt: null } },
         { entityType: 'category', entityId: records.category.id, version: 2, tombstone: false,
@@ -197,13 +197,40 @@ describe('LedgerApi', () => {
   it('passes a bigint cursor string to the pull RPC without losing precision', async () => {
     const cursor = '9223372036854775806';
     const rpc = vi.fn().mockResolvedValue({
-      data: { nextCursor: '9223372036854775807', changes: [] },
+      data: {
+        nextCursor: '9223372036854775807',
+        changes: [{
+          changeSeq: '9223372036854775807',
+          entityType: 'account',
+          entityId: records.account.id,
+          version: records.account.version,
+          tombstone: false,
+          record: records.account,
+        }],
+      },
       error: null,
     });
     const api = new LedgerApi({ rpc } as never);
 
     await expect(api.pullChanges(ledgerId, cursor)).resolves.toEqual({
-      changes: [],
+      changes: [{
+        entityType: 'account',
+        entityId: records.account.id,
+        version: records.account.version,
+        tombstone: false,
+        record: {
+          id: records.account.id,
+          ledgerId,
+          name: records.account.name,
+          kind: records.account.kind,
+          accountClass: records.account.account_class,
+          currency: records.account.currency,
+          openingBalanceCents: records.account.opening_balance_cents,
+          sortOrder: records.account.sort_order,
+          version: records.account.version,
+          archivedAt: null,
+        },
+      }],
       nextCursor: '9223372036854775807',
     });
     expect(rpc).toHaveBeenCalledWith('v2_pull_changes', {
@@ -224,13 +251,188 @@ describe('LedgerApi', () => {
     },
   );
 
+  it.each([
+    {
+      label: 'nextCursor',
+      data: { nextCursor: 0, changes: [] },
+    },
+    {
+      label: 'changeSeq',
+      data: {
+        nextCursor: '1',
+        changes: [{
+          changeSeq: 1,
+          entityType: 'account',
+          entityId: records.account.id,
+          version: 2,
+          tombstone: false,
+          record: records.account,
+        }],
+      },
+    },
+  ])('rejects numeric $label values from the pull RPC', async ({ data }) => {
+    const rpc = vi.fn().mockResolvedValue({ data, error: null });
+
+    await expect(new LedgerApi({ rpc } as never).pullChanges(ledgerId, '0'))
+      .rejects.toThrow('服务器返回了无法识别的同步数据');
+  });
+
+  it('rejects changes that are not strictly increasing', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        nextCursor: '1',
+        changes: [
+          { changeSeq: '2', entityType: 'account', entityId: records.account.id, version: 2, tombstone: false, record: records.account },
+          { changeSeq: '1', entityType: 'account', entityId: records.account.id, version: 2, tombstone: false, record: records.account },
+        ],
+      },
+      error: null,
+    });
+
+    await expect(new LedgerApi({ rpc } as never).pullChanges(ledgerId, '0'))
+      .rejects.toThrow('服务器返回了无法识别的同步数据');
+  });
+
+  it('rejects a page that replays a change at or before afterSeq', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        nextCursor: '7',
+        changes: [{ changeSeq: '7', entityType: 'account', entityId: records.account.id, version: 2, tombstone: false, record: records.account }],
+      },
+      error: null,
+    });
+
+    await expect(new LedgerApi({ rpc } as never).pullChanges(ledgerId, '7'))
+      .rejects.toThrow('服务器返回了无法识别的同步数据');
+  });
+
+  it('rejects a next cursor that skips past the final change', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        nextCursor: '2',
+        changes: [{ changeSeq: '1', entityType: 'account', entityId: records.account.id, version: 2, tombstone: false, record: records.account }],
+      },
+      error: null,
+    });
+
+    await expect(new LedgerApi({ rpc } as never).pullChanges(ledgerId, '0'))
+      .rejects.toThrow('服务器返回了无法识别的同步数据');
+  });
+
+  it('requires an empty page to preserve afterSeq as nextCursor', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { nextCursor: '8', changes: [] },
+      error: null,
+    });
+
+    await expect(new LedgerApi({ rpc } as never).pullChanges(ledgerId, '7'))
+      .rejects.toThrow('服务器返回了无法识别的同步数据');
+  });
+
+  it.each([
+    {
+      label: 'record identity',
+      change: { entityType: 'account', entityId: records.account.id, version: 2, tombstone: false, record: { ...records.account, id: transactionId } },
+    },
+    {
+      label: 'record ledger',
+      change: { entityType: 'account', entityId: records.account.id, version: 2, tombstone: false, record: { ...records.account, ledger_id: '00000000-0000-4000-8000-000000000999' } },
+    },
+    {
+      label: 'record version',
+      change: { entityType: 'account', entityId: records.account.id, version: 3, tombstone: false, record: records.account },
+    },
+    {
+      label: 'entry tombstone identity',
+      change: { entityType: 'entry', entityId: records.entry.id, version: 2, tombstone: true, record: { ...records.entry, id: records.account.id } },
+    },
+  ])('rejects an envelope with mismatched $label', async ({ change }) => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { nextCursor: '1', changes: [{ changeSeq: '1', ...change }] },
+      error: null,
+    });
+
+    await expect(new LedgerApi({ rpc } as never).pullChanges(ledgerId, '0'))
+      .rejects.toThrow('服务器返回了无法识别的同步数据');
+  });
+
+  it.each([0, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects invalid entry delta %s',
+    async (deltaCents) => {
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          nextCursor: '1',
+          changes: [{
+            changeSeq: '1', entityType: 'entry', entityId: records.entry.id,
+            version: 2, tombstone: false,
+            record: { ...records.entry, delta_cents: deltaCents },
+          }],
+        },
+        error: null,
+      });
+
+      await expect(new LedgerApi({ rpc } as never).pullChanges(ledgerId, '0'))
+        .rejects.toThrow('服务器返回了无法识别的同步数据');
+    },
+  );
+
+  it.each([0, -1, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects invalid reminder amount %s',
+    async (amountCents) => {
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          nextCursor: '1',
+          changes: [{
+            changeSeq: '1', entityType: 'reminder', entityId: records.reminder.id,
+            version: 2, tombstone: false,
+            record: { ...records.reminder, amount_cents: amountCents },
+          }],
+        },
+        error: null,
+      });
+
+      await expect(new LedgerApi({ rpc } as never).pullChanges(ledgerId, '0'))
+        .rejects.toThrow('服务器返回了无法识别的同步数据');
+    },
+  );
+
+  it.each([
+    {
+      label: 'UUID',
+      record: { ...records.account, id: 'not-a-uuid' },
+      entityId: 'not-a-uuid',
+    },
+    {
+      label: 'required timestamp',
+      record: { ...records.transaction, occurred_at: '18 July 2026' },
+      entityId: transactionId,
+      entityType: 'transaction',
+    },
+    {
+      label: 'nullable timestamp',
+      record: { ...records.account, archived_at: 'yesterday' },
+      entityId: records.account.id,
+    },
+  ])('rejects invalid mapped $label values', async ({ record, entityId, entityType = 'account' }) => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        nextCursor: '1',
+        changes: [{ changeSeq: '1', entityType, entityId, version: 2, tombstone: false, record }],
+      },
+      error: null,
+    });
+
+    await expect(new LedgerApi({ rpc } as never).pullChanges(ledgerId, '0'))
+      .rejects.toThrow('服务器返回了无法识别的同步数据');
+  });
+
   it('rejects unknown entity types and malformed RPC results', async () => {
     const rpc = vi.fn()
       .mockResolvedValueOnce({
-        data: { nextCursor: 1, changes: [{ changeSeq: 1, entityType: 'mystery', entityId: ledgerId, version: 1, tombstone: false, record: {} }] },
+        data: { nextCursor: '1', changes: [{ changeSeq: '1', entityType: 'mystery', entityId: ledgerId, version: 1, tombstone: false, record: {} }] },
         error: null,
       })
-      .mockResolvedValueOnce({ data: { nextCursor: 1, changes: 'not-an-array' }, error: null })
+      .mockResolvedValueOnce({ data: { nextCursor: '1', changes: 'not-an-array' }, error: null })
       .mockResolvedValueOnce({ data: { status: 'applied' }, error: null });
     const api = new LedgerApi({ rpc } as never);
 
