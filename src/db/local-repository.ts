@@ -298,6 +298,15 @@ export class LocalLedgerRepository {
     return this.db.outbox.count();
   }
 
+  async hasUnresolvedConflicts(ledgerId: string): Promise<boolean> {
+    const conflict = await this.db.outbox
+      .where('ledgerId')
+      .equals(ledgerId)
+      .filter((record) => record.status === 'conflict')
+      .first();
+    return conflict !== undefined;
+  }
+
   async markOperationFailed(operationId: string, message: string): Promise<void> {
     await this.db.outbox.update(operationId, { status: 'pending', lastError: message });
   }
@@ -366,7 +375,16 @@ export class LocalLedgerRepository {
           case 'transaction': await this.db.transactions.put(change.record); break;
           case 'entry':
             if (change.tombstone) await this.db.entries.delete(change.entityId);
-            else await this.db.entries.put(change.record);
+            else {
+              const optimisticEntryIds = (await this.db.entries
+                .where('transactionId')
+                .equals(change.record.transactionId)
+                .toArray())
+                .filter((entry) => entry.id.startsWith(`${change.record.transactionId}:`))
+                .map((entry) => entry.id);
+              await this.db.entries.bulkDelete(optimisticEntryIds);
+              await this.db.entries.put(change.record);
+            }
             break;
           case 'budget': await this.db.budgets.put(change.record); break;
           case 'categoryBudget': await this.db.categoryBudgets.put(change.record); break;

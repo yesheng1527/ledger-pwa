@@ -239,7 +239,7 @@ describe('LedgerApi', () => {
     });
   });
 
-  it.each(['', '-1', '+1', '1.5', ' 1', '1 '])(
+  it.each(['', '-1', '+1', '1.5', ' 1', '1 ', '00', '01'])(
     'rejects invalid cursor %j before calling Supabase',
     async (cursor) => {
       const rpc = vi.fn();
@@ -250,6 +250,41 @@ describe('LedgerApi', () => {
       expect(rpc).not.toHaveBeenCalled();
     },
   );
+
+  it('rejects a non-canonical nextCursor before reading response changes', async () => {
+    const change = {
+      get changeSeq(): never {
+        throw new Error('change should not be read');
+      },
+    };
+    const rpc = vi.fn().mockResolvedValue({
+      data: { nextCursor: '01', changes: [change] },
+      error: null,
+    });
+
+    await expect(new LedgerApi({ rpc } as never).pullChanges(ledgerId, '0'))
+      .rejects.toThrow('服务器返回了无法识别的同步数据');
+  });
+
+  it('rejects a non-canonical changeSeq from the pull RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        nextCursor: '1',
+        changes: [{
+          changeSeq: '01',
+          entityType: 'account',
+          entityId: records.account.id,
+          version: 2,
+          tombstone: false,
+          record: records.account,
+        }],
+      },
+      error: null,
+    });
+
+    await expect(new LedgerApi({ rpc } as never).pullChanges(ledgerId, '0'))
+      .rejects.toThrow('服务器返回了无法识别的同步数据');
+  });
 
   it.each([
     {

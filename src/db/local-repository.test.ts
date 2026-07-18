@@ -153,6 +153,34 @@ describe('LocalLedgerRepository', () => {
     expect(await repo.getChangeCursor(ledgerId)).toBe('42');
   });
 
+  it('replaces a local optimistic entry with the authoritative server entry', async () => {
+    const operation = expenseOperation(10, '2026-07-18T08:00:10.000Z');
+    await repo.saveOperation(operation);
+    const serverTransaction = { ...operation.transaction, version: 2 };
+    const serverEntry = {
+      id: '00000000-0000-4000-8004-000000000010',
+      ledgerId,
+      transactionId: operation.transaction.id,
+      accountId: bankId,
+      deltaCents: -6800,
+    };
+
+    await repo.applyServerChanges(ledgerId, [
+      {
+        entityType: 'transaction', entityId: serverTransaction.id,
+        version: 2, tombstone: false, record: serverTransaction,
+      },
+      {
+        entityType: 'entry', entityId: serverEntry.id,
+        version: 1, tombstone: false, record: serverEntry,
+      },
+    ], '43');
+
+    const storedEntries = await db.entries.where('transactionId').equals(operation.transaction.id).toArray();
+    expect(storedEntries).toEqual([serverEntry]);
+    expect(storedEntries.reduce((total, entry) => total + entry.deltaCents, 0)).toBe(-6800);
+  });
+
   it('keeps a failed operation pending with a Chinese summary', async () => {
     const operation = expenseOperation(7);
     await repo.saveOperation(operation);
@@ -181,9 +209,21 @@ describe('LocalLedgerRepository', () => {
     });
   });
 
+  it('reports unresolved outbox conflicts only for the requested ledger', async () => {
+    const otherLedgerId = '00000000-0000-4000-8000-000000000002';
+    expect(await repo.hasUnresolvedConflicts(ledgerId)).toBe(false);
+
+    const operation = expenseOperation(11, '2026-07-18T08:00:11.000Z');
+    await repo.saveOperation(operation);
+    await repo.markOperationConflict(operation.operationId, { version: 2 });
+
+    expect(await repo.hasUnresolvedConflicts(ledgerId)).toBe(true);
+    expect(await repo.hasUnresolvedConflicts(otherLedgerId)).toBe(false);
+  });
+
   it('restores the active personal ledger for its owner', async () => {
     const userId = '00000000-0000-4000-8000-000000000203';
-    await db.ledgers.put({ id: ledgerId, ownerUserId: userId, name: '涓汉璐︽湰', currency: 'CNY', version: 1 });
+    await db.ledgers.put({ id: ledgerId, ownerUserId: userId, name: '个人账本', currency: 'CNY', version: 1 });
     await db.members.put({ id: 'member-owner', userId, ledgerId, role: 'owner', version: 1 });
 
     expect(await repo.getPersonalLedgerId(userId)).toBe(ledgerId);

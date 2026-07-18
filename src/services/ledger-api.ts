@@ -111,7 +111,7 @@ function monthValue(value: unknown): string {
 }
 
 function cursorValue(value: unknown): string {
-  if (typeof value === 'string' && /^\d+$/.test(value)) return value;
+  if (typeof value === 'string' && /^(?:0|[1-9]\d*)$/.test(value)) return value;
   return invalidSyncData();
 }
 
