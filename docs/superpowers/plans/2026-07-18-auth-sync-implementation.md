@@ -291,7 +291,7 @@ export interface PullChangesResult {
 }
 ```
 
-`bootstrapPersonalLedger()` validates `data.ledgerId`. `applyOperation()` sends `{ p_operation_id: operation.operationId, p_payload: operation }`. `pullChanges()` sends `{ p_ledger_id: ledgerId, p_after_seq: Number(afterSeq) }`, maps every entity type, converts snake_case fields to the exact domain names from `src/domain/types.ts`, and throws `new Error('服务器返回了无法识别的同步数据')` for unknown entity types or invalid result shapes.
+`bootstrapPersonalLedger()` validates `data.ledgerId`. `applyOperation()` sends `{ p_operation_id: operation.operationId, p_payload: operation }`. `pullChanges()`先验证 `afterSeq` 是非负十进制整数字符串，再原样发送 `{ p_ledger_id: ledgerId, p_after_seq: afterSeq }`，避免把 PostgreSQL `bigint` 游标转换成可能丢失精度的 JavaScript number。它映射每一种实体类型，把 snake_case 字段转换为 `src/domain/types.ts` 中的准确名称，并在未知实体类型或返回结构无效时抛出 `new Error('服务器返回了无法识别的同步数据')`。
 
 - [ ] **Step 5: Run service tests and typecheck**
 
