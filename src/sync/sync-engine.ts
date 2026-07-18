@@ -17,6 +17,7 @@ export type SyncStatus = {
 export interface SyncRepository {
   listPendingOperations(now?: string): Promise<OutboxRecord[]>;
   getPendingOperationCount(): Promise<number>;
+  hasUnresolvedConflicts(ledgerId: string): Promise<boolean>;
   markOperationFailed(operationId: string, message: string): Promise<void>;
   markOperationConflict(operationId: string, serverRecord: unknown): Promise<void>;
   markOperationSynced(operationId: string): Promise<void>;
@@ -68,6 +69,7 @@ function compareDecimalCursors(left: string, right: string): number {
 
 export class SyncEngine {
   private inFlight: Promise<void> | null = null;
+  private rerunRequested = false;
   private status: SyncStatus = {
     mode: 'idle',
     pendingCount: 0,
@@ -96,11 +98,21 @@ export class SyncEngine {
   }
 
   syncNow(): Promise<void> {
-    if (this.inFlight) return this.inFlight;
-    this.inFlight = this.run().finally(() => {
+    if (this.inFlight) {
+      this.rerunRequested = true;
+      return this.inFlight;
+    }
+    this.inFlight = this.runRequestedSyncs().finally(() => {
       this.inFlight = null;
     });
     return this.inFlight;
+  }
+
+  private async runRequestedSyncs(): Promise<void> {
+    do {
+      this.rerunRequested = false;
+      await this.run();
+    } while (this.rerunRequested);
   }
 
   private setStatus(next: Partial<SyncStatus>): void {
@@ -124,7 +136,6 @@ export class SyncEngine {
     this.setStatus({
       mode: 'error',
       pendingCount,
-      lastSyncedAt: null,
       message: errorSummary(error),
     });
   }
@@ -159,8 +170,10 @@ export class SyncEngine {
       }
 
       this.setStatus({ mode: 'syncing', pendingCount, message: null });
-      const operations = await this.repository.listPendingOperations(this.now().toISOString());
-      let hasConflict = false;
+      let hasConflict = await this.repository.hasUnresolvedConflicts(this.ledgerId);
+      const operations = hasConflict
+        ? []
+        : await this.repository.listPendingOperations(this.now().toISOString());
 
       for (const operation of operations) {
         currentOperation = operation;
@@ -183,7 +196,6 @@ export class SyncEngine {
         this.setStatus({
           mode: 'conflict',
           pendingCount: finalPendingCount,
-          lastSyncedAt: null,
           message: CONFLICT_MESSAGE,
         });
         return;

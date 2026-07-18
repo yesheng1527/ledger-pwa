@@ -236,6 +236,33 @@ describe('SyncEngine', () => {
     });
   });
 
+  it('keeps later operations blocked by an unresolved conflict across synchronization runs', async () => {
+    const conflicted = expenseOperation(17);
+    const later = expenseOperation(18);
+    await repo.saveOperation(conflicted);
+    await repo.saveOperation(later);
+    api.applyOperation.mockResolvedValueOnce({
+      status: 'conflict',
+      transactionId: conflicted.transaction.id,
+      server: { id: conflicted.transaction.id, version: 2 },
+      local: conflicted.transaction,
+    });
+
+    await engine.syncNow();
+    await engine.syncNow();
+
+    expect(api.applyOperation).toHaveBeenCalledOnce();
+    expect(api.pullChanges).toHaveBeenCalledTimes(2);
+    expect(await db.outbox.get(conflicted.operationId)).toMatchObject({ status: 'conflict' });
+    expect(await db.outbox.get(later.operationId)).toMatchObject({ status: 'pending' });
+    expect(engine.getStatus()).toMatchObject({
+      mode: 'conflict',
+      pendingCount: 2,
+      lastSyncedAt: null,
+      message: '存在需要处理的数据冲突',
+    });
+  });
+
   it('pulls every page with decimal-string cursors and applies each page atomically', async () => {
     const firstCursor = '900719925474099312345';
     const nextCursor = '900719925474099312346';
@@ -282,7 +309,7 @@ describe('SyncEngine', () => {
     });
   });
 
-  it('clears a previous success timestamp after an upload error', async () => {
+  it('preserves a previous success timestamp after an upload error', async () => {
     await engine.syncNow();
     expect(engine.getStatus().lastSyncedAt).toBe(syncTime.toISOString());
     const operation = expenseOperation(10);
@@ -291,20 +318,26 @@ describe('SyncEngine', () => {
 
     await engine.syncNow();
 
-    expect(engine.getStatus()).toMatchObject({ mode: 'error', lastSyncedAt: null });
+    expect(engine.getStatus()).toMatchObject({
+      mode: 'error',
+      lastSyncedAt: syncTime.toISOString(),
+    });
   });
 
-  it('clears a previous success timestamp after a pull error', async () => {
+  it('preserves a previous success timestamp after a pull error', async () => {
     await engine.syncNow();
     expect(engine.getStatus().lastSyncedAt).toBe(syncTime.toISOString());
     api.pullChanges.mockRejectedValue(new Error('service unavailable'));
 
     await engine.syncNow();
 
-    expect(engine.getStatus()).toMatchObject({ mode: 'error', lastSyncedAt: null });
+    expect(engine.getStatus()).toMatchObject({
+      mode: 'error',
+      lastSyncedAt: syncTime.toISOString(),
+    });
   });
 
-  it('clears a previous success timestamp after a conflict', async () => {
+  it('preserves a previous success timestamp after a conflict', async () => {
     await engine.syncNow();
     expect(engine.getStatus().lastSyncedAt).toBe(syncTime.toISOString());
     const operation = expenseOperation(11);
@@ -318,7 +351,10 @@ describe('SyncEngine', () => {
 
     await engine.syncNow();
 
-    expect(engine.getStatus()).toMatchObject({ mode: 'conflict', lastSyncedAt: null });
+    expect(engine.getStatus()).toMatchObject({
+      mode: 'conflict',
+      lastSyncedAt: syncTime.toISOString(),
+    });
   });
 
   it('rejects a non-advancing cursor before applying a non-empty page', async () => {
@@ -356,6 +392,51 @@ describe('SyncEngine', () => {
     release({ status: 'applied', transactionId: operation.transaction.id, serverVersion: 1 });
     await Promise.all([first, second]);
     expect(api.applyOperation).toHaveBeenCalledOnce();
+  });
+
+  it('reruns before the shared in-flight promise resolves when new work arrives', async () => {
+    const firstOperation = expenseOperation(19);
+    const laterOperation = expenseOperation(20);
+    await repo.saveOperation(firstOperation);
+    let activeCalls = 0;
+    let maxActiveCalls = 0;
+    let releaseFirst!: () => void;
+    let markFirstStarted!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    api.applyOperation.mockImplementation((operation) => {
+      activeCalls += 1;
+      maxActiveCalls = Math.max(maxActiveCalls, activeCalls);
+      const result: ApplyOperationResult = {
+        status: 'applied',
+        entityId: operation.operationId,
+        serverVersion: 1,
+      };
+      if (operation.operationId === firstOperation.operationId) {
+        return new Promise<ApplyOperationResult>((resolve) => {
+          releaseFirst = () => resolve(result);
+          markFirstStarted();
+        }).finally(() => {
+          activeCalls -= 1;
+        });
+      }
+      activeCalls -= 1;
+      return Promise.resolve(result);
+    });
+
+    const first = engine.syncNow();
+    await firstStarted;
+    await repo.saveOperation(laterOperation);
+    const second = engine.syncNow();
+
+    expect(second).toBe(first);
+    releaseFirst();
+    await first;
+    expect(api.applyOperation.mock.calls.map(([operation]) => operation.operationId))
+      .toEqual([firstOperation.operationId, laterOperation.operationId]);
+    expect(await db.outbox.get(laterOperation.operationId)).toBeUndefined();
+    expect(maxActiveCalls).toBe(1);
   });
 
   it('uploads due operations in repository order with at most one active request', async () => {
