@@ -44,7 +44,7 @@ export interface OutboxRecord {
 export interface ConflictRecord {
   id: string;
   ledgerId: string;
-  transactionId: string;
+  entityId: string;
   operation: LedgerOperation;
   serverRecord: unknown;
   createdAt: string;
@@ -81,14 +81,15 @@ export interface LocalLedgerSnapshot {
   syncMeta: SyncMetaRecord[];
 }
 
+type ChangeMeta = { entityId: string; version: number; tombstone: boolean };
 export type ServerChange =
-  | { entityType: 'profile'; record: ProfileRecord }
-  | { entityType: 'ledger'; record: LedgerRecord }
-  | { entityType: 'member'; record: LedgerMemberRecord }
-  | { entityType: 'account'; record: Account }
-  | { entityType: 'category'; record: Category }
-  | { entityType: 'transaction'; record: Transaction }
-  | { entityType: 'entry'; record: LedgerEntryRecord }
-  | { entityType: 'budget'; record: Budget }
-  | { entityType: 'categoryBudget'; record: CategoryBudget }
-  | { entityType: 'reminder'; record: Reminder };
+  | (ChangeMeta & { entityType: 'profile'; record: ProfileRecord })
+  | (ChangeMeta & { entityType: 'ledger'; record: LedgerRecord })
+  | (ChangeMeta & { entityType: 'member'; record: LedgerMemberRecord })
+  | (ChangeMeta & { entityType: 'account'; record: Account })
+  | (ChangeMeta & { entityType: 'category'; record: Category })
+  | (ChangeMeta & { entityType: 'transaction'; record: Transaction })
+  | (ChangeMeta & { entityType: 'entry'; record: LedgerEntryRecord })
+  | (ChangeMeta & { entityType: 'budget'; record: Budget })
+  | (ChangeMeta & { entityType: 'categoryBudget'; record: CategoryBudget })
+  | (ChangeMeta & { entityType: 'reminder'; record: Reminder });

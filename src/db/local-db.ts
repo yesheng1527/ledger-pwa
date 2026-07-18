@@ -48,7 +48,7 @@ export class LedgerDatabase extends Dexie {
       categoryBudgets: 'id, ledgerId, month, categoryId',
       reminders: 'id, ledgerId, nextDueAt, archivedAt',
       outbox: 'operationId, ledgerId, createdAt, notBefore, status',
-      conflicts: 'id, ledgerId, transactionId, createdAt',
+      conflicts: 'id, ledgerId, entityId, createdAt',
       restoreReceipts: 'restoreId, ledgerId, completedAt',
       syncMeta: 'key, ledgerId',
     });

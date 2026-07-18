@@ -21,6 +21,21 @@ function assertBaseVersion(currentVersion: number, baseVersion: number): void {
   }
 }
 
+function operationEntityId(operation: LedgerOperation): string {
+  if ('transaction' in operation) return operation.transaction.id;
+  if ('transactionId' in operation) return operation.transactionId;
+  if ('account' in operation) return operation.account.id;
+  if ('accountId' in operation) return operation.accountId;
+  if ('category' in operation) return operation.category.id;
+  if ('categoryId' in operation) return operation.categoryId;
+  if ('budget' in operation) return operation.budget.id;
+  if ('budgetId' in operation) return operation.budgetId;
+  if ('categoryBudget' in operation) return operation.categoryBudget.id;
+  if ('categoryBudgetId' in operation) return operation.categoryBudgetId;
+  if ('reminder' in operation) return operation.reminder.id;
+  return operation.reminderId;
+}
+
 export class LocalLedgerRepository {
   constructor(private readonly db: LedgerDatabase) {}
 
@@ -270,6 +285,39 @@ export class LocalLedgerRepository {
       ));
   }
 
+  async getPersonalLedgerId(userId: string): Promise<string | null> {
+    const memberships = await this.db.members.where('userId').equals(userId).toArray();
+    for (const member of memberships.filter((item) => item.role === 'owner')) {
+      const ledger = await this.db.ledgers.get(member.ledgerId);
+      if (ledger?.ownerUserId === userId) return ledger.id;
+    }
+    return null;
+  }
+
+  async getPendingOperationCount(): Promise<number> {
+    return this.db.outbox.count();
+  }
+
+  async markOperationFailed(operationId: string, message: string): Promise<void> {
+    await this.db.outbox.update(operationId, { status: 'pending', lastError: message });
+  }
+
+  async markOperationConflict(operationId: string, serverRecord: unknown): Promise<void> {
+    await this.db.transaction('rw', [this.db.outbox, this.db.conflicts], async () => {
+      const outbox = await this.db.outbox.get(operationId);
+      if (!outbox) return;
+      await this.db.outbox.update(operationId, { status: 'conflict', lastError: '瀛樺湪闇€瑕佸鐞嗙殑鏁版嵁鍐茬獊' });
+      await this.db.conflicts.put({
+        id: operationId,
+        ledgerId: outbox.ledgerId,
+        entityId: operationEntityId(outbox.payload),
+        operation: outbox.payload,
+        serverRecord,
+        createdAt: new Date().toISOString(),
+      });
+    });
+  }
+
   async markOperationSynced(operationId: string): Promise<void> {
     await this.db.outbox.delete(operationId);
   }
@@ -316,7 +364,10 @@ export class LocalLedgerRepository {
           case 'account': await this.db.accounts.put(change.record); break;
           case 'category': await this.db.categories.put(change.record); break;
           case 'transaction': await this.db.transactions.put(change.record); break;
-          case 'entry': await this.db.entries.put(change.record); break;
+          case 'entry':
+            if (change.tombstone) await this.db.entries.delete(change.entityId);
+            else await this.db.entries.put(change.record);
+            break;
           case 'budget': await this.db.budgets.put(change.record); break;
           case 'categoryBudget': await this.db.categoryBudgets.put(change.record); break;
           case 'reminder': await this.db.reminders.put(change.record); break;

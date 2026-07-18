@@ -128,7 +128,7 @@ describe('LocalLedgerRepository', () => {
     await db.conflicts.put({
       id: 'conflict-1',
       ledgerId,
-      transactionId: operation.transaction.id,
+      entityId: operation.transaction.id,
       operation,
       serverRecord: { version: 2 },
       createdAt: '2026-07-18T09:00:00.000Z',
@@ -145,12 +145,58 @@ describe('LocalLedgerRepository', () => {
 
     await repo.applyServerChanges(
       ledgerId,
-      [{ entityType: 'account', record: serverAccount }],
+      [{ entityType: 'account', entityId: serverAccount.id, version: 2, tombstone: false, record: serverAccount }],
       '42',
     );
 
     expect(await db.accounts.get(bankId)).toEqual(serverAccount);
     expect(await repo.getChangeCursor(ledgerId)).toBe('42');
+  });
+
+  it('keeps a failed operation pending with a Chinese summary', async () => {
+    const operation = expenseOperation(7);
+    await repo.saveOperation(operation);
+    await repo.markOperationFailed(operation.operationId, '缃戠粶杩炴帴澶辫触锛岀◢鍚庝細鑷姩閲嶈瘯');
+
+    expect(await db.outbox.get(operation.operationId)).toMatchObject({
+      status: 'pending',
+      lastError: '缃戠粶杩炴帴澶辫触锛岀◢鍚庝細鑷姩閲嶈瘯',
+    });
+    expect(await repo.getPendingOperationCount()).toBe(1);
+  });
+
+  it('stores a conflict without removing its outbox operation', async () => {
+    const operation = expenseOperation(8);
+    await repo.saveOperation(operation);
+    await repo.markOperationConflict(operation.operationId, { version: 2 });
+
+    expect(await db.outbox.get(operation.operationId)).toMatchObject({ status: 'conflict' });
+    expect(await db.conflicts.get(operation.operationId)).toMatchObject({
+      entityId: operation.transaction.id,
+      operation,
+      serverRecord: { version: 2 },
+    });
+  });
+
+  it('restores the active personal ledger for its owner', async () => {
+    const userId = '00000000-0000-4000-8000-000000000203';
+    await db.ledgers.put({ id: ledgerId, ownerUserId: userId, name: '涓汉璐︽湰', currency: 'CNY', version: 1 });
+    await db.members.put({ id: 'member-owner', userId, ledgerId, role: 'owner', version: 1 });
+
+    expect(await repo.getPersonalLedgerId(userId)).toBe(ledgerId);
+  });
+
+  it('deletes a replaced server entry and advances the cursor atomically', async () => {
+    const operation = expenseOperation(9);
+    await repo.saveOperation(operation);
+    const entry = (await db.entries.where('transactionId').equals(operation.transaction.id).first())!;
+
+    await repo.applyServerChanges(ledgerId, [{
+      entityType: 'entry', entityId: entry.id, version: 2, tombstone: true, record: entry,
+    }], '51');
+
+    expect(await db.entries.get(entry.id)).toBeUndefined();
+    expect(await repo.getChangeCursor(ledgerId)).toBe('51');
   });
 
   it('clears only the ledgers visible to the requested user', async () => {
