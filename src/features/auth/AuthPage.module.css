@@ -1,0 +1,133 @@
+.page {
+  display: grid;
+  min-height: 100vh;
+  grid-template-columns: minmax(0, 1fr) minmax(20rem, 28rem);
+  align-items: center;
+  gap: clamp(var(--space-8), 6vw, 6rem);
+  width: min(68rem, calc(100% - 2 * var(--space-6)));
+  margin: 0 auto;
+  padding: var(--space-8) 0;
+}
+
+.introduction {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-6);
+  text-align: center;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--color-ink);
+  font-size: clamp(1.5rem, 4vw, 2.25rem);
+  font-weight: 800;
+}
+
+.brand img {
+  width: 3rem;
+  height: 3rem;
+}
+
+.illustration {
+  width: min(100%, 31rem);
+  animation: seaside-float 5s ease-in-out infinite;
+  transition: transform 240ms ease;
+}
+
+.illustration img {
+  width: 100%;
+  height: auto;
+}
+
+.introduction p,
+.header p {
+  margin: 0;
+  color: var(--color-muted);
+  line-height: 1.75;
+}
+
+.card {
+  padding: clamp(var(--space-6), 5vw, var(--space-8));
+}
+
+.header {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+
+.header h1 {
+  margin: 0;
+  font-size: clamp(1.75rem, 6vw, 2.25rem);
+}
+
+.form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.submit {
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+.textButton {
+  min-height: var(--control-height);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-focus);
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.success,
+.error {
+  margin: 0;
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.success {
+  background: color-mix(in srgb, var(--color-income), transparent 88%);
+  color: var(--color-income);
+}
+
+.error {
+  background: var(--color-error-surface);
+  color: var(--color-expense);
+  font-weight: 600;
+}
+
+@keyframes seaside-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-0.5rem);
+  }
+}
+
+@media (max-width: 48rem) {
+  .page {
+    grid-template-columns: minmax(0, 1fr);
+    width: min(32rem, calc(100% - 2 * var(--space-4)));
+  }
+
+  .illustration {
+    width: min(70vw, 18rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-ambient-motion] {
+    animation: none;
+    transition: none;
+  }
+}
