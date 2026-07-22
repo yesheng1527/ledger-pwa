@@ -9,6 +9,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:static": "node scripts/build-static-recovery.mjs && playwright test --config playwright.static.config.ts",
     "test:e2e:update": "playwright test --update-snapshots",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc -b --pretty false"

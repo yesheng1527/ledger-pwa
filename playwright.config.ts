@@ -4,6 +4,7 @@ const baseURL = 'http://127.0.0.1:5173/ledger-pwa/';
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'static-recovery.spec.ts',
   outputDir: '.superpowers/sdd/playwright-results',
   snapshotPathTemplate: '{testDir}/snapshots/{testFilePath}/{arg}{ext}',
   expect: {

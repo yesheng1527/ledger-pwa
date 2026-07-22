@@ -1,9 +1,11 @@
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { StrictMode, useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LedgerOperation } from '../domain/operations';
 import type { SyncStatus } from '../sync/sync-engine';
+import { AuthGate } from './AuthGate';
 import {
   AppProviders,
   type AppProviderServices,
@@ -199,12 +201,46 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  window.history.replaceState(null, '', '/');
 });
 
 describe('AppProviders', () => {
-  it('recognizes only the base-path password recovery route', () => {
+  it('recognizes the root query callback and the legacy base-path recovery route', () => {
+    expect(isPasswordRecoveryPath('/ledger-pwa/', '/ledger-pwa/', '?auth=reset')).toBe(true);
+    expect(isPasswordRecoveryPath('/ledger-pwa/', '/ledger-pwa/', '?auth=other')).toBe(false);
     expect(isPasswordRecoveryPath('/ledger-pwa/reset-password', '/ledger-pwa/')).toBe(true);
     expect(isPasswordRecoveryPath('/reset-password', '/ledger-pwa/')).toBe(false);
+  });
+
+  it('keeps a query recovery attempt after INITIAL_SESSION null and returns to a clean login URL', async () => {
+    const user = userEvent.setup();
+    const harness = createHarness();
+    window.history.replaceState(null, '', `${import.meta.env.BASE_URL}?auth=reset`);
+    render(
+      <AppProviders services={harness.services}>
+        <AuthGate><span>application shell</span></AuthGate>
+      </AppProviders>,
+    );
+
+    act(() => harness.auth.emit('INITIAL_SESSION', null));
+    expect(await screen.findByText('重置链接无效或已过期')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '返回登录' }));
+    expect(await screen.findByRole('heading', { name: '欢迎回来' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe(import.meta.env.BASE_URL);
+    expect(window.location.search).toBe('');
+  });
+
+  it('clears a preserved query recovery attempt on explicit SIGNED_OUT', async () => {
+    const harness = createHarness();
+    window.history.replaceState(null, '', `${import.meta.env.BASE_URL}?auth=reset`);
+    render(<AppProviders services={harness.services}><RuntimeProbe /></AppProviders>);
+
+    act(() => harness.auth.emit('INITIAL_SESSION', null));
+    await waitFor(() => expect(latestRuntime.passwordRecovery).toBe(true));
+
+    act(() => harness.auth.emit('SIGNED_OUT', null));
+    await waitFor(() => expect(latestRuntime.passwordRecovery).toBe(false));
   });
 
   it('exposes auth commands without storing credentials in the runtime', async () => {

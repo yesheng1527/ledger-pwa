@@ -82,11 +82,11 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
     setInternalMode(nextMode);
   };
 
-  const clearFieldFeedback = (field: AuthField) => {
+  const clearFieldFeedback = (...fields: AuthField[]) => {
     setFieldErrors((currentErrors) => {
-      if (!(field in currentErrors)) return currentErrors;
+      if (!fields.some((field) => field in currentErrors)) return currentErrors;
       const nextErrors = { ...currentErrors };
-      delete nextErrors[field];
+      for (const field of fields) delete nextErrors[field];
       return nextErrors;
     });
     setStatus(null);
@@ -194,7 +194,7 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
                 value={password}
                 onChange={(event) => {
                   setPassword(event.target.value);
-                  clearFieldFeedback('password');
+                  clearFieldFeedback('password', 'confirmation');
                 }}
                 required
               />

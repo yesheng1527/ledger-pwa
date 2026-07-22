@@ -76,11 +76,18 @@ function browserIsOnline(): boolean {
 }
 
 export function isPasswordRecoveryPath(
-  pathname = location.pathname,
+  pathname = window.location.pathname,
   baseUrl = import.meta.env.BASE_URL,
+  search = window.location.search,
 ): boolean {
-  const recoveryPath = new URL('reset-password', new URL(baseUrl, 'https://app.invalid')).pathname;
-  return pathname === recoveryPath || pathname === `${recoveryPath}/`;
+  const appUrl = new URL(baseUrl, 'https://app.invalid');
+  const basePath = appUrl.pathname.endsWith('/') ? appUrl.pathname : `${appUrl.pathname}/`;
+  const basePathWithoutTrailingSlash = basePath.length > 1 ? basePath.slice(0, -1) : basePath;
+  const isAppRoot = pathname === basePath || pathname === basePathWithoutTrailingSlash;
+  const isQueryRecovery = isAppRoot && new URLSearchParams(search).get('auth') === 'reset';
+  const recoveryPath = new URL('reset-password', appUrl).pathname;
+
+  return isQueryRecovery || pathname === recoveryPath || pathname === `${recoveryPath}/`;
 }
 
 function createDefaultServices(): AppProviderServices {
@@ -155,7 +162,10 @@ export function AppProviders({
 
   const finishPasswordRecovery = useCallback(() => {
     setPasswordRecovery(false);
-    window.history.replaceState(null, '', import.meta.env.BASE_URL);
+    const cleanPath = new URLSearchParams(window.location.search).get('auth') === 'reset'
+      ? window.location.pathname
+      : import.meta.env.BASE_URL;
+    window.history.replaceState(null, '', cleanPath);
   }, []);
 
   useEffect(() => {
@@ -224,7 +234,7 @@ export function AppProviders({
       setAuthReady(true);
       if (event === 'PASSWORD_RECOVERY') {
         setPasswordRecovery(true);
-      } else if (event === 'SIGNED_OUT' || (!nextSession && isPasswordRecoveryPath())) {
+      } else if (event === 'SIGNED_OUT') {
         setPasswordRecovery(false);
       }
       void initializeSession(nextSession);

@@ -1,8 +1,10 @@
+import { AuthRetryableFetchError } from '@supabase/supabase-js';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mapAuthError } from './auth-errors';
 import { AuthPage, type AuthPageCommands } from './AuthPage';
+import authPageCss from './AuthPage.module.css?inline';
 
 afterEach(() => cleanup());
 
@@ -37,15 +39,26 @@ describe('mapAuthError', () => {
     [{ code: 'invalid_credentials' }, '邮箱或密码不正确'],
     [{ code: 'email_not_confirmed' }, '邮箱尚未验证'],
     [{ code: 'over_request_rate_limit' }, '操作太频繁，请稍后再试'],
-    [new TypeError('Failed to fetch'), '网络连接失败，请稍后重试'],
+    [new AuthRetryableFetchError('Failed to fetch', 0), '网络连接失败，请稍后重试'],
     [{ code: 'weak_password' }, '密码至少需要 8 个字符'],
     [new Error('server internals'), '操作失败，请稍后重试'],
   ])('maps auth errors without exposing raw details', (error, message) => {
     expect(mapAuthError(error)).toBe(message);
   });
+
+  it.each(['toString', 'constructor'])('does not accept inherited mapping key %s', (code) => {
+    const message = mapAuthError({ code });
+
+    expect(message).toBe('操作失败，请稍后重试');
+    expect(typeof message).toBe('string');
+  });
 });
 
 describe('AuthPage', () => {
+  it('places dynamic viewport height after the viewport-height fallback', () => {
+    expect(authPageCss).toMatch(/min-height:\s*100vh;\s*min-height:\s*100dvh;/);
+  });
+
   it('submits the login email and password', async () => {
     const user = userEvent.setup();
     const commands = createCommands();
@@ -144,6 +157,19 @@ describe('AuthPage', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('两次输入的密码不一致');
     expect(screen.getByLabelText('确认新密码')).toHaveFocus();
     expect(commands.updatePassword).not.toHaveBeenCalled();
+  });
+
+  it.each(['新密码', '确认新密码'])('clears a password mismatch when %s is edited', async (label) => {
+    const user = userEvent.setup();
+    render(<AuthPage mode="reset-password" commands={createCommands()} />);
+
+    await user.type(screen.getByLabelText('新密码'), 'password123');
+    await user.type(screen.getByLabelText('确认新密码'), 'password456');
+    await user.click(screen.getByRole('button', { name: '更新密码' }));
+    expect(screen.getByText('两次输入的密码不一致')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(label), 'x');
+    expect(screen.queryByText('两次输入的密码不一致')).not.toBeInTheDocument();
   });
 
   it('updates the password, completes recovery and shows success', async () => {

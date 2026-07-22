@@ -1,6 +1,10 @@
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthService, buildPasswordResetRedirect } from './auth-service';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe('AuthService', () => {
   it('passes sign-up credentials to Supabase and returns its data', async () => {
@@ -32,7 +36,7 @@ describe('AuthService', () => {
 
   it('builds the password recovery URL under the GitHub Pages base path', () => {
     expect(buildPasswordResetRedirect('https://yesheng1527.github.io', '/ledger-pwa/'))
-      .toBe('https://yesheng1527.github.io/ledger-pwa/reset-password');
+      .toBe('https://yesheng1527.github.io/ledger-pwa/?auth=reset');
   });
 
   it('passes the base-path recovery URL to Supabase', async () => {
@@ -43,7 +47,7 @@ describe('AuthService', () => {
 
     await service.requestPasswordReset('person@example.com');
     expect(resetPasswordForEmail).toHaveBeenCalledWith('person@example.com', {
-      redirectTo: `${location.origin}/ledger-pwa/reset-password`,
+      redirectTo: `${location.origin}/ledger-pwa/?auth=reset`,
     });
   });
 

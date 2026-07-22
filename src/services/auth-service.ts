@@ -22,8 +22,9 @@ export function buildPasswordResetRedirect(
   origin = location.origin,
   baseUrl = import.meta.env.BASE_URL,
 ): string {
-  const appBase = new URL(baseUrl, `${origin}/`);
-  return new URL('reset-password', appBase).toString();
+  const resetUrl = new URL(baseUrl, `${origin}/`);
+  resetUrl.searchParams.set('auth', 'reset');
+  return resetUrl.toString();
 }
 
 export class AuthService {

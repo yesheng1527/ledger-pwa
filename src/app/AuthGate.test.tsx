@@ -66,15 +66,19 @@ describe('AuthGateView', () => {
     expect(screen.queryByText('应用框架')).not.toBeInTheDocument();
   });
 
-  it('shows an expired recovery link before the logged-out login page', () => {
+  it('shows an expired recovery link and returns to login explicitly', async () => {
+    const user = userEvent.setup();
+    const runtime = createRuntime({ authReady: true, passwordRecovery: true });
     render(
-      <AuthGateView runtime={createRuntime({ authReady: true, passwordRecovery: true })}>
+      <AuthGateView runtime={runtime}>
         <span>应用框架</span>
       </AuthGateView>,
     );
 
     expect(screen.getByText('重置链接无效或已过期')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '欢迎回来' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '返回登录' }));
+    expect(runtime.finishPasswordRecovery).toHaveBeenCalledOnce();
   });
 
   it('shows reset password before the authenticated shell during recovery', () => {
