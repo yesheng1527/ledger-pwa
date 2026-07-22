@@ -101,13 +101,13 @@ for (const viewport of viewports) {
   });
 }
 
-test('login card begins within the upper 42 percent at every phone viewport', async ({ page }) => {
+test('login card begins within the upper 33 percent at every phone viewport', async ({ page }) => {
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     await page.goto('?fixture=logged-out');
     const card = page.locator('main form').locator('..');
     const box = await card.boundingBox();
-    const maximumTop = viewport.height * 0.42;
+    const maximumTop = viewport.height * 0.33;
     expect.soft(
       box!.y,
       `${viewport.width}x${viewport.height} card: top=${box!.y}px maximum=${maximumTop}px ratio=${box!.y / viewport.height}`,
