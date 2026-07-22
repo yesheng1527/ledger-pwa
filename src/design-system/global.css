@@ -24,6 +24,12 @@ body {
   color: var(--color-ink);
 }
 
+html[data-visual-test='true'] * {
+  animation: none !important;
+  transition: none !important;
+  caret-color: transparent !important;
+}
+
 button,
 input,
 textarea,

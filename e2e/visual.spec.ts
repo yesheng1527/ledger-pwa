@@ -1,0 +1,87 @@
+import { expect, test, type Page } from '@playwright/test';
+import path from 'node:path';
+import { mkdir } from 'node:fs/promises';
+
+const previewDirectory = process.env.E2E_PREVIEW_DIR;
+
+async function readyForScreenshot(page: Page) {
+  await page.evaluate(async () => {
+    document.documentElement.dataset.visualTest = 'true';
+    await document.fonts.ready;
+  });
+}
+
+async function captureOrCompare(page: Page, filename: string) {
+  await readyForScreenshot(page);
+  if (previewDirectory) {
+    await mkdir(previewDirectory, { recursive: true });
+    await page.screenshot({
+      path: path.join(previewDirectory, filename),
+      animations: 'disabled',
+    });
+    return;
+  }
+  await expect(page).toHaveScreenshot(filename);
+}
+
+async function openLogin(page: Page) {
+  await page.goto('?fixture=logged-out');
+  await expect(page.getByRole('heading', { name: '欢迎回来' })).toBeVisible();
+}
+
+async function openHome(page: Page) {
+  await page.goto('?fixture=logged-in');
+  await expect(page.getByRole('navigation', { name: '主要导航' })).toBeVisible();
+}
+
+test('390x844 login', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openLogin(page);
+  await captureOrCompare(page, '390x844-login.png');
+});
+
+test('390x844 forgot password', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openLogin(page);
+  await page.getByRole('button', { name: '忘记密码', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '找回密码' })).toBeVisible();
+  await captureOrCompare(page, '390x844-forgot.png');
+});
+
+test('390x844 recovery password', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('reset-password?fixture=recovery');
+  await expect(page.getByRole('heading', { name: '设置新密码' })).toBeVisible();
+  await captureOrCompare(page, '390x844-recovery.png');
+});
+
+test('390x844 home', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openHome(page);
+  await captureOrCompare(page, '390x844-home.png');
+});
+
+test('390x844 entry dialog', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openHome(page);
+  await page.getByRole('button', { name: '记账' }).click();
+  await expect(page.getByRole('dialog', { name: '记账功能建设中' })).toBeVisible();
+  await captureOrCompare(page, '390x844-entry-dialog.png');
+});
+
+for (const viewport of [
+  { width: 320, height: 568 },
+  { width: 430, height: 932 },
+] as const) {
+  test(`${viewport.width}x${viewport.height} login`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await openLogin(page);
+    await captureOrCompare(page, `${viewport.width}x${viewport.height}-login.png`);
+  });
+
+  test(`${viewport.width}x${viewport.height} home`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await openHome(page);
+    await captureOrCompare(page, `${viewport.width}x${viewport.height}-home.png`);
+  });
+}

@@ -1,0 +1,46 @@
+import { expect, test } from '@playwright/test';
+
+const viewports = [
+  { width: 320, height: 568 },
+  { width: 390, height: 844 },
+  { width: 430, height: 932 },
+] as const;
+
+for (const viewport of viewports) {
+  test.describe(`${viewport.width}x${viewport.height}`, () => {
+    test.beforeEach(async ({ page }) => {
+      await page.setViewportSize(viewport);
+    });
+
+    test('exposes labeled landmarks, state, dialog, and icons', async ({ page }) => {
+      await page.goto('?fixture=logged-out');
+      await expect(page.getByRole('main')).toBeVisible();
+      await expect(page.getByRole('img', { name: '海风小账本' })).toHaveCount(1);
+      await expect(page.getByRole('textbox', { name: '邮箱' })).toBeVisible();
+      await expect(page.getByRole('textbox', { name: '密码', exact: true })).toBeVisible();
+
+      await page.goto('?fixture=logged-in');
+      await expect(page.getByRole('main')).toBeVisible();
+      await expect(page.getByRole('navigation', { name: '主要导航' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '首页' })).toHaveAttribute('aria-current', 'page');
+      await expect(page.getByRole('img')).toHaveCount(0);
+
+      await page.getByRole('button', { name: '记账' }).click();
+      await expect(page.getByRole('dialog', { name: '记账功能建设中' })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('button', { name: '记账' })).toBeFocused();
+    });
+
+    test('removes ambient animation and transitions for reduced motion', async ({ page }) => {
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.goto('?fixture=logged-out');
+
+      const ambient = page.locator('[data-ambient-motion]');
+      await expect(ambient).not.toHaveCount(0);
+      for (const element of await ambient.all()) {
+        await expect(element).toHaveCSS('animation-name', 'none');
+        await expect(element).toHaveCSS('transition-duration', '0s');
+      }
+    });
+  });
+}

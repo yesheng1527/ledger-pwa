@@ -5,12 +5,25 @@ import './design-system/tokens.css';
 import './design-system/global.css';
 import './assets/registry';
 import { App } from './app/App';
-import { AppProviders } from './app/providers';
+import { AppProviders, type AppProviderServices } from './app/providers';
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <AppProviders>
-      <App />
-    </AppProviders>
-  </StrictMode>,
-);
+async function renderApplication() {
+  let services: AppProviderServices | undefined;
+  if (import.meta.env.MODE === 'test-e2e') {
+    const fixtureModule = await import('./test/e2e-services');
+    services = fixtureModule.createE2eServices(
+      fixtureModule.parseE2eFixture(new URLSearchParams(location.search).get('fixture')),
+    );
+    document.documentElement.dataset.visualTest = 'true';
+  }
+
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <AppProviders services={services}>
+        <App />
+      </AppProviders>
+    </StrictMode>,
+  );
+}
+
+void renderApplication();
