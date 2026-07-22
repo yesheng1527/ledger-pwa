@@ -1,7 +1,8 @@
+import { liveQuery } from 'dexie';
 import { buildPosting } from '../domain/posting';
 import { validateOperation, type LedgerOperation } from '../domain/operations';
 import type { LedgerEntry, LedgerEntryRecord, Transaction } from '../domain/types';
-import type { LocalLedgerSnapshot, OutboxRecord, ServerChange } from './records';
+import type { LedgerReadSnapshot, LocalLedgerSnapshot, OutboxRecord, ServerChange } from './records';
 import { LedgerDatabase } from './local-db';
 
 type TransactionWriteOperation = Extract<
@@ -38,6 +39,40 @@ function operationEntityId(operation: LedgerOperation): string {
 
 export class LocalLedgerRepository {
   constructor(private readonly db: LedgerDatabase) {}
+
+  async readLedgerSnapshot(ledgerId: string): Promise<LedgerReadSnapshot> {
+    const tables = [
+      this.db.accounts,
+      this.db.categories,
+      this.db.transactions,
+      this.db.entries,
+      this.db.budgets,
+      this.db.categoryBudgets,
+    ];
+    return this.db.transaction('r', tables, async () => {
+      const [accounts, categories, transactions, entries, budgets, categoryBudgets] = await Promise.all([
+        this.db.accounts.where('ledgerId').equals(ledgerId).toArray(),
+        this.db.categories.where('ledgerId').equals(ledgerId).toArray(),
+        this.db.transactions.where('ledgerId').equals(ledgerId).toArray(),
+        this.db.entries.where('ledgerId').equals(ledgerId).toArray(),
+        this.db.budgets.where('ledgerId').equals(ledgerId).toArray(),
+        this.db.categoryBudgets.where('ledgerId').equals(ledgerId).toArray(),
+      ]);
+      return { ledgerId, accounts, categories, transactions, entries, budgets, categoryBudgets };
+    });
+  }
+
+  watchLedger(ledgerId: string, onChange: () => void): () => void {
+    let initialEmission = true;
+    const subscription = liveQuery(() => this.readLedgerSnapshot(ledgerId)).subscribe({
+      next: () => {
+        if (initialEmission) initialEmission = false;
+        else onChange();
+      },
+      error: () => onChange(),
+    });
+    return () => subscription.unsubscribe();
+  }
 
   private async expectedPosting(operation: TransactionWriteOperation): Promise<LedgerEntry[]> {
     const { transaction, entries } = operation;

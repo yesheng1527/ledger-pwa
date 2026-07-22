@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LedgerDatabase } from './local-db';
 import { LocalLedgerRepository } from './local-repository';
 import type { LedgerOperation } from '../domain/operations';
-import type { Account } from '../domain/types';
+import type { Account, Budget, Category, CategoryBudget } from '../domain/types';
 
 const ledgerId = '00000000-0000-4000-8000-000000000001';
 const bankId = '00000000-0000-4000-8000-000000000101';
@@ -28,7 +28,7 @@ function bank(id = bankId, targetLedgerId = ledgerId): Account {
 
 function expenseOperation(
   index: number,
-  createdAt = `2026-07-18T08:00:0${index}.000Z`,
+  createdAt = `2026-07-18T08:00:${String(index).padStart(2, '0')}.000Z`,
   targetLedgerId = ledgerId,
   targetBankId = bankId,
 ): TransactionCreateOperation {
@@ -58,6 +58,42 @@ function expenseOperation(
   };
 }
 
+function category(id: string, targetLedgerId: string): Category {
+  return {
+    id,
+    ledgerId: targetLedgerId,
+    name: '餐饮',
+    kind: 'expense',
+    iconKey: 'food',
+    sortOrder: 0,
+    version: 1,
+    archivedAt: null,
+  };
+}
+
+function budget(id: string, targetLedgerId: string): Budget {
+  return {
+    id,
+    ledgerId: targetLedgerId,
+    month: '2026-07',
+    amountCents: 100000,
+    version: 1,
+    archivedAt: null,
+  };
+}
+
+function categoryBudget(id: string, targetLedgerId: string, categoryId: string): CategoryBudget {
+  return {
+    id,
+    ledgerId: targetLedgerId,
+    categoryId,
+    month: '2026-07',
+    amountCents: 50000,
+    version: 1,
+    archivedAt: null,
+  };
+}
+
 beforeEach(async () => {
   sequence += 1;
   db = new LedgerDatabase(`seabreeze-ledger-test-${sequence}`);
@@ -70,6 +106,60 @@ afterEach(async () => {
 });
 
 describe('LocalLedgerRepository', () => {
+  it('reads one ledger as a consistent scoped snapshot', async () => {
+    const otherLedgerId = '00000000-0000-4000-8000-000000000002';
+    const otherAccountId = '00000000-0000-4000-8000-000000000102';
+    const categoryId = '00000000-0000-4000-8000-000000000301';
+    const otherCategoryId = '00000000-0000-4000-8000-000000000302';
+    await db.accounts.put(bank(otherAccountId, otherLedgerId));
+    await db.categories.bulkPut([
+      category(categoryId, ledgerId),
+      category(otherCategoryId, otherLedgerId),
+    ]);
+    await db.budgets.bulkPut([
+      budget('00000000-0000-4000-8000-000000000401', ledgerId),
+      budget('00000000-0000-4000-8000-000000000402', otherLedgerId),
+    ]);
+    await db.categoryBudgets.bulkPut([
+      categoryBudget('00000000-0000-4000-8000-000000000501', ledgerId, categoryId),
+      categoryBudget('00000000-0000-4000-8000-000000000502', otherLedgerId, otherCategoryId),
+    ]);
+    await repo.saveOperation(expenseOperation(21));
+    await repo.saveOperation(expenseOperation(22, '2026-07-18T08:00:00.000Z', otherLedgerId, otherAccountId));
+
+    const snapshot = await repo.readLedgerSnapshot(ledgerId);
+
+    expect(snapshot.ledgerId).toBe(ledgerId);
+    expect(snapshot.accounts.every((item) => item.ledgerId === ledgerId)).toBe(true);
+    expect(snapshot.categories.every((item) => item.ledgerId === ledgerId)).toBe(true);
+    expect(snapshot.transactions.every((item) => item.ledgerId === ledgerId)).toBe(true);
+    expect(snapshot.entries.every((item) => item.ledgerId === ledgerId)).toBe(true);
+    expect(snapshot.budgets.every((item) => item.ledgerId === ledgerId)).toBe(true);
+    expect(snapshot.categoryBudgets.every((item) => item.ledgerId === ledgerId)).toBe(true);
+    expect(snapshot.accounts).toHaveLength(1);
+    expect(snapshot.categories).toHaveLength(1);
+    expect(snapshot.transactions).toHaveLength(1);
+    expect(snapshot.entries).toHaveLength(1);
+    expect(snapshot.budgets).toHaveLength(1);
+    expect(snapshot.categoryBudgets).toHaveLength(1);
+  });
+
+  it('notifies only after watched ledger data changes and unsubscribes cleanly', async () => {
+    const onChange = vi.fn();
+    const readSnapshot = vi.spyOn(repo, 'readLedgerSnapshot');
+    const stop = repo.watchLedger(ledgerId, onChange);
+    await vi.waitFor(() => expect(readSnapshot).toHaveBeenCalled());
+    expect(onChange).not.toHaveBeenCalled();
+
+    await repo.saveOperation(expenseOperation(23));
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+
+    stop();
+    await repo.saveOperation(expenseOperation(24));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
   it('commits a transaction, entries and outbox item atomically', async () => {
     const operation = expenseOperation(1);
     await repo.saveOperation(operation);

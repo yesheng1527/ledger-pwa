@@ -81,6 +81,16 @@ export interface LocalLedgerSnapshot {
   syncMeta: SyncMetaRecord[];
 }
 
+export interface LedgerReadSnapshot {
+  ledgerId: string;
+  accounts: Account[];
+  categories: Category[];
+  transactions: Transaction[];
+  entries: LedgerEntryRecord[];
+  budgets: Budget[];
+  categoryBudgets: CategoryBudget[];
+}
+
 type ChangeMeta = { entityId: string; version: number; tombstone: boolean };
 export type ServerChange =
   | (ChangeMeta & { entityType: 'profile'; record: ProfileRecord })
