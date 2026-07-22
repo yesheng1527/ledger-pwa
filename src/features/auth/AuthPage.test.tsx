@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mapAuthError } from './auth-errors';
@@ -14,6 +14,22 @@ function createCommands(overrides: Partial<AuthPageCommands> = {}): AuthPageComm
     finishPasswordRecovery: vi.fn(),
     ...overrides,
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function expectDescribedByIdsToResolve(element: HTMLElement) {
+  const ids = element.getAttribute('aria-describedby')?.split(/\s+/).filter(Boolean) ?? [];
+  expect(ids.length).toBeGreaterThan(0);
+  for (const id of ids) expect(document.getElementById(id)).not.toBeNull();
 }
 
 describe('mapAuthError', () => {
@@ -59,6 +75,14 @@ describe('AuthPage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('邮箱或密码不正确');
     expect(screen.queryByText(/users_v2/)).not.toBeInTheDocument();
+    const status = screen.getByRole('alert');
+    expect(status).toHaveAttribute('id', 'auth-status');
+    const email = screen.getByRole('textbox', { name: '邮箱' });
+    const password = screen.getByLabelText('密码');
+    expect(email).toHaveAttribute('aria-describedby', expect.stringContaining('auth-status'));
+    expect(password).toHaveAttribute('aria-describedby', expect.stringContaining('auth-status'));
+    expectDescribedByIdsToResolve(email);
+    expectDescribedByIdsToResolve(password);
   });
 
   it('requests a reset email and shows the fixed success message', async () => {
@@ -87,6 +111,11 @@ describe('AuthPage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('操作太频繁，请稍后再试');
     expect(screen.queryByText(/raw rate limit detail/)).not.toBeInTheDocument();
+    const status = screen.getByRole('alert');
+    expect(status).toHaveAttribute('id', 'auth-status');
+    const email = screen.getByRole('textbox', { name: '邮箱' });
+    expect(email).toHaveAttribute('aria-describedby', expect.stringContaining('auth-status'));
+    expectDescribedByIdsToResolve(email);
   });
 
   it('requires a new password with at least eight characters', async () => {
@@ -147,6 +176,62 @@ describe('AuthPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('密码至少需要 8 个字符');
     expect(screen.queryByText(/raw password policy/)).not.toBeInTheDocument();
     expect(commands.finishPasswordRecovery).not.toHaveBeenCalled();
+    const status = screen.getByRole('alert');
+    expect(status).toHaveAttribute('id', 'auth-status');
+    const password = screen.getByLabelText('新密码');
+    const confirmation = screen.getByLabelText('确认新密码');
+    expect(password).toHaveAttribute('aria-describedby', expect.stringContaining('auth-status'));
+    expect(confirmation).toHaveAttribute('aria-describedby', expect.stringContaining('auth-status'));
+    expectDescribedByIdsToResolve(password);
+    expectDescribedByIdsToResolve(confirmation);
+  });
+
+  it('authors required login errors and resolves every described ID', async () => {
+    const user = userEvent.setup();
+    const commands = createCommands();
+    render(<AuthPage mode="login" commands={commands} />);
+
+    await user.click(screen.getByRole('button', { name: '登录' }));
+
+    const email = screen.getByRole('textbox', { name: '邮箱' });
+    const password = screen.getByLabelText('密码');
+    expect(screen.getByText('请输入邮箱')).toHaveAttribute('role', 'alert');
+    expect(screen.getByText('请输入密码')).toHaveAttribute('role', 'alert');
+    expectDescribedByIdsToResolve(email);
+    expectDescribedByIdsToResolve(password);
+    expect(email).toHaveFocus();
+    expect(commands.signIn).not.toHaveBeenCalled();
+  });
+
+  it('authors a required forgot-password email error', async () => {
+    const user = userEvent.setup();
+    const commands = createCommands();
+    render(<AuthPage mode="forgot-password" commands={commands} />);
+
+    await user.click(screen.getByRole('button', { name: '发送重置邮件' }));
+
+    const email = screen.getByRole('textbox', { name: '邮箱' });
+    expect(screen.getByText('请输入邮箱')).toHaveAttribute('role', 'alert');
+    expectDescribedByIdsToResolve(email);
+    expect(email).toHaveFocus();
+    expect(commands.requestPasswordReset).not.toHaveBeenCalled();
+  });
+
+  it('authors required reset-password errors for both visible fields', async () => {
+    const user = userEvent.setup();
+    const commands = createCommands();
+    render(<AuthPage mode="reset-password" commands={commands} />);
+
+    await user.click(screen.getByRole('button', { name: '更新密码' }));
+
+    const password = screen.getByLabelText('新密码');
+    const confirmation = screen.getByLabelText('确认新密码');
+    expect(screen.getByText('请输入新密码')).toHaveAttribute('role', 'alert');
+    expect(screen.getByText('请再次输入新密码')).toHaveAttribute('role', 'alert');
+    expectDescribedByIdsToResolve(password);
+    expectDescribedByIdsToResolve(confirmation);
+    expect(password).toHaveFocus();
+    expect(commands.updatePassword).not.toHaveBeenCalled();
   });
 
   it('disables submission while a command is busy', async () => {
@@ -170,6 +255,58 @@ describe('AuthPage', () => {
 
     finishSignIn?.();
     await waitFor(() => expect(submit).not.toBeDisabled());
+  });
+
+  it('invalidates a pending success when the external mode changes', async () => {
+    const user = userEvent.setup();
+    const resetRequest = deferred<void>();
+    const commands = createCommands({
+      requestPasswordReset: vi.fn(() => resetRequest.promise),
+    });
+    const { rerender } = render(<AuthPage mode="forgot-password" commands={commands} />);
+
+    await user.type(screen.getByRole('textbox', { name: '邮箱' }), 'hello@example.com');
+    await user.click(screen.getByRole('button', { name: '发送重置邮件' }));
+    rerender(<AuthPage mode="reset-password" commands={commands} />);
+
+    expect(screen.getByRole('button', { name: '更新密码' })).not.toBeDisabled();
+    await act(async () => resetRequest.resolve());
+    expect(screen.queryByText('重置邮件已发送，请检查邮箱')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '设置新密码' })).toBeInTheDocument();
+  });
+
+  it('invalidates a pending failure when the external mode changes', async () => {
+    const user = userEvent.setup();
+    const signInRequest = deferred<void>();
+    const commands = createCommands({ signIn: vi.fn(() => signInRequest.promise) });
+    const { rerender } = render(<AuthPage mode="login" commands={commands} />);
+
+    await user.type(screen.getByRole('textbox', { name: '邮箱' }), 'hello@example.com');
+    await user.type(screen.getByLabelText('密码'), 'password123');
+    await user.click(screen.getByRole('button', { name: '登录' }));
+    rerender(<AuthPage mode="reset-password" commands={commands} />);
+
+    await act(async () => signInRequest.reject({ code: 'invalid_credentials' }));
+    expect(screen.queryByText('邮箱或密码不正确')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '更新密码' })).not.toBeDisabled();
+  });
+
+  it('keeps internal navigation disabled while a command is busy', async () => {
+    const user = userEvent.setup();
+    const signInRequest = deferred<void>();
+    const commands = createCommands({ signIn: vi.fn(() => signInRequest.promise) });
+    render(<AuthPage mode="login" commands={commands} />);
+
+    await user.type(screen.getByRole('textbox', { name: '邮箱' }), 'hello@example.com');
+    await user.type(screen.getByLabelText('密码'), 'password123');
+    await user.click(screen.getByRole('button', { name: '登录' }));
+
+    const forgotPassword = screen.getByRole('button', { name: '忘记密码' });
+    expect(forgotPassword).toBeDisabled();
+    await user.click(forgotPassword);
+    expect(screen.getByRole('heading', { name: '欢迎回来' })).toBeInTheDocument();
+
+    await act(async () => signInRequest.resolve());
   });
 
   it('moves focus after internal mode switches', async () => {
@@ -199,6 +336,35 @@ describe('AuthPage', () => {
     rerender(<AuthPage mode="login" commands={commands} />);
     expect(screen.getByRole('heading', { name: '欢迎回来' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('textbox', { name: '邮箱' })).toHaveFocus());
+  });
+
+  it('clears passwords and confirmation whenever the external mode changes', async () => {
+    const user = userEvent.setup();
+    const commands = createCommands();
+    const { rerender } = render(<AuthPage mode="login" commands={commands} />);
+
+    await user.type(screen.getByLabelText('密码'), 'login-password');
+    rerender(<AuthPage mode="reset-password" commands={commands} />);
+    expect(screen.getByLabelText('新密码')).toHaveValue('');
+
+    await user.type(screen.getByLabelText('新密码'), 'reset-password');
+    await user.type(screen.getByLabelText('确认新密码'), 'reset-password');
+    rerender(<AuthPage mode="login" commands={commands} />);
+    expect(screen.getByLabelText('密码')).toHaveValue('');
+    rerender(<AuthPage mode="reset-password" commands={commands} />);
+    expect(screen.getByLabelText('新密码')).toHaveValue('');
+    expect(screen.getByLabelText('确认新密码')).toHaveValue('');
+  });
+
+  it('clears the password after internal login and forgot-password navigation', async () => {
+    const user = userEvent.setup();
+    render(<AuthPage mode="login" commands={createCommands()} />);
+
+    await user.type(screen.getByLabelText('密码'), 'login-password');
+    await user.click(screen.getByRole('button', { name: '忘记密码' }));
+    await user.click(screen.getByRole('button', { name: '返回登录' }));
+
+    expect(screen.getByLabelText('密码')).toHaveValue('');
   });
 
   it('does not offer a registration control', () => {
