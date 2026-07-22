@@ -1,8 +1,9 @@
-import type { LedgerOperation } from '../domain/operations';
+import { validateOperation, type LedgerOperation } from '../domain/operations';
 import type {
   Account,
   Budget,
   Category,
+  CategoryBudget,
   LedgerEntryRecord,
   Transaction,
 } from '../domain/types';
@@ -23,6 +24,7 @@ const ids = {
   entertainmentCategory: '00000000-0000-4000-8000-000000000204',
   archivedCategory: '00000000-0000-4000-8000-000000000205',
   incomeCategory: '00000000-0000-4000-8000-000000000206',
+  otherLedgerCategory: '00000000-0000-4000-8000-000000000209',
   incomeTransaction: '00000000-0000-4000-8000-000000000301',
   shoppingTransaction: '00000000-0000-4000-8000-000000000302',
   refundTransaction: '00000000-0000-4000-8000-000000000303',
@@ -31,6 +33,7 @@ const ids = {
   adjustmentTransaction: '00000000-0000-4000-8000-000000000306',
   deletedTransaction: '00000000-0000-4000-8000-000000000307',
   juneTransaction: '00000000-0000-4000-8000-000000000308',
+  otherLedgerTransaction: '00000000-0000-4000-8000-000000000309',
 } as const;
 
 export const fixtureNow = new Date(2026, 6, 18, 20);
@@ -183,6 +186,16 @@ const categories: Category[] = [
     version: 1,
     archivedAt: null,
   },
+  {
+    id: ids.otherLedgerCategory,
+    ledgerId: ids.otherLedger,
+    name: 'Foreign category',
+    kind: 'expense',
+    iconKey: 'other',
+    sortOrder: 1,
+    version: 1,
+    archivedAt: null,
+  },
 ];
 
 function transaction(
@@ -278,6 +291,19 @@ const transactions: Transaction[] = [
     '六月转账',
     null,
   ),
+  {
+    id: ids.otherLedgerTransaction,
+    operationId: '00000000-0000-4000-8000-000000000409',
+    ledgerId: ids.otherLedger,
+    type: 'expense',
+    amountCents: 100,
+    categoryId: ids.otherLedgerCategory,
+    occurredAt: new Date(2026, 6, 18, 9).toISOString(),
+    note: 'Foreign transaction',
+    originalTransactionId: null,
+    version: 1,
+    deletedAt: null,
+  },
 ];
 
 function entry(
@@ -306,6 +332,13 @@ const entries: LedgerEntryRecord[] = [
   entry(8, ids.deletedTransaction, ids.cash, -9900),
   entry(9, ids.juneTransaction, ids.bank, -1000),
   entry(10, ids.juneTransaction, ids.cash, 1000),
+  {
+    id: '00000000-0000-4000-8000-000000000511',
+    ledgerId: ids.otherLedger,
+    transactionId: ids.otherLedgerTransaction,
+    accountId: ids.otherLedgerAccount,
+    deltaCents: -100,
+  },
 ];
 
 const budgets: Budget[] = [
@@ -333,7 +366,25 @@ const budgets: Budget[] = [
     version: 2,
     archivedAt,
   },
+  {
+    id: '00000000-0000-4000-8000-000000000609',
+    ledgerId: ids.otherLedger,
+    month: '2026-07',
+    amountCents: 1000,
+    version: 1,
+    archivedAt: null,
+  },
 ];
+
+const categoryBudgets: CategoryBudget[] = [{
+  id: '00000000-0000-4000-8000-000000000709',
+  ledgerId: ids.otherLedger,
+  categoryId: ids.otherLedgerCategory,
+  month: '2026-07',
+  amountCents: 500,
+  version: 1,
+  archivedAt: null,
+}];
 
 function baseSnapshot(): LedgerReadSnapshot {
   return {
@@ -343,7 +394,7 @@ function baseSnapshot(): LedgerReadSnapshot {
     transactions: structuredClone(transactions),
     entries: structuredClone(entries),
     budgets: structuredClone(budgets),
-    categoryBudgets: [],
+    categoryBudgets: structuredClone(categoryBudgets),
   };
 }
 
@@ -358,34 +409,40 @@ export interface MutableLedgerFixture {
 export function createMutableLedgerFixture(
   overrides: Partial<LedgerReadSnapshot> = {},
 ): MutableLedgerFixture {
-  const listeners = new Set<() => void>();
-  const pendingDeletes = new Map<string, Transaction>();
-  const notifyWatchers = () => listeners.forEach((listener) => listener());
+  const listenersByLedger = new Map<string, Set<() => void>>();
+  const pendingDeletes: Array<{ ledgerId: string; transaction: Transaction }> = [];
+  const notifyWatchers = (ledgerId: string) => (
+    listenersByLedger.get(ledgerId)?.forEach((listener) => listener())
+  );
   const entryId = (transactionId: string, index: number) => (
     `${transactionId.slice(0, -2)}${String(index + 1).padStart(2, '0')}`
   );
   const fixture: MutableLedgerFixture = {
     snapshot: { ...baseSnapshot(), ...structuredClone(overrides) },
     async readLedgerSnapshot(ledgerId) {
-      if (ledgerId !== ids.ledger) {
-        return {
-          ledgerId,
-          accounts: [],
-          categories: [],
-          transactions: [],
-          entries: [],
-          budgets: [],
-          categoryBudgets: [],
-        };
-      }
-      return structuredClone(fixture.snapshot);
+      return structuredClone({
+        ledgerId,
+        accounts: fixture.snapshot.accounts.filter((item) => item.ledgerId === ledgerId),
+        categories: fixture.snapshot.categories.filter((item) => item.ledgerId === ledgerId),
+        transactions: fixture.snapshot.transactions.filter((item) => item.ledgerId === ledgerId),
+        entries: fixture.snapshot.entries.filter((item) => item.ledgerId === ledgerId),
+        budgets: fixture.snapshot.budgets.filter((item) => item.ledgerId === ledgerId),
+        categoryBudgets: fixture.snapshot.categoryBudgets.filter(
+          (item) => item.ledgerId === ledgerId,
+        ),
+      });
     },
     watchLedger(ledgerId, listener) {
-      if (ledgerId !== ids.ledger) return () => undefined;
+      const listeners = listenersByLedger.get(ledgerId) ?? new Set<() => void>();
       listeners.add(listener);
-      return () => listeners.delete(listener);
+      listenersByLedger.set(ledgerId, listeners);
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0) listenersByLedger.delete(ledgerId);
+      };
     },
-    async saveOperation(operation) {
+    async saveOperation(input) {
+      const operation = validateOperation(input);
       if (operation.kind === 'transaction.create') {
         fixture.snapshot.transactions.push(structuredClone(operation.transaction));
         operation.entries.forEach((item, index) => {
@@ -398,10 +455,15 @@ export function createMutableLedgerFixture(
         });
       } else if (operation.kind === 'transaction.update') {
         fixture.snapshot.transactions = fixture.snapshot.transactions.map((item) => (
-          item.id === operation.transactionId ? structuredClone(operation.transaction) : item
+          item.id === operation.transactionId && item.ledgerId === operation.ledgerId
+            ? structuredClone(operation.transaction)
+            : item
         ));
         fixture.snapshot.entries = fixture.snapshot.entries.filter(
-          (item) => item.transactionId !== operation.transactionId,
+          (item) => (
+            item.transactionId !== operation.transactionId
+            || item.ledgerId !== operation.ledgerId
+          ),
         );
         operation.entries.forEach((item, index) => {
           fixture.snapshot.entries.push({
@@ -413,46 +475,74 @@ export function createMutableLedgerFixture(
         });
       } else if (operation.kind === 'transaction.delete') {
         const current = fixture.snapshot.transactions.find(
-          (item) => item.id === operation.transactionId,
+          (item) => (
+            item.id === operation.transactionId && item.ledgerId === operation.ledgerId
+          ),
         );
         if (current && current.deletedAt === null) {
-          pendingDeletes.set(operation.transactionId, structuredClone(current));
+          const existingIndex = pendingDeletes.findIndex((item) => (
+            item.transaction.id === operation.transactionId
+            && item.ledgerId === operation.ledgerId
+          ));
+          if (existingIndex !== -1) pendingDeletes.splice(existingIndex, 1);
+          pendingDeletes.push({
+            ledgerId: operation.ledgerId,
+            transaction: structuredClone(current),
+          });
         }
         fixture.snapshot.transactions = fixture.snapshot.transactions.map((item) => (
-          item.id === operation.transactionId
+          item.id === operation.transactionId && item.ledgerId === operation.ledgerId
             ? { ...item, deletedAt: operation.deletedAt, version: item.version + 1 }
             : item
         ));
       } else if (operation.kind === 'transaction.restore') {
-        pendingDeletes.delete(operation.transactionId);
+        const pendingIndex = pendingDeletes.findIndex((item) => (
+          item.transaction.id === operation.transactionId
+          && item.ledgerId === operation.ledgerId
+        ));
+        if (pendingIndex !== -1) pendingDeletes.splice(pendingIndex, 1);
         fixture.snapshot.transactions = fixture.snapshot.transactions.map((item) => (
-          item.id === operation.transactionId
+          item.id === operation.transactionId && item.ledgerId === operation.ledgerId
             ? { ...item, deletedAt: null, version: item.version + 1 }
             : item
         ));
       }
-      notifyWatchers();
+      notifyWatchers(operation.ledgerId);
     },
     async undoTransactionDelete(transactionId) {
-      const pendingDelete = pendingDeletes.get(transactionId);
+      let pendingIndex = -1;
+      for (let index = pendingDeletes.length - 1; index >= 0; index -= 1) {
+        if (pendingDeletes[index]?.transaction.id === transactionId) {
+          pendingIndex = index;
+          break;
+        }
+      }
+      const pendingDelete = pendingIndex === -1 ? undefined : pendingDeletes[pendingIndex];
       if (pendingDelete) {
         fixture.snapshot.transactions = fixture.snapshot.transactions.map((item) => (
-          item.id === transactionId ? structuredClone(pendingDelete) : item
+          item.id === transactionId && item.ledgerId === pendingDelete.ledgerId
+            ? structuredClone(pendingDelete.transaction)
+            : item
         ));
-        pendingDeletes.delete(transactionId);
-        notifyWatchers();
+        pendingDeletes.splice(pendingIndex, 1);
+        notifyWatchers(pendingDelete.ledgerId);
         return;
       }
-      const deletedTransaction = fixture.snapshot.transactions.find((item) => (
-        item.id === transactionId && item.deletedAt !== null
-      ));
+      let deletedTransaction: Transaction | undefined;
+      for (let index = fixture.snapshot.transactions.length - 1; index >= 0; index -= 1) {
+        const candidate = fixture.snapshot.transactions[index];
+        if (candidate?.id === transactionId && candidate.deletedAt !== null) {
+          deletedTransaction = candidate;
+          break;
+        }
+      }
       if (!deletedTransaction) return;
       fixture.snapshot.transactions = fixture.snapshot.transactions.map((item) => (
-        item.id === transactionId
+        item.id === transactionId && item.ledgerId === deletedTransaction.ledgerId
           ? { ...item, deletedAt: null, version: item.version + 1 }
           : item
       ));
-      notifyWatchers();
+      notifyWatchers(deletedTransaction.ledgerId);
     },
   };
   return fixture;

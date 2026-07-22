@@ -136,7 +136,7 @@ describe('AuthGateView', () => {
       </AuthGateView>,
     );
 
-    expect(screen.getByRole('status')).toHaveTextContent('姝ｅ湪鍑嗗涓汉璐︽湰');
+    expect(screen.getByRole('status')).toHaveTextContent('正在准备个人账本');
     expect(screen.queryByText('搴旂敤妗嗘灦')).not.toBeInTheDocument();
   });
 
