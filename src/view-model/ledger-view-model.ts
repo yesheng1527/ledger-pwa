@@ -131,16 +131,29 @@ function fallbackTitle(transaction: Transaction, category: Category | undefined)
   }
 }
 
+function orderTransactionEntries(
+  transaction: Transaction,
+  transactionEntries: readonly LedgerEntryRecord[],
+): readonly LedgerEntryRecord[] {
+  if (transaction.type !== 'transfer') return transactionEntries;
+  return [...transactionEntries].sort((left, right) => {
+    const leftRank = left.deltaCents < 0 ? 0 : 1;
+    const rightRank = right.deltaCents < 0 ? 0 : 1;
+    return leftRank - rightRank;
+  });
+}
+
 function toRow(
   transaction: Transaction,
   accountMap: ReadonlyMap<string, Account>,
   categoryMap: ReadonlyMap<string, Category>,
   transactionEntries: readonly LedgerEntryRecord[],
 ): TransactionRowModel {
+  const orderedEntries = orderTransactionEntries(transaction, transactionEntries);
   const category = transaction.categoryId
     ? categoryMap.get(transaction.categoryId)
     : undefined;
-  const entryAccountNames = transactionEntries.map((entry) => (
+  const entryAccountNames = orderedEntries.map((entry) => (
     accountMap.get(entry.accountId)?.name ?? '未知账户'
   ));
   const date = new Date(transaction.occurredAt);
@@ -155,7 +168,7 @@ function toRow(
     accountLabel: transaction.type === 'transfer'
       ? entryAccountNames.join(' → ')
       : entryAccountNames.join('、'),
-    ...amountPresentation(transaction, transactionEntries),
+    ...amountPresentation(transaction, orderedEntries),
     version: transaction.version,
   };
 }
@@ -188,7 +201,8 @@ export class LedgerViewModel {
   readonly ledgerId: string;
   private readonly repository: LedgerViewModelOptions['repository'];
   private readonly now: LedgerViewModelOptions['now'];
-  private readonly listeners = new Set<() => void>();
+  private readonly listeners = new Map<() => void, number>();
+  private subscriberCount = 0;
   private stopWatching: (() => void) | null = null;
   private disposed = false;
 
@@ -324,7 +338,10 @@ export class LedgerViewModel {
     if (!transaction) return null;
 
     const { accountMap, categoryMap, entryMap } = projectionContext(snapshot);
-    const transactionEntries = entryMap.get(transaction.id) ?? [];
+    const transactionEntries = orderTransactionEntries(
+      transaction,
+      entryMap.get(transaction.id) ?? [],
+    );
     const originalTransaction = transaction.originalTransactionId
       ? snapshot.transactions.find((item) => item.id === transaction.originalTransactionId)
       : undefined;
@@ -361,18 +378,22 @@ export class LedgerViewModel {
 
   subscribe(listener: () => void): () => void {
     if (this.disposed) return () => undefined;
-    this.listeners.add(listener);
-    if (this.listeners.size === 1) {
+    this.listeners.set(listener, (this.listeners.get(listener) ?? 0) + 1);
+    this.subscriberCount += 1;
+    if (this.subscriberCount === 1) {
       this.stopWatching = this.repository.watchLedger(this.ledgerId, () => {
-        [...this.listeners].forEach((currentListener) => currentListener());
+        [...this.listeners.keys()].forEach((currentListener) => currentListener());
       });
     }
     let subscribed = true;
     return () => {
       if (!subscribed) return;
       subscribed = false;
-      this.listeners.delete(listener);
-      if (this.listeners.size === 0) {
+      const listenerReferences = this.listeners.get(listener) ?? 0;
+      if (listenerReferences <= 1) this.listeners.delete(listener);
+      else this.listeners.set(listener, listenerReferences - 1);
+      this.subscriberCount -= 1;
+      if (this.subscriberCount === 0) {
         this.stopWatching?.();
         this.stopWatching = null;
       }
@@ -384,6 +405,7 @@ export class LedgerViewModel {
     this.disposed = true;
     this.stopWatching?.();
     this.stopWatching = null;
+    this.subscriberCount = 0;
     this.listeners.clear();
   }
 }

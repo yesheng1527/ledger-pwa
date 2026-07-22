@@ -150,6 +150,27 @@ describe('LedgerViewModel transaction projections', () => {
     });
   });
 
+  it('normalizes transfer direction for rows and detail when entries arrive reversed', async () => {
+    const repository = createMutableLedgerFixture();
+    const transferEntries = repository.snapshot.entries
+      .filter((item) => item.transactionId === fixtureIds.transferTransaction)
+      .reverse();
+    const otherEntries = repository.snapshot.entries
+      .filter((item) => item.transactionId !== fixtureIds.transferTransaction);
+    const viewModel = createFixtureViewModel({ entries: [...otherEntries, ...transferEntries] });
+
+    const rows = (await viewModel.getTransactions(defaultFilters))
+      .groups.flatMap((group) => group.rows);
+    const detail = await viewModel.getTransactionDetail(fixtureIds.transferTransaction);
+
+    expect.soft(rows.find((row) => row.id === fixtureIds.transferTransaction)?.accountLabel)
+      .toBe('储蓄卡 → 现金');
+    expect.soft(detail?.entries).toEqual([
+      { accountId: fixtureIds.bank, accountName: '储蓄卡', deltaCents: -10000 },
+      { accountId: fixtureIds.cash, accountName: '现金', deltaCents: 10000 },
+    ]);
+  });
+
   it('omits archived options but keeps archived references readable in rows', async () => {
     const result = await createFixtureViewModel().getTransactions(defaultFilters);
     expect(result.accounts.map((item) => item.name)).not.toContain('已归档账户');
@@ -188,6 +209,36 @@ describe('LedgerViewModel transaction projections', () => {
 });
 
 describe('LedgerViewModel subscriptions', () => {
+  it('reference-counts duplicate listener subscriptions without leaking repository watches', () => {
+    const { repository, viewModel } = createFixtureViewModelHarness();
+    const stopWatch = vi.fn();
+    let repositoryListener: (() => void) | undefined;
+    const watch = vi.spyOn(repository, 'watchLedger').mockImplementation((_ledgerId, listener) => {
+      repositoryListener = listener;
+      return stopWatch;
+    });
+    const listener = vi.fn();
+
+    const unsubscribeFirst = viewModel.subscribe(listener);
+    const unsubscribeSecond = viewModel.subscribe(listener);
+    expect(watch).toHaveBeenCalledTimes(1);
+
+    repositoryListener?.();
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribeFirst();
+    repositoryListener?.();
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(stopWatch).not.toHaveBeenCalled();
+
+    unsubscribeSecond();
+    expect(stopWatch).toHaveBeenCalledTimes(1);
+
+    const unsubscribeThird = viewModel.subscribe(listener);
+    expect(watch).toHaveBeenCalledTimes(2);
+    unsubscribeThird();
+    expect(stopWatch).toHaveBeenCalledTimes(2);
+  });
+
   it('shares one repository watch and releases it after the final subscriber', () => {
     const { repository, viewModel } = createFixtureViewModelHarness();
     const stopWatch = vi.fn();
