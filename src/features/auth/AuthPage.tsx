@@ -148,14 +148,11 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
   const statusDescriptionId = status?.kind === 'error' ? AUTH_STATUS_ID : undefined;
 
   return (
-    <main className={styles.page}>
+    <main className={styles.page} data-ambient-motion>
       <section className={styles.introduction} aria-label="海风小账本">
         <div className={styles.brand}>
           <HandDrawnIcon asset="brand:shell" label="海风小账本" />
           <span>海风小账本</span>
-        </div>
-        <div className={styles.illustration} data-ambient-motion>
-          <HandDrawnIcon asset="illustration:auth-seaside" decorative />
         </div>
         <p>让收支记录像海风一样轻松、清楚。</p>
       </section>

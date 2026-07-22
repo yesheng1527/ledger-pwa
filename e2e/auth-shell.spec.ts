@@ -35,6 +35,12 @@ for (const viewport of viewports) {
 
     test('logged-out controls fit and meet the 44px target', async ({ page }) => {
       await page.goto('?fixture=logged-out');
+      const authMain = page.getByRole('main');
+      const authBackgroundImage = await authMain.evaluate(
+        (element) => getComputedStyle(element).backgroundImage,
+      );
+      expect.soft(authBackgroundImage).toMatch(/auth-seaside(?:-[A-Za-z0-9_-]+)?\.svg/);
+      await expect(authMain.locator('img[src*="auth-seaside"]')).toHaveCount(0);
 
       const controls = [
         { name: '邮箱', locator: page.getByRole('textbox', { name: '邮箱' }) },
@@ -67,11 +73,20 @@ for (const viewport of viewports) {
 
       await expect(buttons).toHaveText(['首页', '流水', '记账', '统计', '我的']);
       await expect(page.getByRole('button', { name: '首页' })).toHaveAttribute('aria-current', 'page');
+      const navigationBottoms: Array<{ name: string; bottom: number }> = [];
       for (const button of await buttons.all()) {
         await expectMinimumHeight(button);
         const box = await button.boundingBox();
-        expect(box!.y + box!.height, `navigation button bottom was ${box!.y + box!.height}px`).toBeLessThanOrEqual(viewport.height);
+        const bottom = box!.y + box!.height;
+        navigationBottoms.push({ name: await button.innerText(), bottom });
+        expect(bottom, `navigation button bottom was ${bottom}px`).toBeLessThanOrEqual(viewport.height);
       }
+      const alignedBottomSpread = Math.max(...navigationBottoms.map(({ bottom }) => bottom))
+        - Math.min(...navigationBottoms.map(({ bottom }) => bottom));
+      expect(
+        alignedBottomSpread,
+        `navigation bottoms: ${JSON.stringify(navigationBottoms)}`,
+      ).toBeLessThanOrEqual(1);
 
       const entryButton = page.getByRole('button', { name: '记账' });
       await entryButton.click();
@@ -85,3 +100,17 @@ for (const viewport of viewports) {
     });
   });
 }
+
+test('login card begins within the upper 42 percent at every phone viewport', async ({ page }) => {
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto('?fixture=logged-out');
+    const card = page.locator('main form').locator('..');
+    const box = await card.boundingBox();
+    const maximumTop = viewport.height * 0.42;
+    expect.soft(
+      box!.y,
+      `${viewport.width}x${viewport.height} card: top=${box!.y}px maximum=${maximumTop}px ratio=${box!.y / viewport.height}`,
+    ).toBeLessThanOrEqual(maximumTop);
+  }
+});

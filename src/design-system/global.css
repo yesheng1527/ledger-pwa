@@ -184,7 +184,6 @@ input[inputmode='numeric'] {
 
 .ds-bottom-navigation__button--central {
   min-height: 3.5rem;
-  translate: 0 -0.75rem;
   border-radius: var(--radius-round);
   background: var(--color-coral);
   box-shadow: var(--shadow-raised);

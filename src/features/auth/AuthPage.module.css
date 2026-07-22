@@ -7,6 +7,17 @@
   width: min(68rem, calc(100% - 2 * var(--space-6)));
   margin: 0 auto;
   padding: var(--space-8) 0;
+  background-image:
+    linear-gradient(
+      to bottom,
+      transparent 0 8rem,
+      rgb(255 249 239 / 70%) 14rem,
+      var(--color-paper) 20rem
+    ),
+    url('../../assets/illustrations/auth-seaside.svg');
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-size: 100% 20rem, 115% auto;
 }
 
 .introduction {
@@ -28,17 +39,6 @@
 .brand img {
   width: 3rem;
   height: 3rem;
-}
-
-.illustration {
-  width: min(100%, 31rem);
-  animation: seaside-float 5s ease-in-out infinite;
-  transition: transform 240ms ease;
-}
-
-.illustration img {
-  width: 100%;
-  height: auto;
 }
 
 .introduction p,
@@ -103,25 +103,10 @@
   font-weight: 600;
 }
 
-@keyframes seaside-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-
-  50% {
-    transform: translateY(-0.5rem);
-  }
-}
-
 @media (max-width: 48rem) {
   .page {
     grid-template-columns: minmax(0, 1fr);
     width: min(32rem, calc(100% - 2 * var(--space-4)));
-  }
-
-  .illustration {
-    width: min(70vw, 18rem);
   }
 }
 
@@ -134,6 +119,7 @@
   }
 
   .introduction {
+    min-height: 8rem;
     gap: var(--space-1);
   }
 
@@ -145,10 +131,6 @@
   .brand img {
     width: 2rem;
     height: 2rem;
-  }
-
-  .illustration {
-    width: min(50vw, 10rem);
   }
 
   .introduction p,
