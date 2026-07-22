@@ -16,4 +16,6 @@ export const assetRegistry = {
   'nav:profile': profile,
 } as const;
 
+Object.freeze(assetRegistry);
+
 export type AssetKey = keyof typeof assetRegistry;

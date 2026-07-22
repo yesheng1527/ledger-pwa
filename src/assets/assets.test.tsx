@@ -27,6 +27,10 @@ describe('minimal visual asset registry', () => {
     expect(Object.values(assetRegistry).join('\n')).not.toContain('visual-reference');
   });
 
+  it('is immutable at runtime', () => {
+    expect(Object.isFrozen(assetRegistry)).toBe(true);
+  });
+
   it('keeps every production SVG text-free and self-contained', () => {
     expect(Object.keys(svgSources)).toHaveLength(7);
 
