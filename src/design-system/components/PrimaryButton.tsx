@@ -8,10 +8,10 @@ export function PrimaryButton({ busy = false, disabled, className, children, ...
   return (
     <button
       type="button"
+      {...props}
       className={['ds-primary-button', className].filter(Boolean).join(' ')}
       aria-busy={busy || undefined}
       disabled={busy || disabled}
-      {...props}
     >
       {busy ? <span className="ds-primary-button__busy-mark" aria-hidden="true" /> : null}
       {children}

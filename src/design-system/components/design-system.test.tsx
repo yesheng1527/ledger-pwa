@@ -35,6 +35,12 @@ describe('design-system accessibility contracts', () => {
     expect(screen.getByRole('button', { name: '登录' })).toHaveAttribute('aria-busy', 'true');
   });
 
+  it('does not let caller attributes override the busy accessibility state', () => {
+    render(<PrimaryButton busy aria-busy={false}>登录</PrimaryButton>);
+
+    expect(screen.getByRole('button', { name: '登录' })).toHaveAttribute('aria-busy', 'true');
+  });
+
   it('connects field descriptions and errors through aria-describedby', () => {
     render(
       <TextField
