@@ -1,9 +1,11 @@
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import type { AppProviderServices } from '../app/providers';
+import { LedgerViewModel } from '../view-model/ledger-view-model';
+import { createMutableLedgerFixture, fixtureIds } from './ledger-fixture';
 
 export type E2eFixtureName = 'logged-out' | 'recovery' | 'logged-in';
 
-const personalLedgerId = 'e2e-personal-ledger';
+const personalLedgerId = fixtureIds.ledger;
 const idleStatus = {
   mode: 'idle',
   pendingCount: 0,
@@ -34,6 +36,7 @@ export function parseE2eFixture(value: string | null): E2eFixtureName {
 export function createE2eServices(fixture: E2eFixtureName): AppProviderServices {
   const session = fixture === 'logged-out' ? null : authenticatedSession;
   const event: AuthChangeEvent = fixture === 'recovery' ? 'PASSWORD_RECOVERY' : 'INITIAL_SESSION';
+  const repository = createMutableLedgerFixture();
 
   return {
     auth: {
@@ -54,13 +57,19 @@ export function createE2eServices(fixture: E2eFixtureName): AppProviderServices 
       async getPersonalLedgerId() {
         return session ? personalLedgerId : null;
       },
-      async saveOperation() {},
+      readLedgerSnapshot: (ledgerId) => repository.readLedgerSnapshot(ledgerId),
+      watchLedger: (ledgerId, listener) => repository.watchLedger(ledgerId, listener),
+      undoTransactionDelete: (transactionId, now) => (
+        repository.undoTransactionDelete(transactionId, now)
+      ),
+      saveOperation: (operation) => repository.saveOperation(operation),
     },
     createSyncEngine: () => ({
       getStatus: () => ({ ...idleStatus }),
       subscribe: () => () => undefined,
       async syncNow() {},
     }),
+    createLedgerViewModel: (options) => new LedgerViewModel(options),
     isOnline: () => true,
   };
 }

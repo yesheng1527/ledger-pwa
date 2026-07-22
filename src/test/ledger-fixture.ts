@@ -352,13 +352,18 @@ export interface MutableLedgerFixture {
   readLedgerSnapshot(ledgerId: string): Promise<LedgerReadSnapshot>;
   watchLedger(ledgerId: string, listener: () => void): () => void;
   saveOperation(operation: LedgerOperation): Promise<void>;
-  undoTransactionDelete(transactionId: string, now: string): Promise<void>;
+  undoTransactionDelete(transactionId: string, now?: string): Promise<void>;
 }
 
 export function createMutableLedgerFixture(
   overrides: Partial<LedgerReadSnapshot> = {},
 ): MutableLedgerFixture {
   const listeners = new Set<() => void>();
+  const pendingDeletes = new Map<string, Transaction>();
+  const notifyWatchers = () => listeners.forEach((listener) => listener());
+  const entryId = (transactionId: string, index: number) => (
+    `${transactionId.slice(0, -2)}${String(index + 1).padStart(2, '0')}`
+  );
   const fixture: MutableLedgerFixture = {
     snapshot: { ...baseSnapshot(), ...structuredClone(overrides) },
     async readLedgerSnapshot(ledgerId) {
@@ -386,7 +391,7 @@ export function createMutableLedgerFixture(
         operation.entries.forEach((item, index) => {
           fixture.snapshot.entries.push({
             ...structuredClone(item),
-            id: `${operation.transaction.id}:${index}`,
+            id: entryId(operation.transaction.id, index),
             ledgerId: operation.ledgerId,
             transactionId: operation.transaction.id,
           });
@@ -401,31 +406,53 @@ export function createMutableLedgerFixture(
         operation.entries.forEach((item, index) => {
           fixture.snapshot.entries.push({
             ...structuredClone(item),
-            id: `${operation.transaction.id}:${index}`,
+            id: entryId(operation.transaction.id, index),
             ledgerId: operation.ledgerId,
             transactionId: operation.transaction.id,
           });
         });
       } else if (operation.kind === 'transaction.delete') {
+        const current = fixture.snapshot.transactions.find(
+          (item) => item.id === operation.transactionId,
+        );
+        if (current && current.deletedAt === null) {
+          pendingDeletes.set(operation.transactionId, structuredClone(current));
+        }
         fixture.snapshot.transactions = fixture.snapshot.transactions.map((item) => (
           item.id === operation.transactionId
             ? { ...item, deletedAt: operation.deletedAt, version: item.version + 1 }
             : item
         ));
       } else if (operation.kind === 'transaction.restore') {
+        pendingDeletes.delete(operation.transactionId);
         fixture.snapshot.transactions = fixture.snapshot.transactions.map((item) => (
           item.id === operation.transactionId
             ? { ...item, deletedAt: null, version: item.version + 1 }
             : item
         ));
       }
-      listeners.forEach((listener) => listener());
+      notifyWatchers();
     },
     async undoTransactionDelete(transactionId) {
-      fixture.snapshot.transactions = fixture.snapshot.transactions.map((item) => (
-        item.id === transactionId ? { ...item, deletedAt: null } : item
+      const pendingDelete = pendingDeletes.get(transactionId);
+      if (pendingDelete) {
+        fixture.snapshot.transactions = fixture.snapshot.transactions.map((item) => (
+          item.id === transactionId ? structuredClone(pendingDelete) : item
+        ));
+        pendingDeletes.delete(transactionId);
+        notifyWatchers();
+        return;
+      }
+      const deletedTransaction = fixture.snapshot.transactions.find((item) => (
+        item.id === transactionId && item.deletedAt !== null
       ));
-      listeners.forEach((listener) => listener());
+      if (!deletedTransaction) return;
+      fixture.snapshot.transactions = fixture.snapshot.transactions.map((item) => (
+        item.id === transactionId
+          ? { ...item, deletedAt: null, version: item.version + 1 }
+          : item
+      ));
+      notifyWatchers();
     },
   };
   return fixture;

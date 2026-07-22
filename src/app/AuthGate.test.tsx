@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import type { Session } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AppRuntimeValue } from './providers';
+import { LedgerViewModel } from '../view-model/ledger-view-model';
+import { createMutableLedgerFixture, fixtureIds } from '../test/ledger-fixture';
 import { AuthGateView } from './AuthGate';
 
 afterEach(() => cleanup());
@@ -38,6 +40,7 @@ function createRuntime(overrides: Partial<AppRuntimeValue> = {}): AppRuntimeValu
     passwordRecovery: false,
     initializing: false,
     initializationMessage: null,
+    ledgerViewModel: null,
     syncStatus: {
       mode: 'idle',
       pendingCount: 0,
@@ -52,6 +55,18 @@ function createRuntime(overrides: Partial<AppRuntimeValue> = {}): AppRuntimeValu
     saveOperation: vi.fn(async () => undefined),
     ...overrides,
   };
+}
+
+function createReadyViewModel(): LedgerViewModel {
+  const repository = createMutableLedgerFixture();
+  return new LedgerViewModel({
+    ledgerId: fixtureIds.ledger,
+    repository,
+    saveOperation: (operation) => repository.saveOperation(operation),
+    syncNow: async () => undefined,
+    now: () => new Date('2026-07-18T12:00:00.000Z'),
+    makeUuid: () => '00000000-0000-4000-8000-000000009999',
+  });
 }
 
 describe('AuthGateView', () => {
@@ -114,6 +129,17 @@ describe('AuthGateView', () => {
     expect(screen.queryByText('应用框架')).not.toBeInTheDocument();
   });
 
+  it('keeps the branded loading state while the ledger view model is missing', () => {
+    render(
+      <AuthGateView runtime={createRuntime({ session, authReady: true, initializing: false })}>
+        <span>搴旂敤妗嗘灦</span>
+      </AuthGateView>,
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent('姝ｅ湪鍑嗗涓汉璐︽湰');
+    expect(screen.queryByText('搴旂敤妗嗘灦')).not.toBeInTheDocument();
+  });
+
   it('shows the first-login offline explanation instead of the shell', () => {
     const runtime = createRuntime();
     render(
@@ -145,7 +171,11 @@ describe('AuthGateView', () => {
 
   it('renders the authenticated shell after initialization', () => {
     render(
-      <AuthGateView runtime={createRuntime({ session, authReady: true })}>
+      <AuthGateView runtime={createRuntime({
+        session,
+        authReady: true,
+        ledgerViewModel: createReadyViewModel(),
+      })}>
         <span>应用框架</span>
       </AuthGateView>,
     );

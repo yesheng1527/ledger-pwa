@@ -14,6 +14,8 @@ import type { LedgerOperation } from '../domain/operations';
 import { AuthService, type SessionChangeListener } from '../services/auth-service';
 import { LedgerApi } from '../services/ledger-api';
 import { SyncEngine, type SyncStatus } from '../sync/sync-engine';
+import { LedgerViewModel } from '../view-model/ledger-view-model';
+import type { LedgerViewModelOptions } from '../view-model/types';
 
 const FIRST_LOGIN_OFFLINE_MESSAGE = '首次登录需要联网完成初始化';
 const INITIALIZATION_ERROR_MESSAGE = '初始化失败，请稍后重试';
@@ -35,7 +37,7 @@ type RuntimeLedgerApi = {
   bootstrapPersonalLedger(): Promise<string>;
 };
 
-type RuntimeLedgerRepository = {
+type RuntimeLedgerRepository = LedgerViewModelOptions['repository'] & {
   getPersonalLedgerId(userId: string): Promise<string | null>;
   saveOperation(operation: LedgerOperation): Promise<void>;
 };
@@ -51,6 +53,7 @@ export type AppProviderServices = {
   api: RuntimeLedgerApi;
   repo: RuntimeLedgerRepository;
   createSyncEngine(ledgerId: string): RuntimeSyncEngine;
+  createLedgerViewModel(options: LedgerViewModelOptions): LedgerViewModel;
   isOnline(): boolean;
 };
 
@@ -61,6 +64,7 @@ export type AppRuntimeValue = {
   initializing: boolean;
   initializationMessage: string | null;
   syncStatus: SyncStatus;
+  ledgerViewModel: LedgerViewModel | null;
   signIn(email: string, password: string): Promise<void>;
   requestPasswordReset(email: string): Promise<void>;
   updatePassword(password: string): Promise<void>;
@@ -101,6 +105,7 @@ function createDefaultServices(): AppProviderServices {
     repo,
     isOnline,
     createSyncEngine: (ledgerId) => new SyncEngine(ledgerId, repo, api, isOnline),
+    createLedgerViewModel: (options) => new LedgerViewModel(options),
   };
 }
 
@@ -118,11 +123,13 @@ export function AppProviders({
   const [initializing, setInitializing] = useState(false);
   const [initializationMessage, setInitializationMessage] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(idleStatus);
+  const [ledgerViewModel, setLedgerViewModel] = useState<LedgerViewModel | null>(null);
   const sessionRef = useRef<Session | null>(null);
   const engineRef = useRef<RuntimeSyncEngine | null>(null);
   const engineBootstrappedRef = useRef(false);
   const stopEngineStatusRef = useRef<(() => void) | null>(null);
   const generationRef = useRef(0);
+  const ledgerViewModelRef = useRef<LedgerViewModel | null>(null);
   const initializeRef = useRef<(
     nextSession: Session,
     force?: boolean,
@@ -147,6 +154,13 @@ export function AppProviders({
     await resolvedServices.repo.saveOperation(operation);
     await syncNow();
   }, [resolvedServices, syncNow]);
+
+  const replaceLedgerViewModel = useCallback((next: LedgerViewModel | null) => {
+    if (ledgerViewModelRef.current === next) return;
+    ledgerViewModelRef.current?.dispose();
+    ledgerViewModelRef.current = next;
+    setLedgerViewModel(next);
+  }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
     await resolvedServices.auth.signIn(email, password);
@@ -184,6 +198,7 @@ export function AppProviders({
       }
       const generation = ++generationRef.current;
       stopEngineStatus();
+      replaceLedgerViewModel(null);
       sessionRef.current = nextSession;
       setSession(nextSession);
       setInitializing(nextSession !== null);
@@ -214,6 +229,19 @@ export function AppProviders({
         stopEngineStatusRef.current = engine.subscribe((status) => {
           if (generation === generationRef.current) setSyncStatus(status);
         });
+        const nextLedgerViewModel = resolvedServices.createLedgerViewModel({
+          ledgerId,
+          repository: resolvedServices.repo,
+          saveOperation,
+          syncNow,
+          now: () => new Date(),
+          makeUuid: () => crypto.randomUUID(),
+        });
+        if (generation !== generationRef.current) {
+          nextLedgerViewModel.dispose();
+          return;
+        }
+        replaceLedgerViewModel(nextLedgerViewModel);
         setSyncStatus(engine.getStatus());
         setInitializing(false);
         setInitializationMessage(null);
@@ -253,11 +281,12 @@ export function AppProviders({
       initializeRef.current = async () => undefined;
       sessionRef.current = null;
       stopEngineStatus();
+      replaceLedgerViewModel(null);
       window.removeEventListener('online', handleOnline);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       unsubscribeAuth();
     };
-  }, [resolvedServices, syncNow]);
+  }, [replaceLedgerViewModel, resolvedServices, saveOperation, syncNow]);
 
   const value: AppRuntimeValue = {
     session,
@@ -266,6 +295,7 @@ export function AppProviders({
     initializing,
     initializationMessage,
     syncStatus,
+    ledgerViewModel,
     signIn,
     requestPasswordReset,
     updatePassword,

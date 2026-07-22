@@ -61,6 +61,9 @@ export function AuthGateView({ runtime, children }: AuthGateViewProps) {
   if (runtime.initializationMessage) {
     return <InitializationErrorState message={runtime.initializationMessage} onRetry={runtime.syncNow} />;
   }
+  if (!runtime.ledgerViewModel) {
+    return <BrandedLoadingState label="姝ｅ湪鍑嗗涓汉璐︽湰" />;
+  }
   return <>{children}</>;
 }
 

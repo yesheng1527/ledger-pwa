@@ -3,8 +3,11 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode, useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { LedgerReadSnapshot } from '../db/records';
 import type { LedgerOperation } from '../domain/operations';
 import type { SyncStatus } from '../sync/sync-engine';
+import { LedgerViewModel } from '../view-model/ledger-view-model';
+import type { LedgerViewModelOptions } from '../view-model/types';
 import { AuthGate } from './AuthGate';
 import {
   AppProviders,
@@ -136,21 +139,41 @@ function createHarness(options: { online?: boolean; cachedLedgerId?: string | nu
   const auth = createAuthHarness();
   const sync = createEngineHarness();
   const savedOperations: LedgerOperation[] = [];
+  const emptySnapshot = (ledgerId: string): LedgerReadSnapshot => ({
+    ledgerId,
+    accounts: [],
+    categories: [],
+    transactions: [],
+    entries: [],
+    budgets: [],
+    categoryBudgets: [],
+  });
   const repo = {
     getPersonalLedgerId: vi.fn(async () => options.cachedLedgerId ?? null),
+    readLedgerSnapshot: vi.fn(async (ledgerId: string) => emptySnapshot(ledgerId)),
+    watchLedger: vi.fn(() => () => undefined),
     saveOperation: vi.fn(async (operation: LedgerOperation) => {
       savedOperations.push(operation);
     }),
+    undoTransactionDelete: vi.fn(async () => undefined),
   };
   const api = {
     bootstrapPersonalLedger: vi.fn(async () => ledgerA),
   };
   const createSyncEngine = vi.fn(() => sync.engine);
+  const viewModels: LedgerViewModel[] = [];
+  const createLedgerViewModel = vi.fn((viewModelOptions: LedgerViewModelOptions) => {
+    const viewModel = new LedgerViewModel(viewModelOptions);
+    vi.spyOn(viewModel, 'dispose');
+    viewModels.push(viewModel);
+    return viewModel;
+  });
   const services = {
     auth: auth.service,
     api,
     repo,
     createSyncEngine,
+    createLedgerViewModel,
     isOnline: () => online,
   } satisfies AppProviderServices;
   return {
@@ -159,6 +182,8 @@ function createHarness(options: { online?: boolean; cachedLedgerId?: string | nu
     repo,
     api,
     createSyncEngine,
+    createLedgerViewModel,
+    viewModels,
     services,
     savedOperations,
     setOnline(value: boolean) {
@@ -180,6 +205,7 @@ function RuntimeProbe({ onRuntime }: { onRuntime?: (runtime: AppRuntimeValue) =>
         initializing: runtime.initializing,
         message: runtime.initializationMessage,
         syncMode: runtime.syncStatus.mode,
+        ledgerId: runtime.ledgerViewModel?.ledgerId ?? null,
       })}
     </output>
   );
@@ -284,6 +310,50 @@ describe('AppProviders', () => {
       .toBeLessThan(harness.sync.engine.syncNow.mock.invocationCallOrder[0]);
   });
 
+  it('publishes one view model only after the personal ledger is initialized', async () => {
+    const pendingBootstrap = deferred<string>();
+    const harness = createHarness();
+    harness.api.bootstrapPersonalLedger.mockReturnValue(pendingBootstrap.promise);
+    render(<AppProviders services={harness.services}><RuntimeProbe /></AppProviders>);
+
+    emitSession(harness.auth, sessionFor('user-a'));
+    await waitFor(() => expect(harness.api.bootstrapPersonalLedger).toHaveBeenCalledOnce());
+    expect(latestRuntime.ledgerViewModel).toBeNull();
+    expect(latestRuntime.initializing).toBe(true);
+
+    pendingBootstrap.resolve(ledgerA);
+    await waitFor(() => expect(latestRuntime.ledgerViewModel?.ledgerId).toBe(ledgerA));
+
+    expect(harness.createLedgerViewModel).toHaveBeenCalledOnce();
+    expect(latestRuntime.initializing).toBe(false);
+  });
+
+  it('disposes each replaced view model exactly once on user replacement and sign-out', async () => {
+    const harness = createHarness();
+    harness.api.bootstrapPersonalLedger
+      .mockResolvedValueOnce(ledgerA)
+      .mockResolvedValueOnce(ledgerB);
+    render(<AppProviders services={harness.services}><RuntimeProbe /></AppProviders>);
+
+    emitSession(harness.auth, sessionFor('user-a'));
+    await waitFor(() => expect(latestRuntime.ledgerViewModel?.ledgerId).toBe(ledgerA));
+    const first = harness.viewModels[0];
+    expect(first).toBeDefined();
+
+    emitSession(harness.auth, sessionFor('user-b'));
+    await waitFor(() => expect(latestRuntime.ledgerViewModel?.ledgerId).toBe(ledgerB));
+    expect(first?.dispose).toHaveBeenCalledOnce();
+    const second = harness.viewModels[1];
+    expect(second).toBeDefined();
+
+    act(() => harness.auth.emit('SIGNED_OUT', null));
+    await waitFor(() => expect(latestRuntime.ledgerViewModel).toBeNull());
+    act(() => harness.auth.emit('SIGNED_OUT', null));
+
+    expect(first?.dispose).toHaveBeenCalledOnce();
+    expect(second?.dispose).toHaveBeenCalledOnce();
+  });
+
   it('does not make the auth listener wait for authenticated initialization', async () => {
     const pendingBootstrap = deferred<string>();
     const harness = createHarness();
@@ -349,6 +419,8 @@ describe('AppProviders', () => {
 
     expect(harness.createSyncEngine).toHaveBeenCalledTimes(1);
     expect(harness.createSyncEngine).not.toHaveBeenCalledWith(ledgerA);
+    expect(harness.createLedgerViewModel).toHaveBeenCalledTimes(1);
+    expect(latestRuntime.ledgerViewModel?.ledgerId).toBe(ledgerB);
     expect(screen.getByLabelText('runtime')).toHaveTextContent('"userId":"user-b"');
   });
 
@@ -403,6 +475,9 @@ describe('AppProviders', () => {
     await waitFor(() => expect(harness.sync.engine.syncNow).toHaveBeenCalledOnce());
     expect(harness.api.bootstrapPersonalLedger).toHaveBeenCalledOnce();
     expect(harness.createSyncEngine).toHaveBeenCalledTimes(2);
+    expect(harness.createLedgerViewModel).toHaveBeenCalledTimes(2);
+    expect(harness.viewModels[0]?.dispose).toHaveBeenCalledOnce();
+    expect(latestRuntime.ledgerViewModel).toBe(harness.viewModels[1]);
     expect(harness.api.bootstrapPersonalLedger.mock.invocationCallOrder[0])
       .toBeLessThan(harness.sync.engine.syncNow.mock.invocationCallOrder[0]);
   });
@@ -469,6 +544,8 @@ describe('AppProviders', () => {
 
     expect(harness.auth.listenerCount()).toBe(0);
     expect(harness.sync.listenerCount()).toBe(0);
+    expect(harness.viewModels).toHaveLength(1);
+    expect(harness.viewModels[0]?.dispose).toHaveBeenCalledOnce();
     expect(harness.auth.unsubscribers).toHaveLength(2);
     expect(harness.auth.unsubscribers.every((unsubscribe) => unsubscribe.mock.calls.length === 1))
       .toBe(true);
