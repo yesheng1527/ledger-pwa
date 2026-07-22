@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as metrics from '../domain/metrics';
-import type { LedgerOperation } from '../domain/operations';
+import { validateOperation, type LedgerOperation } from '../domain/operations';
 import type { LedgerReadSnapshot } from '../db/records';
 import {
   createMutableLedgerFixture,
@@ -10,6 +10,7 @@ import {
   fixtureTimes,
 } from '../test/ledger-fixture';
 import { LedgerViewModel } from './ledger-view-model';
+import type { TransactionEditInput } from './types';
 
 function sequentialUuidFactory() {
   let sequence = 900;
@@ -33,6 +34,67 @@ function createFixtureViewModelHarness(overrides?: Partial<LedgerReadSnapshot>) 
 
 function createFixtureViewModel(overrides?: Partial<LedgerReadSnapshot>) {
   return createFixtureViewModelHarness(overrides).viewModel;
+}
+
+type CategoryEditInput = Extract<
+  TransactionEditInput,
+  { type: 'expense' | 'income' }
+>;
+type TransferEditInput = Extract<TransactionEditInput, { type: 'transfer' }>;
+type AdjustmentEditInput = Extract<TransactionEditInput, { type: 'adjustment' }>;
+
+function categoryEditInput(
+  repository: ReturnType<typeof createMutableLedgerFixture>,
+  type: 'expense' | 'income',
+  overrides: Partial<CategoryEditInput> = {},
+): CategoryEditInput {
+  const current = repository.snapshot.transactions.find((item) => item.type === type)!;
+  return {
+    id: current.id,
+    baseVersion: current.version,
+    type,
+    amountCents: current.amountCents,
+    accountId: fixtureIds.bank,
+    categoryId: current.categoryId!,
+    occurredAt: current.occurredAt,
+    note: current.note,
+    ...overrides,
+  };
+}
+
+function transferEditInput(
+  repository: ReturnType<typeof createMutableLedgerFixture>,
+  overrides: Partial<TransferEditInput> = {},
+): TransferEditInput {
+  const current = repository.snapshot.transactions.find((item) => item.type === 'transfer')!;
+  return {
+    id: current.id,
+    baseVersion: current.version,
+    type: 'transfer',
+    amountCents: current.amountCents,
+    fromAccountId: fixtureIds.bank,
+    toAccountId: fixtureIds.cash,
+    occurredAt: current.occurredAt,
+    note: current.note,
+    ...overrides,
+  };
+}
+
+function adjustmentEditInput(
+  repository: ReturnType<typeof createMutableLedgerFixture>,
+  overrides: Partial<AdjustmentEditInput> = {},
+): AdjustmentEditInput {
+  const current = repository.snapshot.transactions.find((item) => item.type === 'adjustment')!;
+  return {
+    id: current.id,
+    baseVersion: current.version,
+    type: 'adjustment',
+    deltaCents: current.amountCents,
+    accountId: fixtureIds.bank,
+    occurredAt: current.occurredAt,
+    note: current.note,
+    ...overrides,
+  };
 }
 
 afterEach(() => {
@@ -288,6 +350,7 @@ describe('LedgerViewModel transaction commands', () => {
       },
       entries: [{ accountId: fixtureIds.bank, deltaCents: -6800 }],
     }));
+    expect(() => validateOperation(saveOperation.mock.calls[0][0])).not.toThrow();
   });
 
   it('updates income with an asset-account posting', async () => {
@@ -311,6 +374,7 @@ describe('LedgerViewModel transaction commands', () => {
       entries: [{ accountId: fixtureIds.bank, deltaCents: 120000 }],
       transaction: expect.objectContaining({ amountCents: 120000, version: 2 }),
     }));
+    expect(() => validateOperation(saveOperation.mock.calls[0][0])).not.toThrow();
   });
 
   it('rejects income edited to a liability account without saving', async () => {
@@ -328,6 +392,98 @@ describe('LedgerViewModel transaction commands', () => {
       note: current.note,
     })).rejects.toThrow('收入只能存入资产账户');
     expect(saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('requires expense and income accounts to exist', async () => {
+    for (const type of ['expense', 'income'] as const) {
+      const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+      await expect(viewModel.updateTransaction(categoryEditInput(repository, type, {
+        accountId: '00000000-0000-4000-8000-999999999998',
+      }))).rejects.toThrow('账户不存在或已归档');
+      expect(saveOperation).not.toHaveBeenCalled();
+    }
+  });
+
+  it('requires expense and income accounts to belong to the current ledger', async () => {
+    for (const type of ['expense', 'income'] as const) {
+      const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+      const account = repository.snapshot.accounts.find((item) => item.id === fixtureIds.bank)!;
+      account.ledgerId = '00000000-0000-4000-8000-000000000002';
+      await expect(viewModel.updateTransaction(categoryEditInput(repository, type)))
+        .rejects.toThrow('账户不存在或已归档');
+      expect(saveOperation).not.toHaveBeenCalled();
+    }
+  });
+
+  it('requires expense and income accounts to be active', async () => {
+    for (const type of ['expense', 'income'] as const) {
+      const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+      const account = repository.snapshot.accounts.find((item) => item.id === fixtureIds.bank)!;
+      account.archivedAt = fixtureNow.toISOString();
+      await expect(viewModel.updateTransaction(categoryEditInput(repository, type)))
+        .rejects.toThrow('账户不存在或已归档');
+      expect(saveOperation).not.toHaveBeenCalled();
+    }
+  });
+
+  it('requires expense and income categories to exist', async () => {
+    for (const type of ['expense', 'income'] as const) {
+      const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+      await expect(viewModel.updateTransaction(categoryEditInput(repository, type, {
+        categoryId: '00000000-0000-4000-8000-999999999997',
+      }))).rejects.toThrow('分类不存在、已归档或类型不匹配');
+      expect(saveOperation).not.toHaveBeenCalled();
+    }
+  });
+
+  it('requires expense and income categories to belong to the current ledger', async () => {
+    for (const type of ['expense', 'income'] as const) {
+      const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+      const current = repository.snapshot.transactions.find((item) => item.type === type)!;
+      const category = repository.snapshot.categories.find(
+        (item) => item.id === current.categoryId,
+      )!;
+      category.ledgerId = '00000000-0000-4000-8000-000000000002';
+      await expect(viewModel.updateTransaction(categoryEditInput(repository, type)))
+        .rejects.toThrow('分类不存在、已归档或类型不匹配');
+      expect(saveOperation).not.toHaveBeenCalled();
+    }
+  });
+
+  it('requires expense and income categories to be active', async () => {
+    for (const type of ['expense', 'income'] as const) {
+      const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+      const current = repository.snapshot.transactions.find((item) => item.type === type)!;
+      const category = repository.snapshot.categories.find(
+        (item) => item.id === current.categoryId,
+      )!;
+      category.archivedAt = fixtureNow.toISOString();
+      await expect(viewModel.updateTransaction(categoryEditInput(repository, type)))
+        .rejects.toThrow('分类不存在、已归档或类型不匹配');
+      expect(saveOperation).not.toHaveBeenCalled();
+    }
+  });
+
+  it('requires expense and income categories to match the transaction type', async () => {
+    const { repository: expenseRepository, saveOperation: expenseSave, viewModel: expenseViewModel }
+      = createFixtureViewModelHarness();
+    const incomeCategoryId = expenseRepository.snapshot.transactions
+      .find((item) => item.type === 'income')!.categoryId!;
+    await expect(expenseViewModel.updateTransaction(categoryEditInput(
+      expenseRepository,
+      'expense',
+      { categoryId: incomeCategoryId },
+    ))).rejects.toThrow('分类不存在、已归档或类型不匹配');
+    expect(expenseSave).not.toHaveBeenCalled();
+
+    const { repository: incomeRepository, saveOperation: incomeSave, viewModel: incomeViewModel }
+      = createFixtureViewModelHarness();
+    await expect(incomeViewModel.updateTransaction(categoryEditInput(
+      incomeRepository,
+      'income',
+      { categoryId: fixtureIds.foodCategory },
+    ))).rejects.toThrow('分类不存在、已归档或类型不匹配');
+    expect(incomeSave).not.toHaveBeenCalled();
   });
 
   it('updates a transfer with regenerated directional postings', async () => {
@@ -356,6 +512,7 @@ describe('LedgerViewModel transaction commands', () => {
       ],
       transaction: expect.objectContaining({ amountCents: 2500, version: 2 }),
     }));
+    expect(() => validateOperation(saveOperation.mock.calls[0][0])).not.toThrow();
   });
 
   it('rejects a same-account transfer without saving', async () => {
@@ -375,6 +532,42 @@ describe('LedgerViewModel transaction commands', () => {
       note: current.note,
     })).rejects.toThrow('转出和转入账户不能相同');
     expect(saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('requires both transfer accounts to exist', async () => {
+    for (const field of ['fromAccountId', 'toAccountId'] as const) {
+      const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+      const overrides: Partial<TransferEditInput> = {
+        [field]: '00000000-0000-4000-8000-999999999996',
+      };
+      await expect(viewModel.updateTransaction(transferEditInput(repository, overrides)))
+        .rejects.toThrow('账户不存在或已归档');
+      expect(saveOperation).not.toHaveBeenCalled();
+    }
+  });
+
+  it('requires both transfer accounts to belong to the current ledger', async () => {
+    for (const field of ['fromAccountId', 'toAccountId'] as const) {
+      const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+      const accountId = field === 'fromAccountId' ? fixtureIds.bank : fixtureIds.cash;
+      const account = repository.snapshot.accounts.find((item) => item.id === accountId)!;
+      account.ledgerId = '00000000-0000-4000-8000-000000000002';
+      await expect(viewModel.updateTransaction(transferEditInput(repository)))
+        .rejects.toThrow('账户不存在或已归档');
+      expect(saveOperation).not.toHaveBeenCalled();
+    }
+  });
+
+  it('requires both transfer accounts to be active', async () => {
+    for (const field of ['fromAccountId', 'toAccountId'] as const) {
+      const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+      const accountId = field === 'fromAccountId' ? fixtureIds.bank : fixtureIds.cash;
+      const account = repository.snapshot.accounts.find((item) => item.id === accountId)!;
+      account.archivedAt = fixtureNow.toISOString();
+      await expect(viewModel.updateTransaction(transferEditInput(repository)))
+        .rejects.toThrow('账户不存在或已归档');
+      expect(saveOperation).not.toHaveBeenCalled();
+    }
   });
 
   it('updates a refund on the original expense account and excludes itself from the cumulative total', async () => {
@@ -400,6 +593,7 @@ describe('LedgerViewModel transaction commands', () => {
         version: 2,
       }),
     }));
+    expect(() => validateOperation(saveOperation.mock.calls[0][0])).not.toThrow();
   });
 
   it('rejects a refund edit when other active refunds make the cumulative amount exceed the expense', async () => {
@@ -423,6 +617,74 @@ describe('LedgerViewModel transaction commands', () => {
     expect(saveOperation).not.toHaveBeenCalled();
   });
 
+  it('rejects a refund whose original entry account no longer exists', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const current = repository.snapshot.transactions.find((item) => item.type === 'refund')!;
+    const originalEntry = repository.snapshot.entries.find(
+      (item) => item.transactionId === current.originalTransactionId,
+    )!;
+    repository.snapshot.accounts = repository.snapshot.accounts.filter(
+      (item) => item.id !== originalEntry.accountId,
+    );
+
+    await expect(viewModel.updateTransaction({
+      id: current.id,
+      baseVersion: current.version,
+      type: 'refund',
+      amountCents: current.amountCents,
+      occurredAt: current.occurredAt,
+      note: current.note,
+    })).rejects.toThrow('原支出账户不存在');
+    expect(saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('rejects a refund whose original entry account belongs to another ledger', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const current = repository.snapshot.transactions.find((item) => item.type === 'refund')!;
+    const originalEntry = repository.snapshot.entries.find(
+      (item) => item.transactionId === current.originalTransactionId,
+    )!;
+    const originalAccount = repository.snapshot.accounts.find(
+      (item) => item.id === originalEntry.accountId,
+    )!;
+    originalAccount.ledgerId = '00000000-0000-4000-8000-000000000002';
+
+    await expect(viewModel.updateTransaction({
+      id: current.id,
+      baseVersion: current.version,
+      type: 'refund',
+      amountCents: current.amountCents,
+      occurredAt: current.occurredAt,
+      note: current.note,
+    })).rejects.toThrow('原支出账户不存在');
+    expect(saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('keeps an archived original expense account usable for its historical refund link', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const current = repository.snapshot.transactions.find((item) => item.type === 'refund')!;
+    const originalEntry = repository.snapshot.entries.find(
+      (item) => item.transactionId === current.originalTransactionId,
+    )!;
+    const originalAccount = repository.snapshot.accounts.find(
+      (item) => item.id === originalEntry.accountId,
+    )!;
+    originalAccount.archivedAt = fixtureNow.toISOString();
+
+    await viewModel.updateTransaction({
+      id: current.id,
+      baseVersion: current.version,
+      type: 'refund',
+      amountCents: current.amountCents,
+      occurredAt: current.occurredAt,
+      note: current.note,
+    });
+
+    expect(saveOperation).toHaveBeenCalledWith(expect.objectContaining({
+      entries: [{ accountId: originalAccount.id, deltaCents: -current.amountCents }],
+    }));
+  });
+
   it('updates a signed adjustment while storing its absolute transaction amount', async () => {
     const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
     const current = repository.snapshot.transactions.find((item) => item.type === 'adjustment')!;
@@ -443,6 +705,33 @@ describe('LedgerViewModel transaction commands', () => {
       entries: [{ accountId: fixtureIds.cash, deltaCents: -4500 }],
       transaction: expect.objectContaining({ amountCents: 4500, version: 2 }),
     }));
+    expect(() => validateOperation(saveOperation.mock.calls[0][0])).not.toThrow();
+  });
+
+  it('requires an adjustment account to exist', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    await expect(viewModel.updateTransaction(adjustmentEditInput(repository, {
+      accountId: '00000000-0000-4000-8000-999999999995',
+    }))).rejects.toThrow('账户不存在或已归档');
+    expect(saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('requires an adjustment account to belong to the current ledger', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const account = repository.snapshot.accounts.find((item) => item.id === fixtureIds.bank)!;
+    account.ledgerId = '00000000-0000-4000-8000-000000000002';
+    await expect(viewModel.updateTransaction(adjustmentEditInput(repository)))
+      .rejects.toThrow('账户不存在或已归档');
+    expect(saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('requires an adjustment account to be active', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const account = repository.snapshot.accounts.find((item) => item.id === fixtureIds.bank)!;
+    account.archivedAt = fixtureNow.toISOString();
+    await expect(viewModel.updateTransaction(adjustmentEditInput(repository)))
+      .rejects.toThrow('账户不存在或已归档');
+    expect(saveOperation).not.toHaveBeenCalled();
   });
 
   it('rejects a stale edit from a fresh snapshot without saving', async () => {
@@ -530,6 +819,7 @@ describe('LedgerViewModel transaction commands', () => {
       baseVersion: 1,
       deletedAt,
     });
+    expect(() => validateOperation(saveOperation.mock.calls[0][0])).not.toThrow();
   });
 
   it('rejects deleting a missing or already deleted transaction without saving', async () => {

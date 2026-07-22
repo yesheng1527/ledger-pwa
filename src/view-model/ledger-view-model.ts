@@ -240,9 +240,36 @@ export class LedgerViewModel {
     return transaction;
   }
 
-  private requireAccount(snapshot: LedgerReadSnapshot, id: string): Account {
-    const account = snapshot.accounts.find((item) => item.id === id);
-    if (!account) throw new Error('账户不存在');
+  private requireActiveAccount(snapshot: LedgerReadSnapshot, id: string): Account {
+    const account = snapshot.accounts.find((item) => (
+      item.id === id
+      && item.ledgerId === this.ledgerId
+      && item.archivedAt === null
+    ));
+    if (!account) throw new Error('账户不存在或已归档');
+    return account;
+  }
+
+  private requireActiveCategory(
+    snapshot: LedgerReadSnapshot,
+    id: string,
+    expectedKind: Category['kind'],
+  ): Category {
+    const category = snapshot.categories.find((item) => (
+      item.id === id
+      && item.ledgerId === this.ledgerId
+      && item.archivedAt === null
+      && item.kind === expectedKind
+    ));
+    if (!category) throw new Error('分类不存在、已归档或类型不匹配');
+    return category;
+  }
+
+  private requireLedgerAccount(snapshot: LedgerReadSnapshot, id: string): Account {
+    const account = snapshot.accounts.find((item) => (
+      item.id === id && item.ledgerId === this.ledgerId
+    ));
+    if (!account) throw new Error('原支出账户不存在');
     return account;
   }
 
@@ -253,18 +280,21 @@ export class LedgerViewModel {
   ): LedgerEntry[] {
     switch (input.type) {
       case 'expense':
-      case 'income':
+      case 'income': {
+        const account = this.requireActiveAccount(snapshot, input.accountId);
+        this.requireActiveCategory(snapshot, input.categoryId, input.type);
         return buildPosting({
           type: input.type,
           amountCents: input.amountCents,
-          account: this.requireAccount(snapshot, input.accountId),
+          account,
         });
+      }
       case 'transfer':
         return buildPosting({
           type: 'transfer',
           amountCents: input.amountCents,
-          from: this.requireAccount(snapshot, input.fromAccountId),
-          to: this.requireAccount(snapshot, input.toAccountId),
+          from: this.requireActiveAccount(snapshot, input.fromAccountId),
+          to: this.requireActiveAccount(snapshot, input.toAccountId),
         });
       case 'refund': {
         const original = snapshot.transactions.find((item) => (
@@ -277,6 +307,7 @@ export class LedgerViewModel {
           item.transactionId === original.id
         ));
         if (originalEntries.length !== 1) throw new Error('原支出分录无效');
+        this.requireLedgerAccount(snapshot, originalEntries[0].accountId);
         const alreadyRefundedCents = snapshot.transactions
           .filter((item) => (
             item.id !== current.id
@@ -296,7 +327,7 @@ export class LedgerViewModel {
       case 'adjustment':
         return buildPosting({
           type: 'adjustment',
-          account: this.requireAccount(snapshot, input.accountId),
+          account: this.requireActiveAccount(snapshot, input.accountId),
           deltaCents: input.deltaCents,
         });
     }
