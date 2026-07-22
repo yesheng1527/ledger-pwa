@@ -1,0 +1,91 @@
+.shell {
+  --shell-navigation-height: calc(3.5rem + var(--space-4));
+
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.background {
+  display: grid;
+  height: 100vh;
+  height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 3.5rem;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: rgb(255 249 239 / 88%);
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.main {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-4)
+    calc(var(--shell-navigation-height) + var(--safe-area-bottom));
+  overscroll-behavior: contain;
+}
+
+.navigation {
+  position: fixed;
+  z-index: 10;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.entryLayer {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(52 49 46 / 48%);
+}
+
+.dialog {
+  position: relative;
+  display: grid;
+  width: min(100%, 24rem);
+  justify-items: center;
+  gap: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-8);
+  background: var(--color-card);
+  box-shadow: var(--shadow-card);
+  text-align: center;
+}
+
+.dialog h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.dialog button {
+  min-width: var(--control-height);
+  min-height: var(--control-height);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-6);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  cursor: pointer;
+  font-weight: 700;
+}

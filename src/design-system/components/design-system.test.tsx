@@ -89,6 +89,26 @@ describe('design-system accessibility contracts', () => {
     expect(activateLedger).toHaveBeenCalledOnce();
   });
 
+  it('forwards a navigation button reference for focus management', () => {
+    const entryButtonRef = createRef<HTMLButtonElement>();
+    const items: NavigationItem[] = [
+      {
+        id: 'entry',
+        label: '记账',
+        icon: 'nav:entry',
+        active: false,
+        central: true,
+        buttonRef: entryButtonRef,
+        onActivate: vi.fn(),
+      },
+    ];
+
+    render(<BottomNavigation items={items} />);
+
+    entryButtonRef.current?.focus();
+    expect(screen.getByRole('button', { name: '记账' })).toHaveFocus();
+  });
+
   it('renders card and empty-state content without emoji presentation characters', () => {
     const { container } = render(
       <Card>

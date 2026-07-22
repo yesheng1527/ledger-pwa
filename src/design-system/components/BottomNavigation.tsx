@@ -1,4 +1,5 @@
 import type { AssetKey } from '../../assets/registry';
+import type { Ref } from 'react';
 import { HandDrawnIcon } from './HandDrawnIcon';
 
 export type NavigationItem = {
@@ -7,6 +8,7 @@ export type NavigationItem = {
   icon: AssetKey;
   active: boolean;
   central?: boolean;
+  buttonRef?: Ref<HTMLButtonElement>;
   onActivate(): void;
 };
 
@@ -22,6 +24,7 @@ export function BottomNavigation({ items, label = '主要导航' }: BottomNaviga
         {items.map((item) => (
           <li key={item.id}>
             <button
+              ref={item.buttonRef}
               type="button"
               className={[
                 'ds-bottom-navigation__button',
