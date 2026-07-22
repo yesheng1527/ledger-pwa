@@ -46,15 +46,16 @@ All paths are repository-relative and use the approved UI from `2614b3a`.
 - Coral is reserved for primary controls: the authentication submit action and the prominent center navigation action.
 - The five bottom-navigation icons retain the order Home, Transactions, Entry, Statistics, Profile; all five button bottoms are aligned, while the center action remains round and visually prominent.
 - Login, forgot-password, and password-recovery cards share the same upper-third placement. At 320x568 the complete login form remains in the first fold and every control remains at least 44px high.
-- Dialog focus moves to Close, closing restores focus to Entry, and reduced-motion mode removes ambient animation and transitions.
+- Dialog focus moves to Close and closing restores focus to Entry. Normal authentication routes expose a real 240ms background-position transition; reduced-motion mode changes it to `0s` with `animation-name: none`.
 
 ## Absence checks
 
 - No emoji presentation characters or system emoji placeholders are used in rendered design-system content; unit tests also validate the SVG asset rules and rendered component text.
 - Authentication failures are mapped to authored Chinese messages; raw Supabase errors are not rendered to users.
 - Logged-out and logged-in browser gates at all three viewports report no horizontal overflow.
-- Navigation controls remain within the viewport, share an aligned bottom edge, and use the safe-area bottom token; no navigation or dialog control overlaps the bottom safe area.
+- The CSS uses `--safe-area-bottom: max(var(--space-3), env(safe-area-inset-bottom))`. In the tested zero-inset desktop Chromium environment, the token resolves with a `0px` environment value, the 12px fallback is applied, the main content reserve ends above navigation, and navigation remains within the viewport. A real non-zero iPhone safe-area inset was not simulated.
 - The production bundle contains neither the deterministic test fixture module nor its fixture/runtime strings.
+- Only routes with the explicit `visual=1` query activate the deterministic screenshot freeze, and visual tests always compare with `expect(page).toHaveScreenshot`; no environment variable can switch them to unconditional image writes.
 - No `.env*.local` file is tracked, no service-role/JWT-like secret is present in `src`, and Supabase client/RPC access remains inside `src/services`.
 
 ## Intentional differences from the original visual board

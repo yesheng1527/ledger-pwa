@@ -54,7 +54,7 @@ for (const viewport of viewports) {
       }
       if (viewport.width === 320 && viewport.height === 568) {
         const initialViewportHeight = await page.evaluate(() => window.innerHeight);
-        for (const control of controls.slice(1)) {
+        for (const control of controls) {
           const box = await control.locator.boundingBox();
           const bottom = box!.y + box!.height;
           expect.soft(
@@ -70,6 +70,7 @@ for (const viewport of viewports) {
       await page.goto('?fixture=logged-in');
       const navigation = page.getByRole('navigation', { name: '主要导航' });
       const buttons = navigation.getByRole('button');
+      const shellMain = page.getByRole('main');
 
       await expect(buttons).toHaveText(['首页', '流水', '记账', '统计', '我的']);
       await expect(page.getByRole('button', { name: '首页' })).toHaveAttribute('aria-current', 'page');
@@ -88,6 +89,49 @@ for (const viewport of viewports) {
         `navigation bottoms: ${JSON.stringify(navigationBottoms)}`,
       ).toBeLessThanOrEqual(1);
 
+      const safeAreaLayout = await page.evaluate(() => {
+        const main = document.querySelector('main')!;
+        const navigation = document.querySelector('nav')!;
+        const rootStyle = getComputedStyle(document.documentElement);
+        const mainStyle = getComputedStyle(main);
+        const navigationStyle = getComputedStyle(navigation);
+        const mainBox = main.getBoundingClientRect();
+        const navigationBox = navigation.getBoundingClientRect();
+        const fallbackProbe = document.createElement('div');
+        fallbackProbe.style.paddingBottom = 'var(--space-3)';
+        document.body.append(fallbackProbe);
+        const fallbackPixels = Number.parseFloat(getComputedStyle(fallbackProbe).paddingBottom);
+        fallbackProbe.remove();
+
+        return {
+          safeAreaToken: rootStyle.getPropertyValue('--safe-area-bottom').trim(),
+          fallbackPixels,
+          navigationPaddingBottom: Number.parseFloat(navigationStyle.paddingBottom),
+          mainPaddingBottom: Number.parseFloat(mainStyle.paddingBottom),
+          mainContentBottom: mainBox.bottom - Number.parseFloat(mainStyle.paddingBottom),
+          navigationTop: navigationBox.top,
+          navigationBottom: navigationBox.bottom,
+          navigationHeight: navigationBox.height,
+        };
+      });
+      expect(
+        safeAreaLayout.safeAreaToken,
+        'zero-inset Chromium should resolve the safe-area environment value to 0px inside the max() token',
+      ).toMatch(/^max\(.+,\s*0px\)$/);
+      expect(safeAreaLayout.navigationPaddingBottom).toBeCloseTo(
+        safeAreaLayout.fallbackPixels,
+        5,
+      );
+      expect(safeAreaLayout.mainPaddingBottom).toBeGreaterThanOrEqual(
+        safeAreaLayout.navigationHeight,
+      );
+      expect(
+        safeAreaLayout.mainContentBottom,
+        `zero-inset main content bottom ${safeAreaLayout.mainContentBottom}px must not overlap navigation top ${safeAreaLayout.navigationTop}px`,
+      ).toBeLessThanOrEqual(safeAreaLayout.navigationTop);
+      expect(safeAreaLayout.navigationBottom).toBeLessThanOrEqual(viewport.height);
+      await expect(shellMain).toBeVisible();
+
       const entryButton = page.getByRole('button', { name: '记账' });
       await entryButton.click();
       const dialog = page.getByRole('dialog', { name: '记账功能建设中' });
@@ -101,16 +145,27 @@ for (const viewport of viewports) {
   });
 }
 
-test('login card begins within the upper 33 percent at every phone viewport', async ({ page }) => {
+test('login, forgot, and recovery cards begin within the upper 33 percent at every phone viewport', async ({ page }) => {
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
+
+    async function expectCardInUpperThird(mode: 'login' | 'forgot' | 'recovery') {
+      const card = page.locator('main form').locator('..');
+      const box = await card.boundingBox();
+      const maximumTop = viewport.height * 0.33;
+      expect.soft(
+        box!.y,
+        `${viewport.width}x${viewport.height} ${mode} card: top=${box!.y}px maximum=${maximumTop}px ratio=${box!.y / viewport.height}`,
+      ).toBeLessThanOrEqual(maximumTop);
+    }
+
     await page.goto('?fixture=logged-out');
-    const card = page.locator('main form').locator('..');
-    const box = await card.boundingBox();
-    const maximumTop = viewport.height * 0.33;
-    expect.soft(
-      box!.y,
-      `${viewport.width}x${viewport.height} card: top=${box!.y}px maximum=${maximumTop}px ratio=${box!.y / viewport.height}`,
-    ).toBeLessThanOrEqual(maximumTop);
+    await expectCardInUpperThird('login');
+
+    await page.getByRole('button', { name: '忘记密码', exact: true }).click();
+    await expectCardInUpperThird('forgot');
+
+    await page.goto('reset-password?fixture=recovery');
+    await expectCardInUpperThird('recovery');
   }
 });

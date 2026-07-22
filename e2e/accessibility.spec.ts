@@ -32,11 +32,25 @@ for (const viewport of viewports) {
     });
 
     test('removes ambient animation and transitions for reduced motion', async ({ page }) => {
-      await page.emulateMedia({ reducedMotion: 'reduce' });
       await page.goto('?fixture=logged-out');
 
       const ambient = page.locator('[data-ambient-motion]');
       await expect(ambient).not.toHaveCount(0);
+      expect.soft(
+        await page.locator('html').getAttribute('data-visual-test'),
+        'normal test-e2e routes must not activate the screenshot-only visual freeze',
+      ).toBeNull();
+      const normalTransitionDurations = await ambient.evaluateAll((elements) =>
+        elements.map((element) => getComputedStyle(element).transitionDuration),
+      );
+      for (const duration of normalTransitionDurations) {
+        expect.soft(
+          duration,
+          'ambient elements need a non-zero normal transition so reduced motion tests real behavior',
+        ).not.toBe('0s');
+      }
+
+      await page.emulateMedia({ reducedMotion: 'reduce' });
       for (const element of await ambient.all()) {
         await expect(element).toHaveCSS('animation-name', 'none');
         await expect(element).toHaveCSS('transition-duration', '0s');

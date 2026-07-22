@@ -10,11 +10,14 @@ import { AppProviders, type AppProviderServices } from './app/providers';
 async function renderApplication() {
   let services: AppProviderServices | undefined;
   if (import.meta.env.MODE === 'test-e2e') {
+    const searchParams = new URLSearchParams(location.search);
     const fixtureModule = await import('./test/e2e-services');
     services = fixtureModule.createE2eServices(
-      fixtureModule.parseE2eFixture(new URLSearchParams(location.search).get('fixture')),
+      fixtureModule.parseE2eFixture(searchParams.get('fixture')),
     );
-    document.documentElement.dataset.visualTest = 'true';
+    if (searchParams.get('visual') === '1') {
+      document.documentElement.dataset.visualTest = 'true';
+    }
   }
 
   createRoot(document.getElementById('root')!).render(
