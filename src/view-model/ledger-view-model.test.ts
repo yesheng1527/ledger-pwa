@@ -1,0 +1,229 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as metrics from '../domain/metrics';
+import type { LedgerOperation } from '../domain/operations';
+import type { LedgerReadSnapshot } from '../db/records';
+import {
+  createMutableLedgerFixture,
+  defaultFilters,
+  fixtureIds,
+  fixtureNow,
+  fixtureTimes,
+} from '../test/ledger-fixture';
+import { LedgerViewModel } from './ledger-view-model';
+
+function sequentialUuidFactory() {
+  let sequence = 900;
+  return () => `00000000-0000-4000-9000-${String(sequence++).padStart(12, '0')}`;
+}
+
+function createFixtureViewModelHarness(overrides?: Partial<LedgerReadSnapshot>) {
+  const repository = createMutableLedgerFixture(overrides);
+  const saveOperation = vi.fn((operation: LedgerOperation) => repository.saveOperation(operation));
+  const syncNow = vi.fn(async () => undefined);
+  const viewModel = new LedgerViewModel({
+    ledgerId: fixtureIds.ledger,
+    repository,
+    saveOperation,
+    syncNow,
+    now: () => new Date(fixtureNow),
+    makeUuid: sequentialUuidFactory(),
+  });
+  return { repository, saveOperation, syncNow, viewModel };
+}
+
+function createFixtureViewModel(overrides?: Partial<LedgerReadSnapshot>) {
+  return createFixtureViewModelHarness(overrides).viewModel;
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('LedgerViewModel home projection', () => {
+  it('returns all home figures from one consistent snapshot', async () => {
+    const { repository, viewModel } = createFixtureViewModelHarness();
+    const read = vi.spyOn(repository, 'readLedgerSnapshot');
+    const calculate = vi.spyOn(metrics, 'calculateMetrics');
+    const snapshot = await viewModel.getHomeSnapshot({ now: fixtureNow });
+
+    expect(snapshot).toMatchObject({
+      totalAssetsCents: 350000,
+      todayExpenseCents: 5000,
+      monthIncomeCents: 100000,
+      monthExpenseCents: 23000,
+      monthBalanceCents: 77000,
+      budget: { amountCents: 50000, usedCents: 23000, remainingCents: 27000 },
+    });
+    expect(snapshot.quickCategories.map((item) => item.name))
+      .toEqual(['餐饮', '交通', '购物', '娱乐']);
+    expect(snapshot.recentTransactions).toHaveLength(3);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(calculate).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns no fake progress when the month has no active total budget', async () => {
+    const viewModel = createFixtureViewModel({ budgets: [] });
+    expect((await viewModel.getHomeSnapshot({ now: fixtureNow })).budget).toBeNull();
+  });
+});
+
+describe('LedgerViewModel transaction projections', () => {
+  it('combines month account date category and trimmed search filters', async () => {
+    const result = await createFixtureViewModel().getTransactions({
+      month: '2026-07',
+      accountId: fixtureIds.cash,
+      date: '2026-07-18',
+      categoryId: fixtureIds.foodCategory,
+      query: ' 午餐 ',
+    });
+    expect(result.groups.flatMap((group) => group.rows).map((row) => row.title))
+      .toEqual(['午餐']);
+  });
+
+  it('searches note, category and entry account names case-insensitively', async () => {
+    const viewModel = createFixtureViewModel();
+    const noteResult = await viewModel.getTransactions({ ...defaultFilters, query: ' paycheck ' });
+    const categoryResult = await viewModel.getTransactions({ ...defaultFilters, query: '餐饮' });
+    const accountResult = await viewModel.getTransactions({ ...defaultFilters, query: '现金' });
+
+    expect(noteResult.groups.flatMap((group) => group.rows).map((row) => row.title))
+      .toEqual(['July PAYCHECK']);
+    expect(categoryResult.groups.flatMap((group) => group.rows).map((row) => row.title))
+      .toEqual(['午餐']);
+    expect(accountResult.groups.flatMap((group) => group.rows).map((row) => row.title))
+      .toEqual(['午餐', '取现']);
+  });
+
+  it('returns no rows when the selected date is outside the selected month', async () => {
+    const result = await createFixtureViewModel().getTransactions({
+      ...defaultFilters,
+      date: '2026-06-30',
+    });
+    expect(result.groups).toEqual([]);
+  });
+
+  it('groups by local date and excludes transfer adjustment deleted and refund from wrong totals', async () => {
+    const result = await createFixtureViewModel().getTransactions(defaultFilters);
+    expect(result.groups.map((group) => group.dateKey)).toEqual(['2026-07-18', '2026-07-17', '2026-07-01']);
+    expect(result.groups[0]).toMatchObject({ expenseCents: 5000, incomeCents: 0 });
+    expect(result.groups[1]).toMatchObject({ expenseCents: 18000, incomeCents: 0 });
+    expect(result.groups[2]).toMatchObject({ expenseCents: 0, incomeCents: 100000 });
+    expect(result.groups.flatMap((group) => group.rows).map((row) => row.title))
+      .not.toContain('已删除流水');
+  });
+
+  it('sorts rows by occurred time descending and then id', async () => {
+    const repository = createMutableLedgerFixture();
+    const sharedTime = fixtureTimes.todayExpense;
+    const transactions = repository.snapshot.transactions.map((item) => (
+      item.id === fixtureIds.foodTransaction || item.id === fixtureIds.transferTransaction
+        ? { ...item, occurredAt: sharedTime }
+        : item
+    ));
+    const result = await createFixtureViewModel({ transactions }).getTransactions(defaultFilters);
+    expect(result.groups[0].rows.slice(0, 2).map((row) => row.id))
+      .toEqual([fixtureIds.foodTransaction, fixtureIds.transferTransaction]);
+  });
+
+  it('renders expense income refund transfer and adjustment amount semantics', async () => {
+    const rows = (await createFixtureViewModel().getTransactions(defaultFilters))
+      .groups.flatMap((group) => group.rows);
+
+    expect(rows.find((row) => row.type === 'expense' && row.id === fixtureIds.foodTransaction))
+      .toMatchObject({ amountCents: 5000, amountLabel: '-¥50.00', amountTone: 'expense' });
+    expect(rows.find((row) => row.type === 'income'))
+      .toMatchObject({ amountCents: 100000, amountLabel: '+¥1000.00', amountTone: 'income' });
+    expect(rows.find((row) => row.type === 'refund'))
+      .toMatchObject({ amountCents: 2000, amountLabel: '+¥20.00', amountTone: 'refund' });
+    expect(rows.find((row) => row.type === 'adjustment'))
+      .toMatchObject({ amountCents: 3000, amountLabel: '+¥30.00', amountTone: 'adjustment' });
+  });
+
+  it('renders transfers with both account names and neutral amount semantics', async () => {
+    const rows = (await createFixtureViewModel().getTransactions(defaultFilters))
+      .groups.flatMap((group) => group.rows);
+    expect(rows.find((row) => row.type === 'transfer')).toMatchObject({
+      accountLabel: '储蓄卡 → 现金',
+      amountCents: 10000,
+      amountLabel: '¥100.00',
+      amountTone: 'neutral',
+    });
+  });
+
+  it('omits archived options but keeps archived references readable in rows', async () => {
+    const result = await createFixtureViewModel().getTransactions(defaultFilters);
+    expect(result.accounts.map((item) => item.name)).not.toContain('已归档账户');
+    expect(result.accounts.map((item) => item.name)).not.toContain('其他账本账户');
+    expect(result.categories.map((item) => item.name)).not.toContain('已归档分类');
+  });
+
+  it('returns complete transfer detail and active edit options', async () => {
+    const detail = await createFixtureViewModel().getTransactionDetail(fixtureIds.transferTransaction);
+    expect(detail).toMatchObject({
+      type: 'transfer',
+      entries: [
+        { accountName: '储蓄卡', deltaCents: -10000 },
+        { accountName: '现金', deltaCents: 10000 },
+      ],
+    });
+    expect(detail?.accountOptions.map((item) => item.name)).not.toContain('已归档账户');
+  });
+
+  it('returns null for deleted, foreign and unknown transaction details', async () => {
+    const repository = createMutableLedgerFixture();
+    const deleted = repository.snapshot.transactions.find((item) => item.deletedAt !== null)!;
+    const foreign = {
+      ...repository.snapshot.transactions[0],
+      id: '00000000-0000-4000-8000-000000000399',
+      ledgerId: '00000000-0000-4000-8000-000000000002',
+    };
+    const viewModel = createFixtureViewModel({
+      transactions: [...repository.snapshot.transactions, foreign],
+    });
+
+    expect(await viewModel.getTransactionDetail(deleted.id)).toBeNull();
+    expect(await viewModel.getTransactionDetail(foreign.id)).toBeNull();
+    expect(await viewModel.getTransactionDetail('00000000-0000-4000-8000-999999999999')).toBeNull();
+  });
+});
+
+describe('LedgerViewModel subscriptions', () => {
+  it('shares one repository watch and releases it after the final subscriber', () => {
+    const { repository, viewModel } = createFixtureViewModelHarness();
+    const stopWatch = vi.fn();
+    let repositoryListener: (() => void) | undefined;
+    const watch = vi.spyOn(repository, 'watchLedger').mockImplementation((_ledgerId, listener) => {
+      repositoryListener = listener;
+      return stopWatch;
+    });
+    const first = vi.fn();
+    const second = vi.fn();
+
+    const unsubscribeFirst = viewModel.subscribe(first);
+    const unsubscribeSecond = viewModel.subscribe(second);
+    expect(watch).toHaveBeenCalledTimes(1);
+    repositoryListener?.();
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+
+    unsubscribeFirst();
+    expect(stopWatch).not.toHaveBeenCalled();
+    unsubscribeSecond();
+    expect(stopWatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispose stops watching and drops all listeners', () => {
+    const { repository, viewModel } = createFixtureViewModelHarness();
+    const stopWatch = vi.fn();
+    const watch = vi.spyOn(repository, 'watchLedger').mockReturnValue(stopWatch);
+
+    viewModel.subscribe(vi.fn());
+    viewModel.subscribe(vi.fn());
+    viewModel.dispose();
+    expect(watch).toHaveBeenCalledTimes(1);
+    expect(stopWatch).toHaveBeenCalledTimes(1);
+
+    viewModel.subscribe(vi.fn());
+    expect(watch).toHaveBeenCalledTimes(1);
+  });
+});
