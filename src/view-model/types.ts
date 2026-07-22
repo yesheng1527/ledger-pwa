@@ -67,6 +67,45 @@ export interface TransactionDetail extends TransactionRowModel {
   categoryOptions: Array<{ id: string; name: string; kind: Category['kind'] }>;
 }
 
+export type TransactionEditInput =
+  | {
+      id: string;
+      baseVersion: number;
+      type: 'expense' | 'income';
+      amountCents: number;
+      accountId: string;
+      categoryId: string;
+      occurredAt: string;
+      note: string;
+    }
+  | {
+      id: string;
+      baseVersion: number;
+      type: 'transfer';
+      amountCents: number;
+      fromAccountId: string;
+      toAccountId: string;
+      occurredAt: string;
+      note: string;
+    }
+  | {
+      id: string;
+      baseVersion: number;
+      type: 'refund';
+      amountCents: number;
+      occurredAt: string;
+      note: string;
+    }
+  | {
+      id: string;
+      baseVersion: number;
+      type: 'adjustment';
+      deltaCents: number;
+      accountId: string;
+      occurredAt: string;
+      note: string;
+    };
+
 export type LedgerQueryState<T> =
   | { status: 'loading' }
   | { status: 'ready'; data: T }

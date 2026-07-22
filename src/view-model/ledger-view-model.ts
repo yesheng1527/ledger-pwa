@@ -1,9 +1,12 @@
 import type { LedgerReadSnapshot } from '../db/records';
 import { calculateMetrics } from '../domain/metrics';
 import { formatYuan } from '../domain/money';
+import type { LedgerOperation } from '../domain/operations';
+import { buildPosting } from '../domain/posting';
 import type {
   Account,
   Category,
+  LedgerEntry,
   LedgerEntryRecord,
   Transaction,
 } from '../domain/types';
@@ -12,6 +15,7 @@ import type {
   LedgerViewModelOptions,
   TransactionDateGroup,
   TransactionDetail,
+  TransactionEditInput,
   TransactionFilters,
   TransactionListSnapshot,
   TransactionRowModel,
@@ -203,7 +207,10 @@ function optionLists(snapshot: LedgerReadSnapshot) {
 export class LedgerViewModel {
   readonly ledgerId: string;
   private readonly repository: LedgerViewModelOptions['repository'];
+  private readonly saveOperation: LedgerViewModelOptions['saveOperation'];
+  private readonly syncNow: LedgerViewModelOptions['syncNow'];
   private readonly now: LedgerViewModelOptions['now'];
+  private readonly makeUuid: LedgerViewModelOptions['makeUuid'];
   private readonly listeners = new Map<() => void, number>();
   private subscriberCount = 0;
   private stopWatching: (() => void) | null = null;
@@ -212,7 +219,10 @@ export class LedgerViewModel {
   constructor(options: LedgerViewModelOptions) {
     this.ledgerId = options.ledgerId;
     this.repository = options.repository;
+    this.saveOperation = options.saveOperation;
+    this.syncNow = options.syncNow;
     this.now = options.now;
+    this.makeUuid = options.makeUuid;
   }
 
   private async readSnapshot(): Promise<LedgerReadSnapshot> {
@@ -220,6 +230,139 @@ export class LedgerViewModel {
       await this.repository.readLedgerSnapshot(this.ledgerId),
       this.ledgerId,
     );
+  }
+
+  private requireActiveTransaction(snapshot: LedgerReadSnapshot, id: string): Transaction {
+    const transaction = snapshot.transactions.find((item) => (
+      item.id === id && item.deletedAt === null
+    ));
+    if (!transaction) throw new Error('流水不存在或已删除');
+    return transaction;
+  }
+
+  private requireAccount(snapshot: LedgerReadSnapshot, id: string): Account {
+    const account = snapshot.accounts.find((item) => item.id === id);
+    if (!account) throw new Error('账户不存在');
+    return account;
+  }
+
+  private buildEditPosting(
+    input: TransactionEditInput,
+    snapshot: LedgerReadSnapshot,
+    current: Transaction,
+  ): LedgerEntry[] {
+    switch (input.type) {
+      case 'expense':
+      case 'income':
+        return buildPosting({
+          type: input.type,
+          amountCents: input.amountCents,
+          account: this.requireAccount(snapshot, input.accountId),
+        });
+      case 'transfer':
+        return buildPosting({
+          type: 'transfer',
+          amountCents: input.amountCents,
+          from: this.requireAccount(snapshot, input.fromAccountId),
+          to: this.requireAccount(snapshot, input.toAccountId),
+        });
+      case 'refund': {
+        const original = snapshot.transactions.find((item) => (
+          item.id === current.originalTransactionId
+          && item.type === 'expense'
+          && item.deletedAt === null
+        ));
+        if (!original) throw new Error('原支出不存在');
+        const originalEntries = snapshot.entries.filter((item) => (
+          item.transactionId === original.id
+        ));
+        if (originalEntries.length !== 1) throw new Error('原支出分录无效');
+        const alreadyRefundedCents = snapshot.transactions
+          .filter((item) => (
+            item.id !== current.id
+            && item.type === 'refund'
+            && item.originalTransactionId === original.id
+            && item.deletedAt === null
+          ))
+          .reduce((total, item) => total + item.amountCents, 0);
+        return buildPosting({
+          type: 'refund',
+          amountCents: input.amountCents,
+          originalExpenseAmountCents: original.amountCents,
+          alreadyRefundedCents,
+          originalEntry: originalEntries[0],
+        });
+      }
+      case 'adjustment':
+        return buildPosting({
+          type: 'adjustment',
+          account: this.requireAccount(snapshot, input.accountId),
+          deltaCents: input.deltaCents,
+        });
+    }
+  }
+
+  async updateTransaction(input: TransactionEditInput): Promise<void> {
+    const snapshot = await this.readSnapshot();
+    const current = this.requireActiveTransaction(snapshot, input.id);
+    if (current.version !== input.baseVersion) {
+      throw new Error('流水已更新，请刷新后重试');
+    }
+    if (current.type !== input.type) throw new Error('流水类型不能修改');
+
+    const entries = this.buildEditPosting(input, snapshot, current);
+    const operationId = this.makeUuid();
+    const updatedTransaction: Transaction = {
+      ...current,
+      operationId,
+      amountCents: input.type === 'adjustment'
+        ? Math.abs(input.deltaCents)
+        : input.amountCents,
+      categoryId: input.type === 'expense' || input.type === 'income'
+        ? input.categoryId
+        : current.categoryId,
+      occurredAt: input.occurredAt,
+      note: input.note.trim(),
+      version: input.baseVersion + 1,
+      deletedAt: null,
+    };
+    const operation: LedgerOperation = {
+      schemaVersion: 1,
+      operationId,
+      ledgerId: this.ledgerId,
+      createdAt: this.now().toISOString(),
+      kind: 'transaction.update',
+      transactionId: current.id,
+      baseVersion: input.baseVersion,
+      transaction: updatedTransaction,
+      entries,
+    };
+    await this.saveOperation(operation);
+  }
+
+  async deleteTransaction(id: string): Promise<{ undoUntil: string }> {
+    const snapshot = await this.readSnapshot();
+    const current = this.requireActiveTransaction(snapshot, id);
+    const deletedAt = this.now();
+    await this.saveOperation({
+      schemaVersion: 1,
+      operationId: this.makeUuid(),
+      ledgerId: this.ledgerId,
+      createdAt: deletedAt.toISOString(),
+      kind: 'transaction.delete',
+      transactionId: current.id,
+      baseVersion: current.version,
+      deletedAt: deletedAt.toISOString(),
+    });
+    return { undoUntil: new Date(deletedAt.getTime() + 8_000).toISOString() };
+  }
+
+  async undoTransactionDelete(id: string): Promise<void> {
+    await this.repository.undoTransactionDelete(id, this.now().toISOString());
+  }
+
+  async flushPendingDelete(): Promise<void> {
+    await this.syncNow();
   }
 
   async getHomeSnapshot(input: { now?: Date } = {}): Promise<HomeSnapshot> {
@@ -418,6 +561,7 @@ export type {
   HomeSnapshot,
   LedgerViewModelOptions,
   TransactionDetail,
+  TransactionEditInput,
   TransactionFilters,
   TransactionListSnapshot,
   TransactionRowModel,

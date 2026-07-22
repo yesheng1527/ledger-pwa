@@ -254,6 +254,312 @@ describe('LedgerViewModel transaction projections', () => {
   });
 });
 
+describe('LedgerViewModel transaction commands', () => {
+  it('updates an expense with one new operation id and a regenerated posting', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const current = repository.snapshot.transactions.find(
+      (item) => item.id === fixtureIds.foodTransaction,
+    )!;
+
+    await viewModel.updateTransaction({
+      id: fixtureIds.foodTransaction,
+      baseVersion: 1,
+      type: 'expense',
+      amountCents: 6800,
+      accountId: fixtureIds.bank,
+      categoryId: fixtureIds.foodCategory,
+      occurredAt: fixtureTimes.todayExpense,
+      note: ' 晚餐 ',
+    });
+
+    expect(saveOperation).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'transaction.update',
+      operationId: '00000000-0000-4000-9000-000000000900',
+      transactionId: fixtureIds.foodTransaction,
+      baseVersion: 1,
+      transaction: {
+        ...current,
+        operationId: '00000000-0000-4000-9000-000000000900',
+        amountCents: 6800,
+        occurredAt: fixtureTimes.todayExpense,
+        note: '晚餐',
+        version: 2,
+        deletedAt: null,
+      },
+      entries: [{ accountId: fixtureIds.bank, deltaCents: -6800 }],
+    }));
+  });
+
+  it('updates income with an asset-account posting', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const current = repository.snapshot.transactions.find((item) => item.type === 'income')!;
+
+    await viewModel.updateTransaction({
+      id: current.id,
+      baseVersion: current.version,
+      type: 'income',
+      amountCents: 120000,
+      accountId: fixtureIds.bank,
+      categoryId: current.categoryId!,
+      occurredAt: current.occurredAt,
+      note: '七月工资',
+    });
+
+    expect(saveOperation).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'transaction.update',
+      transactionId: current.id,
+      entries: [{ accountId: fixtureIds.bank, deltaCents: 120000 }],
+      transaction: expect.objectContaining({ amountCents: 120000, version: 2 }),
+    }));
+  });
+
+  it('rejects income edited to a liability account without saving', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const current = repository.snapshot.transactions.find((item) => item.type === 'income')!;
+
+    await expect(viewModel.updateTransaction({
+      id: current.id,
+      baseVersion: current.version,
+      type: 'income',
+      amountCents: current.amountCents,
+      accountId: fixtureIds.credit,
+      categoryId: current.categoryId!,
+      occurredAt: current.occurredAt,
+      note: current.note,
+    })).rejects.toThrow('收入只能存入资产账户');
+    expect(saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('updates a transfer with regenerated directional postings', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const current = repository.snapshot.transactions.find(
+      (item) => item.id === fixtureIds.transferTransaction,
+    )!;
+
+    await viewModel.updateTransaction({
+      id: current.id,
+      baseVersion: current.version,
+      type: 'transfer',
+      amountCents: 2500,
+      fromAccountId: fixtureIds.bank,
+      toAccountId: fixtureIds.credit,
+      occurredAt: current.occurredAt,
+      note: '信用卡还款',
+    });
+
+    expect(saveOperation).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'transaction.update',
+      transactionId: current.id,
+      entries: [
+        { accountId: fixtureIds.bank, deltaCents: -2500 },
+        { accountId: fixtureIds.credit, deltaCents: -2500 },
+      ],
+      transaction: expect.objectContaining({ amountCents: 2500, version: 2 }),
+    }));
+  });
+
+  it('rejects a same-account transfer without saving', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const current = repository.snapshot.transactions.find(
+      (item) => item.id === fixtureIds.transferTransaction,
+    )!;
+
+    await expect(viewModel.updateTransaction({
+      id: current.id,
+      baseVersion: current.version,
+      type: 'transfer',
+      amountCents: current.amountCents,
+      fromAccountId: fixtureIds.bank,
+      toAccountId: fixtureIds.bank,
+      occurredAt: current.occurredAt,
+      note: current.note,
+    })).rejects.toThrow('转出和转入账户不能相同');
+    expect(saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('updates a refund on the original expense account and excludes itself from the cumulative total', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const current = repository.snapshot.transactions.find((item) => item.type === 'refund')!;
+
+    await viewModel.updateTransaction({
+      id: current.id,
+      baseVersion: current.version,
+      type: 'refund',
+      amountCents: 20000,
+      occurredAt: current.occurredAt,
+      note: '全额退款',
+    });
+
+    expect(saveOperation).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'transaction.update',
+      transactionId: current.id,
+      entries: [{ accountId: fixtureIds.credit, deltaCents: -20000 }],
+      transaction: expect.objectContaining({
+        amountCents: 20000,
+        originalTransactionId: current.originalTransactionId,
+        version: 2,
+      }),
+    }));
+  });
+
+  it('rejects a refund edit when other active refunds make the cumulative amount exceed the expense', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const current = repository.snapshot.transactions.find((item) => item.type === 'refund')!;
+    repository.snapshot.transactions.push({
+      ...current,
+      id: '00000000-0000-4000-8000-000000000399',
+      operationId: '00000000-0000-4000-8000-000000000499',
+      amountCents: 3000,
+    });
+
+    await expect(viewModel.updateTransaction({
+      id: current.id,
+      baseVersion: current.version,
+      type: 'refund',
+      amountCents: 18000,
+      occurredAt: current.occurredAt,
+      note: current.note,
+    })).rejects.toThrow('退款总额不能超过原支出');
+    expect(saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('updates a signed adjustment while storing its absolute transaction amount', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const current = repository.snapshot.transactions.find((item) => item.type === 'adjustment')!;
+
+    await viewModel.updateTransaction({
+      id: current.id,
+      baseVersion: current.version,
+      type: 'adjustment',
+      deltaCents: -4500,
+      accountId: fixtureIds.cash,
+      occurredAt: current.occurredAt,
+      note: '校准减少',
+    });
+
+    expect(saveOperation).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'transaction.update',
+      transactionId: current.id,
+      entries: [{ accountId: fixtureIds.cash, deltaCents: -4500 }],
+      transaction: expect.objectContaining({ amountCents: 4500, version: 2 }),
+    }));
+  });
+
+  it('rejects a stale edit from a fresh snapshot without saving', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    repository.snapshot.transactions = repository.snapshot.transactions.map((item) => (
+      item.id === fixtureIds.foodTransaction ? { ...item, version: 2 } : item
+    ));
+
+    await expect(viewModel.updateTransaction({
+      id: fixtureIds.foodTransaction,
+      baseVersion: 1,
+      type: 'expense',
+      amountCents: 5000,
+      accountId: fixtureIds.cash,
+      categoryId: fixtureIds.foodCategory,
+      occurredAt: fixtureTimes.todayExpense,
+      note: '午餐',
+    })).rejects.toThrow('流水已更新，请刷新后重试');
+    expect(saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('rejects changing a transaction type without saving', async () => {
+    const { saveOperation, viewModel } = createFixtureViewModelHarness();
+
+    await expect(viewModel.updateTransaction({
+      id: fixtureIds.foodTransaction,
+      baseVersion: 1,
+      type: 'income',
+      amountCents: 5000,
+      accountId: fixtureIds.bank,
+      categoryId: fixtureIds.foodCategory,
+      occurredAt: fixtureTimes.todayExpense,
+      note: '午餐',
+    })).rejects.toThrow('流水类型不能修改');
+    expect(saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown transaction without saving', async () => {
+    const { saveOperation, viewModel } = createFixtureViewModelHarness();
+
+    await expect(viewModel.updateTransaction({
+      id: '00000000-0000-4000-8000-999999999999',
+      baseVersion: 1,
+      type: 'expense',
+      amountCents: 5000,
+      accountId: fixtureIds.cash,
+      categoryId: fixtureIds.foodCategory,
+      occurredAt: fixtureTimes.todayExpense,
+      note: '午餐',
+    })).rejects.toThrow('流水不存在或已删除');
+    expect(saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('rejects editing a deleted transaction without saving', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const deleted = repository.snapshot.transactions.find((item) => item.deletedAt !== null)!;
+
+    await expect(viewModel.updateTransaction({
+      id: deleted.id,
+      baseVersion: deleted.version,
+      type: 'expense',
+      amountCents: deleted.amountCents,
+      accountId: fixtureIds.cash,
+      categoryId: fixtureIds.foodCategory,
+      occurredAt: deleted.occurredAt,
+      note: deleted.note,
+    })).rejects.toThrow('流水不存在或已删除');
+    expect(saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('soft-deletes an active transaction and returns an eight-second undo boundary', async () => {
+    const { saveOperation, viewModel } = createFixtureViewModelHarness();
+    const deletedAt = fixtureNow.toISOString();
+
+    await expect(viewModel.deleteTransaction(fixtureIds.foodTransaction)).resolves.toEqual({
+      undoUntil: new Date(fixtureNow.getTime() + 8_000).toISOString(),
+    });
+    expect(saveOperation).toHaveBeenCalledWith({
+      schemaVersion: 1,
+      operationId: '00000000-0000-4000-9000-000000000900',
+      ledgerId: fixtureIds.ledger,
+      createdAt: deletedAt,
+      kind: 'transaction.delete',
+      transactionId: fixtureIds.foodTransaction,
+      baseVersion: 1,
+      deletedAt,
+    });
+  });
+
+  it('rejects deleting a missing or already deleted transaction without saving', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    const deleted = repository.snapshot.transactions.find((item) => item.deletedAt !== null)!;
+
+    await expect(viewModel.deleteTransaction(deleted.id)).rejects.toThrow('流水不存在或已删除');
+    await expect(viewModel.deleteTransaction('00000000-0000-4000-8000-999999999999'))
+      .rejects.toThrow('流水不存在或已删除');
+    expect(saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('delegates undo to the repository with the current timestamp', async () => {
+    const { repository, viewModel } = createFixtureViewModelHarness();
+    const undo = vi.spyOn(repository, 'undoTransactionDelete');
+
+    await viewModel.undoTransactionDelete(fixtureIds.foodTransaction);
+
+    expect(undo).toHaveBeenCalledWith(fixtureIds.foodTransaction, fixtureNow.toISOString());
+  });
+
+  it('flushes a pending delete by synchronizing now', async () => {
+    const { syncNow, viewModel } = createFixtureViewModelHarness();
+
+    await viewModel.flushPendingDelete();
+
+    expect(syncNow).toHaveBeenCalledOnce();
+  });
+});
+
 describe('LedgerViewModel subscriptions', () => {
   it('reference-counts duplicate listener subscriptions without leaking repository watches', () => {
     const { repository, viewModel } = createFixtureViewModelHarness();
