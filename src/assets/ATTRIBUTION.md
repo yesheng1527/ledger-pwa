@@ -1,5 +1,5 @@
 # Visual asset provenance
 
 - `docs/superpowers/specs/assets/seabreeze-ledger-visual-reference.png` is the first embedded PNG from the user-supplied visual handoff. It is an immutable, review-only reference and is not imported by production source. Decoded-byte SHA-256: `a1ec7ffad7d51659e8da63061ec0b51d3cf9009bf8d684797abaefca72fab772` (1491×1055).
-- `illustrations/auth-seaside.svg` and every SVG under `icons/` are project-local redraws created as independent production assets. They do not embed or crop the user-supplied visual board.
+- `illustrations/auth-seaside.svg`, `illustrations/home-seaside.svg`, `illustrations/empty-ledger.svg`, and every SVG under `icons/` are project-original local redraws based on the supplied visual reference. Each is an independent code-native vector with no embedded or cropped reference imagery and no external license dependency.
 - `textures/paper.webp` was generated specifically for this project from a low-contrast warm off-white handmade-paper prompt, then downscaled from the 1254×1254 source PNG and converted to a 512×512 WebP production texture. The original PNG SHA-256 is `c1532c0f46f4ae705c40a62ab8c519a140b73652396e7f69e37b0c734671c859`; the production WebP SHA-256 is `a5b9e0aa1d2296ada9f024c420e9cf5be9122d47808ad5dd86c52b24ecf54efb`. It contains no UI, text, symbols, frames, or recognizable objects.
