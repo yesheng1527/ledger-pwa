@@ -18,6 +18,14 @@ export type SessionChangeListener = (
   session: Session | null,
 ) => void | Promise<void>;
 
+export function buildPasswordResetRedirect(
+  origin = location.origin,
+  baseUrl = import.meta.env.BASE_URL,
+): string {
+  const appBase = new URL(baseUrl, `${origin}/`);
+  return new URL('reset-password', appBase).toString();
+}
+
 export class AuthService {
   private readonly client: AuthClient;
 
@@ -39,7 +47,7 @@ export class AuthService {
 
   async requestPasswordReset(email: string) {
     const { data, error } = await this.client.auth.resetPasswordForEmail(email, {
-      redirectTo: `${location.origin}/reset-password`,
+      redirectTo: buildPasswordResetRedirect(),
     });
     if (error) throw error;
     return data;

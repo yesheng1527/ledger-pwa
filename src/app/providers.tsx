@@ -26,6 +26,9 @@ const idleStatus: SyncStatus = {
 
 type RuntimeAuthService = {
   onSessionChange(listener: SessionChangeListener): () => void;
+  signIn(email: string, password: string): Promise<unknown>;
+  requestPasswordReset(email: string): Promise<unknown>;
+  updatePassword(password: string): Promise<unknown>;
 };
 
 type RuntimeLedgerApi = {
@@ -53,9 +56,15 @@ export type AppProviderServices = {
 
 export type AppRuntimeValue = {
   session: Session | null;
+  authReady: boolean;
+  passwordRecovery: boolean;
   initializing: boolean;
   initializationMessage: string | null;
   syncStatus: SyncStatus;
+  signIn(email: string, password: string): Promise<void>;
+  requestPasswordReset(email: string): Promise<void>;
+  updatePassword(password: string): Promise<void>;
+  finishPasswordRecovery(): void;
   syncNow(): Promise<void>;
   saveOperation(operation: LedgerOperation): Promise<void>;
 };
@@ -64,6 +73,14 @@ const AppRuntimeContext = createContext<AppRuntimeValue | null>(null);
 
 function browserIsOnline(): boolean {
   return typeof navigator === 'undefined' || navigator.onLine;
+}
+
+export function isPasswordRecoveryPath(
+  pathname = location.pathname,
+  baseUrl = import.meta.env.BASE_URL,
+): boolean {
+  const recoveryPath = new URL('reset-password', new URL(baseUrl, 'https://app.invalid')).pathname;
+  return pathname === recoveryPath || pathname === `${recoveryPath}/`;
 }
 
 function createDefaultServices(): AppProviderServices {
@@ -89,6 +106,8 @@ export function AppProviders({
   const resolvedServices = servicesRef.current;
 
   const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [passwordRecovery, setPasswordRecovery] = useState(() => isPasswordRecoveryPath());
   const [initializing, setInitializing] = useState(false);
   const [initializationMessage, setInitializationMessage] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(idleStatus);
@@ -121,6 +140,23 @@ export function AppProviders({
     await resolvedServices.repo.saveOperation(operation);
     await syncNow();
   }, [resolvedServices, syncNow]);
+
+  const signIn = useCallback(async (email: string, password: string) => {
+    await resolvedServices.auth.signIn(email, password);
+  }, [resolvedServices]);
+
+  const requestPasswordReset = useCallback(async (email: string) => {
+    await resolvedServices.auth.requestPasswordReset(email);
+  }, [resolvedServices]);
+
+  const updatePassword = useCallback(async (password: string) => {
+    await resolvedServices.auth.updatePassword(password);
+  }, [resolvedServices]);
+
+  const finishPasswordRecovery = useCallback(() => {
+    setPasswordRecovery(false);
+    window.history.replaceState(null, '', import.meta.env.BASE_URL);
+  }, []);
 
   useEffect(() => {
     const stopEngineStatus = () => {
@@ -184,7 +220,13 @@ export function AppProviders({
     };
 
     initializeRef.current = initializeSession;
-    const unsubscribeAuth = resolvedServices.auth.onSessionChange((_event, nextSession) => {
+    const unsubscribeAuth = resolvedServices.auth.onSessionChange((event, nextSession) => {
+      setAuthReady(true);
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordRecovery(true);
+      } else if (event === 'SIGNED_OUT' || (!nextSession && isPasswordRecoveryPath())) {
+        setPasswordRecovery(false);
+      }
       void initializeSession(nextSession);
     });
     const handleOnline = () => {
@@ -209,9 +251,15 @@ export function AppProviders({
 
   const value: AppRuntimeValue = {
     session,
+    authReady,
+    passwordRecovery,
     initializing,
     initializationMessage,
     syncStatus,
+    signIn,
+    requestPasswordReset,
+    updatePassword,
+    finishPasswordRecovery,
     syncNow,
     saveOperation,
   };

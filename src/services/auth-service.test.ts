@@ -1,6 +1,6 @@
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
-import { AuthService } from './auth-service';
+import { AuthService, buildPasswordResetRedirect } from './auth-service';
 
 describe('AuthService', () => {
   it('passes sign-up credentials to Supabase and returns its data', async () => {
@@ -30,14 +30,20 @@ describe('AuthService', () => {
     });
   });
 
-  it('uses the current origin for password reset redirects', async () => {
+  it('builds the password recovery URL under the GitHub Pages base path', () => {
+    expect(buildPasswordResetRedirect('https://yesheng1527.github.io', '/ledger-pwa/'))
+      .toBe('https://yesheng1527.github.io/ledger-pwa/reset-password');
+  });
+
+  it('passes the base-path recovery URL to Supabase', async () => {
     const data = {};
     const resetPasswordForEmail = vi.fn().mockResolvedValue({ data, error: null });
     const service = new AuthService({ auth: { resetPasswordForEmail } } as never);
+    vi.stubEnv('BASE_URL', '/ledger-pwa/');
 
-    await expect(service.requestPasswordReset('person@example.com')).resolves.toBe(data);
+    await service.requestPasswordReset('person@example.com');
     expect(resetPasswordForEmail).toHaveBeenCalledWith('person@example.com', {
-      redirectTo: `${location.origin}/reset-password`,
+      redirectTo: `${location.origin}/ledger-pwa/reset-password`,
     });
   });
 

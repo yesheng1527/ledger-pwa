@@ -8,6 +8,7 @@ import {
   AppProviders,
   type AppProviderServices,
   type AppRuntimeValue,
+  isPasswordRecoveryPath,
   useAppRuntime,
 } from './providers';
 
@@ -21,6 +22,8 @@ const idleStatus: SyncStatus = {
 };
 
 type SessionListener = (event: AuthChangeEvent, session: Session | null) => void | Promise<void>;
+
+let latestRuntime: AppRuntimeValue;
 
 function sessionFor(userId: string): Session {
   return {
@@ -96,6 +99,9 @@ function createAuthHarness() {
         unsubscribers.push(unsubscribe);
         return unsubscribe;
       }),
+      signIn: vi.fn(async () => undefined),
+      requestPasswordReset: vi.fn(async () => undefined),
+      updatePassword: vi.fn(async () => undefined),
     },
     emit(event: AuthChangeEvent, session: Session | null) {
       for (const listener of [...listeners]) void listener(event, session);
@@ -162,6 +168,7 @@ function createHarness(options: { online?: boolean; cachedLedgerId?: string | nu
 function RuntimeProbe({ onRuntime }: { onRuntime?: (runtime: AppRuntimeValue) => void }) {
   const runtime = useAppRuntime();
   useEffect(() => {
+    latestRuntime = runtime;
     onRuntime?.(runtime);
   }, [onRuntime, runtime]);
   return (
@@ -195,6 +202,37 @@ afterEach(() => {
 });
 
 describe('AppProviders', () => {
+  it('recognizes only the base-path password recovery route', () => {
+    expect(isPasswordRecoveryPath('/ledger-pwa/reset-password', '/ledger-pwa/')).toBe(true);
+    expect(isPasswordRecoveryPath('/reset-password', '/ledger-pwa/')).toBe(false);
+  });
+
+  it('exposes auth commands without storing credentials in the runtime', async () => {
+    const harness = createHarness();
+    render(<AppProviders services={harness.services}><RuntimeProbe /></AppProviders>);
+
+    await latestRuntime.signIn('person@example.com', 'secret-password');
+    await latestRuntime.requestPasswordReset('person@example.com');
+    await latestRuntime.updatePassword('new-secret-password');
+
+    expect(harness.auth.service.signIn).toHaveBeenCalledWith('person@example.com', 'secret-password');
+    expect(harness.auth.service.requestPasswordReset).toHaveBeenCalledWith('person@example.com');
+    expect(harness.auth.service.updatePassword).toHaveBeenCalledWith('new-secret-password');
+    expect(JSON.stringify(latestRuntime)).not.toContain('secret-password');
+  });
+
+  it('tracks PASSWORD_RECOVERY and clears it explicitly', async () => {
+    const harness = createHarness();
+    render(<AppProviders services={harness.services}><RuntimeProbe /></AppProviders>);
+
+    act(() => harness.auth.emit('PASSWORD_RECOVERY', sessionFor('user-a')));
+    await waitFor(() => expect(latestRuntime.passwordRecovery).toBe(true));
+    expect(latestRuntime.authReady).toBe(true);
+
+    act(() => latestRuntime.finishPasswordRecovery());
+    expect(latestRuntime.passwordRecovery).toBe(false);
+  });
+
   it('bootstraps before the first authenticated synchronization', async () => {
     const harness = createHarness();
     render(<AppProviders services={harness.services}><RuntimeProbe /></AppProviders>);
