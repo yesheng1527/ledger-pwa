@@ -5,10 +5,10 @@ import { AppShell } from './AppShell';
 import { navigationItems } from './navigation';
 
 const regularTabs = [
-  ['首页', '首页内容将在下一阶段接入真实账本数据。'],
-  ['流水', '流水列表将在下一阶段接入筛选和明细。'],
-  ['统计', '统计图表将在真实数据接口完成后开放。'],
-  ['我的', '账户、分类和备份设置将在后续阶段开放。'],
+  ['home', '首页', '首页内容将在下一阶段接入真实账本数据。'],
+  ['transactions', '流水', '流水列表将在下一阶段接入筛选和明细。'],
+  ['statistics', '统计', '统计图表将在真实数据接口完成后开放。'],
+  ['settings', '我的', '账户、分类和备份设置将在后续阶段开放。'],
 ] as const;
 
 afterEach(() => cleanup());
@@ -38,15 +38,17 @@ describe('application navigation model', () => {
 
 describe('AppShell', () => {
   it('starts on home while keeping all four regular panels mounted', () => {
-    render(<AppShell />);
+    const { container } = render(<AppShell />);
 
     expect(screen.getByRole('heading', { name: '海风小账本' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '首页' })).toHaveAttribute('aria-current', 'page');
+    expect(container.querySelectorAll('[id^="panel-"]')).toHaveLength(4);
 
-    regularTabs.forEach(([label, description], index) => {
-      const panel = screen.getByText(description).closest('[role="tabpanel"]');
+    regularTabs.forEach(([id, label, description], index) => {
+      const panel = container.querySelector(`#panel-${id}`);
 
       expect(panel).toBeInTheDocument();
+      expect(panel).toContainElement(screen.getByText(description));
       expect(panel).toHaveAttribute('aria-hidden', index === 0 ? 'false' : 'true');
       if (index === 0) {
         expect(panel).not.toHaveAttribute('hidden');
@@ -55,17 +57,19 @@ describe('AppShell', () => {
       }
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
     });
+
+    expect(screen.queryAllByRole('tabpanel', { hidden: true })).toHaveLength(0);
   });
 
   it('switches among all regular tabs with exactly one current page', async () => {
     const user = userEvent.setup();
     render(<AppShell />);
 
-    for (const [label, description] of regularTabs.slice(1)) {
+    for (const [id, label] of regularTabs.slice(1)) {
       await user.click(screen.getByRole('button', { name: label }));
 
       expect(screen.getByRole('button', { name: label })).toHaveAttribute('aria-current', 'page');
-      expect(screen.getByText(description).closest('[role="tabpanel"]')).not.toHaveAttribute('hidden');
+      expect(document.querySelector(`#panel-${id}`)).not.toHaveAttribute('hidden');
       expect(screen.getAllByRole('button').filter((button) => button.hasAttribute('aria-current'))).toHaveLength(1);
     }
   });

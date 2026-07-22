@@ -110,7 +110,6 @@ export function AppShell() {
               <div
                 key={tabId}
                 id={`panel-${tabId}`}
-                role="tabpanel"
                 hidden={!active}
                 aria-hidden={active ? 'false' : 'true'}
               >
