@@ -171,6 +171,52 @@ describe('LedgerViewModel transaction projections', () => {
     ]);
   });
 
+  it('normalizes asset-to-liability transfers when both reversed entries are negative', async () => {
+    const repository = createMutableLedgerFixture();
+    const originalTransfer = repository.snapshot.transactions
+      .find((item) => item.id === fixtureIds.transferTransaction)!;
+    const repaymentId = '00000000-0000-4000-8000-000000000390';
+    const repayment = {
+      ...originalTransfer,
+      id: repaymentId,
+      operationId: '00000000-0000-4000-8000-000000000490',
+      amountCents: 3000,
+      occurredAt: new Date(2026, 6, 18, 13).toISOString(),
+      note: '信用卡还款',
+    };
+    const reversedRepaymentEntries = [
+      {
+        id: '00000000-0000-4000-8000-000000000590',
+        ledgerId: fixtureIds.ledger,
+        transactionId: repaymentId,
+        accountId: fixtureIds.credit,
+        deltaCents: -3000,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000591',
+        ledgerId: fixtureIds.ledger,
+        transactionId: repaymentId,
+        accountId: fixtureIds.bank,
+        deltaCents: -3000,
+      },
+    ];
+    const viewModel = createFixtureViewModel({
+      transactions: [...repository.snapshot.transactions, repayment],
+      entries: [...repository.snapshot.entries, ...reversedRepaymentEntries],
+    });
+
+    const rows = (await viewModel.getTransactions(defaultFilters))
+      .groups.flatMap((group) => group.rows);
+    const detail = await viewModel.getTransactionDetail(repaymentId);
+
+    expect.soft(rows.find((row) => row.id === repaymentId)?.accountLabel)
+      .toBe('储蓄卡 → 信用卡');
+    expect.soft(detail?.entries).toEqual([
+      { accountId: fixtureIds.bank, accountName: '储蓄卡', deltaCents: -3000 },
+      { accountId: fixtureIds.credit, accountName: '信用卡', deltaCents: -3000 },
+    ]);
+  });
+
   it('omits archived options but keeps archived references readable in rows', async () => {
     const result = await createFixtureViewModel().getTransactions(defaultFilters);
     expect(result.accounts.map((item) => item.name)).not.toContain('已归档账户');

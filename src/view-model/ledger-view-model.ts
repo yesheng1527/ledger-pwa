@@ -134,11 +134,14 @@ function fallbackTitle(transaction: Transaction, category: Category | undefined)
 function orderTransactionEntries(
   transaction: Transaction,
   transactionEntries: readonly LedgerEntryRecord[],
+  accountMap: ReadonlyMap<string, Account>,
 ): readonly LedgerEntryRecord[] {
   if (transaction.type !== 'transfer') return transactionEntries;
   return [...transactionEntries].sort((left, right) => {
-    const leftRank = left.deltaCents < 0 ? 0 : 1;
-    const rightRank = right.deltaCents < 0 ? 0 : 1;
+    const leftAccount = accountMap.get(left.accountId);
+    const rightAccount = accountMap.get(right.accountId);
+    const leftRank = left.deltaCents < 0 && leftAccount?.accountClass === 'asset' ? 0 : 1;
+    const rightRank = right.deltaCents < 0 && rightAccount?.accountClass === 'asset' ? 0 : 1;
     return leftRank - rightRank;
   });
 }
@@ -149,7 +152,7 @@ function toRow(
   categoryMap: ReadonlyMap<string, Category>,
   transactionEntries: readonly LedgerEntryRecord[],
 ): TransactionRowModel {
-  const orderedEntries = orderTransactionEntries(transaction, transactionEntries);
+  const orderedEntries = orderTransactionEntries(transaction, transactionEntries, accountMap);
   const category = transaction.categoryId
     ? categoryMap.get(transaction.categoryId)
     : undefined;
@@ -341,6 +344,7 @@ export class LedgerViewModel {
     const transactionEntries = orderTransactionEntries(
       transaction,
       entryMap.get(transaction.id) ?? [],
+      accountMap,
     );
     const originalTransaction = transaction.originalTransactionId
       ? snapshot.transactions.find((item) => item.id === transaction.originalTransactionId)
