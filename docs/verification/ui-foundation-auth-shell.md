@@ -1,7 +1,9 @@
 # UI foundation and auth shell verification
 
 - User approval date: 2026-07-22
-- Approved code-under-test commit: `2614b3a`
+- Approved visual source commit: `2614b3a`
+- Task 5 browser-gate hardening commit: `ded8cd8`
+- Final-review verified implementation commit: `a90c93d`
 - Browser: Playwright Chromium, `zh-CN`, `Asia/Shanghai`
 - Approved phone viewports: 320x568, 390x844, and 430x932 CSS pixels
 
@@ -11,16 +13,17 @@
 | --- | --- |
 | `npm.cmd run test:e2e:update` | Exit 0; run exactly once after approval; 22/22 Playwright tests passed and nine missing baselines were written. |
 | `npm.cmd run test:e2e` | Exit 0; 22/22 functional, accessibility, reduced-motion, and visual tests passed against the new baselines. |
-| `npm.cmd run test:run` | Exit 0; 17/17 test files and 185/185 unit tests passed. |
+| `npm.cmd run test:e2e:static` | Exit 0; 1/1 built-artifact recovery test passed against an exact-file static server: the query callback returned 200 and the legacy nested path returned 404 without a history fallback. |
+| `npm.cmd run test:run` | Exit 0; 17/17 test files and 192/192 unit tests passed. |
 | `npm.cmd run typecheck` | Exit 0; TypeScript project references compiled without errors. |
-| `npm.cmd run build` | Exit 0; Vite 8.1.5 transformed 172 modules and emitted the production bundle. |
+| `npm.cmd run build` | Exit 0; Vite 8.1.5 transformed 173 modules and emitted the production bundle. |
 | `rg -n "service_role\|SUPABASE_SERVICE_ROLE_KEY\|eyJ[A-Za-z0-9_-]+\\." src` | No matches. |
 | `rg -n "\\.rpc\\(\|createClient\\(\|getSupabaseClient\\(" src -g '!src/services/**'` | No matches. |
 | `rg -n "test-e2e\|logged-out\|createE2eServices" dist/assets` | No matches. |
 | `git ls-files -- '.env*.local'` | No tracked local environment files. |
 | `git diff --check` | Exit 0. |
 
-`test:e2e:update` was not run before the user's visual approval and was not run again after creating these baselines.
+`test:e2e:update` was not run before the user's visual approval and was not run again after creating these baselines, including during the final review fixes at `a90c93d`.
 
 ## Accepted screenshots
 
@@ -52,6 +55,9 @@ All paths are repository-relative and use the approved UI from `2614b3a`.
 
 - No emoji presentation characters or system emoji placeholders are used in rendered design-system content; unit tests also validate the SVG asset rules and rendered component text.
 - Authentication failures are mapped to authored Chinese messages; raw Supabase errors are not rendered to users.
+- The installed Supabase retryable-fetch error class maps to the authored network message, and inherited object keys cannot escape the generic string fallback.
+- Password-mismatch feedback clears when either reset-password field changes. Authentication pages declare `100vh` first and `100dvh` second as a progressive viewport-height override.
+- Password-reset emails target `/ledger-pwa/?auth=reset`; query recovery survives `INITIAL_SESSION/null`, explicit sign-out clears it, and the expired-link action returns to a clean login URL.
 - Logged-out and logged-in browser gates at all three viewports report no horizontal overflow.
 - The CSS uses `--safe-area-bottom: max(var(--space-3), env(safe-area-inset-bottom))`. In the tested zero-inset desktop Chromium environment, the token resolves with a `0px` environment value, the 12px fallback is applied, the main content reserve ends above navigation, and navigation remains within the viewport. A real non-zero iPhone safe-area inset was not simulated.
 - The production bundle contains neither the deterministic test fixture module nor its fixture/runtime strings.

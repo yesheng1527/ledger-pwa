@@ -85,8 +85,8 @@
 
 - [x] Run related units, `npm.cmd run test:e2e:static`, full unit, typecheck, build, normal E2E, all scans, and diff check.
 - [x] Compare all nine official hashes with existing documentation and approved previews; require exact equality and unchanged Git status.
-- [ ] Commit implementation/tests first, update permanent evidence with that verified implementation SHA, then create a small evidence commit so the tracked document does not attempt impossible self-referential SHA storage.
-- [ ] Record both commits and the actual final HEAD in the ignored report; verify a clean worktree and return DONE.
+- [x] Commit implementation/tests first, update permanent evidence with that verified implementation SHA, then create a small evidence commit so the tracked document does not attempt impossible self-referential SHA storage.
+- [x] Record both commits and the actual final HEAD in the ignored report; verify a clean worktree and return DONE.
 
 ## Self-review
 
