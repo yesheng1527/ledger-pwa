@@ -37,14 +37,25 @@ for (const viewport of viewports) {
       await page.goto('?fixture=logged-out');
 
       const controls = [
-        page.getByRole('textbox', { name: '邮箱' }),
-        page.getByRole('textbox', { name: '密码', exact: true }),
-        page.getByRole('button', { name: '登录', exact: true }),
-        page.getByRole('button', { name: '忘记密码', exact: true }),
+        { name: '邮箱', locator: page.getByRole('textbox', { name: '邮箱' }) },
+        { name: '密码', locator: page.getByRole('textbox', { name: '密码', exact: true }) },
+        { name: '登录', locator: page.getByRole('button', { name: '登录', exact: true }) },
+        { name: '忘记密码', locator: page.getByRole('button', { name: '忘记密码', exact: true }) },
       ];
       for (const control of controls) {
-        await expect(control).toBeVisible();
-        await expectMinimumHeight(control);
+        await expect(control.locator).toBeVisible();
+        await expectMinimumHeight(control.locator);
+      }
+      if (viewport.width === 320 && viewport.height === 568) {
+        const initialViewportHeight = await page.evaluate(() => window.innerHeight);
+        for (const control of controls.slice(1)) {
+          const box = await control.locator.boundingBox();
+          const bottom = box!.y + box!.height;
+          expect.soft(
+            bottom,
+            `${control.name} bounds: top=${box!.y}px bottom=${bottom}px height=${box!.height}px viewport=${initialViewportHeight}px`,
+          ).toBeLessThanOrEqual(initialViewportHeight);
+        }
       }
       await expectNoHorizontalOverflow(page);
     });
