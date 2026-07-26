@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,7 @@ import { EmptyState } from './EmptyState';
 import { HandDrawnIcon } from './HandDrawnIcon';
 import { PrimaryButton } from './PrimaryButton';
 import { TextField } from './TextField';
+import { UndoToast } from './UndoToast';
 
 afterEach(() => cleanup());
 
@@ -136,5 +137,27 @@ describe('design-system accessibility contracts', () => {
 
     expect(screen.getByRole('heading', { name: '尚无记录' })).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
+  });
+
+  it('announces a recoverable deletion and keeps its actions at least 44px tall', async () => {
+    const user = userEvent.setup();
+    const onUndo = vi.fn(async () => undefined);
+    render(
+      <UndoToast
+        message="流水已删除"
+        undoLabel="撤销删除"
+        expiresAt={new Date(Date.now() + 8_000).toISOString()}
+        onUndo={onUndo}
+        onExpire={vi.fn(async () => undefined)}
+        onReload={vi.fn()}
+      />,
+    );
+
+    const status = screen.getByRole('status');
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    const undo = within(status).getByRole('button', { name: '撤销删除' });
+    expect(getComputedStyle(undo).minHeight).toBe('var(--control-height)');
+    await user.click(undo);
+    expect(onUndo).toHaveBeenCalledOnce();
   });
 });
