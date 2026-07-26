@@ -90,13 +90,53 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: '餐饮', exact: true }).click();
       await page.getByRole('searchbox', { name: '搜索流水' }).fill('午餐');
 
-      await expect(page.getByRole('button', { name: /午餐.*现金.*负50\.00元/ })).toHaveCount(1);
-      await expect(page.locator('[class*="transactionRow"]')).toHaveCount(1);
+      const lunch = page.getByRole('button', { name: /午餐.*现金.*负50\.00元/ });
+      const rows = page.locator('[class*="transactionRow"]');
+      await expect(lunch).toHaveCount(1);
+      await expect(rows).toHaveCount(1);
+
+      await page.getByRole('searchbox', { name: '搜索流水' }).fill('取现');
+      await expect(lunch).toHaveCount(0);
+      await expect(rows).toHaveCount(0);
+      await page.getByRole('searchbox', { name: '搜索流水' }).fill('午餐');
+
+      await page.getByLabel('账户').selectOption({ label: '储蓄卡' });
+      await expect(lunch).toHaveCount(0);
+      await expect(rows).toHaveCount(0);
+      await page.getByLabel('账户').selectOption({ label: '现金' });
+
+      await page.getByLabel('日期').fill('2026-07-17');
+      await expect(lunch).toHaveCount(0);
+      await expect(rows).toHaveCount(0);
+      await page.getByLabel('日期').fill('2026-07-18');
+
+      await page.getByRole('button', { name: '购物', exact: true }).click();
+      await expect(lunch).toHaveCount(0);
+      await expect(rows).toHaveCount(0);
+      await page.getByRole('button', { name: '餐饮', exact: true }).click();
+
+      await page.getByLabel('月份').fill('2026-06');
+      await expect(page.getByLabel('日期')).toHaveValue('');
+      await expect(page.getByLabel('日期')).toHaveAttribute('min', '2026-06-01');
+      await expect(page.getByLabel('日期')).toHaveAttribute('max', '2026-06-30');
+      await expect(rows).toHaveCount(0);
+      await page.getByLabel('月份').fill('2026-07');
+      await page.getByLabel('日期').fill('2026-07-18');
 
       await page.getByRole('searchbox', { name: '搜索流水' }).fill('');
       await page.getByRole('button', { name: '全部', exact: true }).click();
-      await page.getByLabel('日期').fill('');
+      await expect(page.getByRole('button', { name: /取现.*储蓄卡 → 现金/ })).toBeVisible();
+      await expect(rows).toHaveCount(2);
+
       await page.getByLabel('账户').selectOption('');
+      await expect(page.getByRole('button', { name: /余额校准.*储蓄卡/ })).toBeVisible();
+      await expect(rows).toHaveCount(3);
+
+      await page.getByLabel('日期').fill('2026-07-17');
+      await expect(page.getByRole('button', { name: /买衣服.*信用卡/ })).toBeVisible();
+      await expect(page.getByRole('button', { name: /购物退款.*信用卡/ })).toBeVisible();
+      await expect(rows).toHaveCount(2);
+      await page.getByLabel('日期').fill('');
 
       const dateKeys = await page.locator('[id^="transactions-"]').evaluateAll((elements) =>
         elements.map((element) => element.id.replace('transactions-', '')),

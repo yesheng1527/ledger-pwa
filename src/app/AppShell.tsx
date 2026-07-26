@@ -186,10 +186,12 @@ export function AppShell({
                   />
                 ) : null}
                 {tabId === 'statistics' || tabId === 'settings' ? (
-                  <EmptyState
-                    title={panelCopy[tabId].title}
-                    description={panelCopy[tabId].description}
-                  />
+                  <main>
+                    <EmptyState
+                      title={panelCopy[tabId].title}
+                      description={panelCopy[tabId].description}
+                    />
+                  </main>
                 ) : null}
               </div>
             );

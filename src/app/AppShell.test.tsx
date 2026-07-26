@@ -94,6 +94,27 @@ describe('AppShell', () => {
     expect(screen.getByText('账户、分类和备份设置将在后续阶段开放。')).toBeInTheDocument();
   });
 
+  it('exposes exactly one main landmark for every active regular panel', async () => {
+    const user = userEvent.setup();
+    renderShell();
+
+    expect(await screen.findAllByRole('main')).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: '流水' }));
+    expect(await screen.findAllByRole('main')).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: '统计' }));
+    expect(screen.getAllByRole('main')).toHaveLength(1);
+    expect(screen.getByRole('main')).toHaveTextContent(
+      '统计图表将在真实数据接口完成后开放。',
+    );
+
+    await user.click(screen.getByRole('button', { name: '我的' }));
+    expect(screen.getAllByRole('main')).toHaveLength(1);
+    expect(screen.getByRole('main')).toHaveTextContent(
+      '账户、分类和备份设置将在后续阶段开放。',
+    );
+  });
+
   it('keeps mounted page filters and each regular tab scroll offset', async () => {
     const user = userEvent.setup();
     const { container } = renderShell();
