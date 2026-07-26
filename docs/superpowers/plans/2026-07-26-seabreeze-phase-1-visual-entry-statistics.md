@@ -346,7 +346,7 @@ git commit -m "docs: audit seabreeze visual assets"
 - Consumes: Task 2 audit.
 - Produces: `PageHeader`, generic `SegmentedControl<T extends string>`, `ProgressBar`, refined `Card`, and typed independent assets used by all five pages.
 
-- [ ] **Step 1: Write failing design-system contract tests**
+- [x] **Step 1: Write failing design-system contract tests**
 
 Assert:
 
@@ -361,13 +361,13 @@ expect(screen.getByRole('button', { name: '月' })).toHaveAttribute('aria-presse
 
 Also require `PageHeader` to expose one heading and optional 44px action, `ProgressBar` to supply numeric ARIA values plus Chinese summary, and central bottom-nav action to have no `aria-current`.
 
-- [ ] **Step 2: Run focused tests and observe RED**
+- [x] **Step 2: Run focused tests and observe RED**
 
 Run: `npm.cmd run test:run -- src/design-system/components/design-system.test.tsx src/assets/assets.test.tsx`
 
 Expected: missing new components/assets.
 
-- [ ] **Step 3: Implement measured tokens and global behavior**
+- [x] **Step 3: Implement measured tokens and global behavior**
 
 Use:
 
@@ -391,11 +391,11 @@ Use:
 
 Global font stack must exactly follow the specification. Preserve the local paper texture and reduced-motion rule. Do not add a remote font or background.
 
-- [ ] **Step 4: Implement components and independent SVGs**
+- [x] **Step 4: Implement components and independent SVGs**
 
 Every action icon uses `viewBox="0 0 48 48"` with transparent background and consistent ink/coral/sea strokes. `profile-seaside.svg` is a standalone wide header with sea, clouds and gull shapes, no embedded text. `BottomNavigation` keeps semantic buttons and renders the center button raised without turning it into a selected tab.
 
-- [ ] **Step 5: Verify component, asset and production output**
+- [x] **Step 5: Verify component, asset and production output**
 
 Run:
 
@@ -408,7 +408,7 @@ rg -n "<script|https?:|data:image|<text|<foreignObject|\\son[a-z]+\\s*=" src/ass
 
 Expected: tests/typecheck/build pass; SVG scan returns no matches.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 ```powershell
 git add src/design-system src/assets

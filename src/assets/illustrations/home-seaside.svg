@@ -10,6 +10,10 @@
   <path d="M82 49C64 29 42 29 26 43c21 1 37 9 48 25M84 48c5-23 20-34 42-36-12 13-20 27-23 43M86 51c23-16 47-10 60 7-22-3-39 2-51 15M80 54c-17-8-33-3-43 12 18-4 31 0 41 11" fill="#73C5E6" stroke="#34312E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
   <path d="M73 116c22 30 63 36 91 1" stroke="#F46D58" stroke-width="4" stroke-linecap="round"/>
   <path d="m72 111 6 9m89-10-8 11" stroke="#34312E" stroke-width="3" stroke-linecap="round"/>
+  <path d="M103 119c9-9 23-10 34-3 7 5 10 13 8 20-18 1-34-5-42-17Z" fill="#FFF9EF" stroke="#34312E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m109 116 4-10 8 8m12 1 7-8 2 12" fill="#FFF9EF" stroke="#34312E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M122 121h.5m10 1h.5m-8 6c3 2 6 2 9 0" stroke="#34312E" stroke-width="3" stroke-linecap="round"/>
+  <path d="M143 128c11-5 16-1 15 7" stroke="#34312E" stroke-width="3" stroke-linecap="round"/>
   <path d="M164 174c-3-30-1-53 5-70" stroke="#34312E" stroke-width="5" stroke-linecap="round"/>
   <path d="m291 86 22-35v43h-22Z" fill="#FFF9EF" stroke="#34312E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
   <path d="m315 57 21 30h-21V57Z" fill="#F46D58" stroke="#34312E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>

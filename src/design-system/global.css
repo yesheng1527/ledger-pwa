@@ -8,7 +8,7 @@ html {
   min-width: 320px;
   color: var(--color-ink);
   background: var(--color-paper);
-  font-family: "Noto Sans SC Variable", "Noto Sans SC", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -60,9 +60,9 @@ input[inputmode='numeric'] {
 .ds-card {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
-  background: var(--color-card);
+  background: rgb(255 253 248 / 92%);
   box-shadow: var(--shadow-card);
-  padding: var(--space-6);
+  padding: var(--space-4);
 }
 
 .ds-primary-button {
@@ -188,6 +188,103 @@ input[inputmode='numeric'] {
   background: var(--color-coral);
   box-shadow: var(--shadow-raised);
   color: #fff;
+}
+
+.ds-page-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ds-page-header__copy {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.ds-page-header__eyebrow,
+.ds-page-header__title {
+  margin: 0;
+}
+
+.ds-page-header__eyebrow {
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+}
+
+.ds-page-header__title {
+  font-size: 1.375rem;
+  line-height: 1.25;
+}
+
+.ds-page-header__action {
+  display: inline-grid;
+  width: var(--control-min-size);
+  min-width: var(--control-min-size);
+  height: var(--control-min-size);
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-round);
+  padding: 0;
+  background: transparent;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+
+.ds-page-header__action img {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.ds-segmented-control {
+  display: inline-flex;
+  min-width: 0;
+  gap: var(--space-1);
+  border-radius: var(--radius-control);
+  padding: var(--space-1);
+  background: color-mix(in srgb, var(--color-border), transparent 45%);
+}
+
+.ds-segmented-control__option {
+  min-width: var(--control-min-size);
+  min-height: var(--control-min-size);
+  border: 0;
+  border-radius: calc(var(--radius-control) - var(--space-1));
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.ds-segmented-control__option[aria-pressed='true'] {
+  background: var(--color-coral);
+  box-shadow: 0 0.2rem 0.5rem rgb(116 82 43 / 14%);
+  color: #fff;
+  font-weight: 700;
+}
+
+.ds-progress-bar {
+  overflow: hidden;
+  height: 0.75rem;
+  border-radius: var(--radius-round);
+  background: color-mix(in srgb, var(--color-border), white 25%);
+}
+
+.ds-progress-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-coral);
+}
+
+.ds-progress-bar[data-tone='warning'] .ds-progress-bar__fill {
+  background: var(--color-balance);
+}
+
+.ds-progress-bar[data-tone='income'] .ds-progress-bar__fill {
+  background: var(--color-income);
 }
 
 .ds-empty-state {

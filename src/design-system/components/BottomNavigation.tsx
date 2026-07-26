@@ -30,7 +30,7 @@ export function BottomNavigation({ items, label = '主要导航' }: BottomNaviga
                 'ds-bottom-navigation__button',
                 item.central && 'ds-bottom-navigation__button--central',
               ].filter(Boolean).join(' ')}
-              aria-current={item.active ? 'page' : undefined}
+              aria-current={!item.central && item.active ? 'page' : undefined}
               onClick={item.onActivate}
             >
               <HandDrawnIcon asset={item.icon} decorative />

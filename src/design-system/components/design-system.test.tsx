@@ -7,7 +7,10 @@ import { BottomNavigation, type NavigationItem } from './BottomNavigation';
 import { Card } from './Card';
 import { EmptyState } from './EmptyState';
 import { HandDrawnIcon } from './HandDrawnIcon';
+import { PageHeader } from './PageHeader';
 import { PrimaryButton } from './PrimaryButton';
+import { ProgressBar } from './ProgressBar';
+import { SegmentedControl } from './SegmentedControl';
 import { TextField } from './TextField';
 import { UndoToast } from './UndoToast';
 
@@ -126,6 +129,87 @@ describe('design-system accessibility contracts', () => {
 
     entryButtonRef.current?.focus();
     expect(screen.getByRole('button', { name: '记账' })).toHaveFocus();
+  });
+
+  it('never marks the central entry action as the current page', () => {
+    const items: NavigationItem[] = [
+      {
+        id: 'entry',
+        label: '记账',
+        icon: 'nav:entry',
+        active: true,
+        central: true,
+        onActivate: vi.fn(),
+      },
+    ];
+
+    render(<BottomNavigation items={items} />);
+
+    expect(screen.getByRole('button', { name: '记账' })).not.toHaveAttribute('aria-current');
+  });
+
+  it('renders a compact page header with a labeled 44px action', async () => {
+    const user = userEvent.setup();
+    const onActivate = vi.fn();
+    render(
+      <PageHeader
+        title="流水"
+        eyebrow="每一笔，都有迹可循"
+        action={{
+          label: '搜索流水',
+          asset: 'action:search',
+          onActivate,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: '流水', level: 1 })).toBeInTheDocument();
+    expect(screen.getByText('每一笔，都有迹可循')).toBeInTheDocument();
+    const action = screen.getByRole('button', { name: '搜索流水' });
+    expect(action.className).toContain('ds-page-header__action');
+    await user.click(action);
+    expect(onActivate).toHaveBeenCalledOnce();
+  });
+
+  it('switches a generic segmented control with pressed-state semantics', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <SegmentedControl
+        label="统计区间"
+        value="month"
+        options={[
+          { value: 'month', label: '月' },
+          { value: 'year', label: '年' },
+        ]}
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.getByRole('group', { name: '统计区间' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '月' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '年' })).toHaveAttribute('aria-pressed', 'false');
+    await user.click(screen.getByRole('button', { name: '年' }));
+    expect(onChange).toHaveBeenCalledWith('year');
+  });
+
+  it('clamps progress visuals while preserving an authored overspend summary', () => {
+    const { container } = render(
+      <ProgressBar
+        label="本月预算"
+        value={12000}
+        max={10000}
+        valueText="已用120.00元，已超支20.00元"
+        tone="warning"
+      />,
+    );
+
+    const progress = screen.getByRole('progressbar', { name: '本月预算' });
+    expect(progress).toHaveAttribute('aria-valuemin', '0');
+    expect(progress).toHaveAttribute('aria-valuemax', '10000');
+    expect(progress).toHaveAttribute('aria-valuenow', '10000');
+    expect(progress).toHaveAttribute('aria-valuetext', '已用120.00元，已超支20.00元');
+    expect(container.querySelector('.ds-progress-bar__fill')).toHaveStyle({ width: '100%' });
   });
 
   it('renders card and empty-state content without emoji presentation characters', () => {

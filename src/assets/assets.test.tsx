@@ -12,6 +12,7 @@ const required: AssetKey[] = [
   'illustration:auth-seaside',
   'illustration:home-seaside',
   'illustration:empty-ledger',
+  'illustration:profile-seaside',
   'nav:home',
   'nav:ledger',
   'nav:entry',
@@ -28,6 +29,19 @@ const required: AssetKey[] = [
   'category:travel',
   'category:income',
   'category:other',
+  'action:search',
+  'action:calendar',
+  'action:reminder',
+  'action:close',
+  'action:more',
+  'management:budget',
+  'management:account',
+  'management:reminder',
+  'management:backup',
+  'management:theme',
+  'management:preferences',
+  'management:about',
+  'management:sync',
 ];
 
 describe('minimal visual asset registry', () => {
@@ -63,7 +77,7 @@ describe('minimal visual asset registry', () => {
   });
 
   it('keeps every production SVG text-free and self-contained', () => {
-    expect(Object.keys(svgSources)).toHaveLength(20);
+    expect(Object.keys(svgSources)).toHaveLength(34);
 
     for (const [path, source] of Object.entries(svgSources)) {
       const sourceWithoutNamespace = source.replace(
@@ -97,10 +111,16 @@ describe('minimal visual asset registry', () => {
 
   it('uses the locked artboards for icons and the auth illustration', () => {
     for (const [path, source] of Object.entries(svgSources)) {
-      if (path.includes('/categories/')) {
+      if (
+        path.includes('/categories/')
+        || path.includes('/actions/')
+        || path.includes('/management/')
+      ) {
         expect(source, path).toContain('viewBox="0 0 48 48"');
       } else if (path.endsWith('auth-seaside.svg')) {
         expect(source, path).toContain('viewBox="0 0 390 240"');
+      } else if (path.endsWith('profile-seaside.svg')) {
+        expect(source, path).toContain('viewBox="0 0 390 160"');
       } else if (path.includes('/icons/')) {
         expect(source, path).toContain('viewBox="0 0 64 64"');
       }
