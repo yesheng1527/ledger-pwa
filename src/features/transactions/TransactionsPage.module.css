@@ -176,6 +176,10 @@
   font-size: 0.8125rem;
 }
 
+.rowAmount {
+  white-space: nowrap;
+}
+
 .transactionRow [data-tone='expense'] {
   color: var(--color-expense);
 }

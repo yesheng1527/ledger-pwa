@@ -18,6 +18,10 @@ function currentLocalMonth(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function isValidMonth(month: string): boolean {
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
+}
+
 function lastDateOfMonth(month: string): string {
   const [year, monthNumber] = month.split('-').map(Number);
   const lastDay = new Date(year, monthNumber, 0).getDate();
@@ -60,6 +64,7 @@ export function TransactionsPage({
   );
 
   const changeMonth = (nextMonth: string) => {
+    if (!isValidMonth(nextMonth)) return;
     setMonth(nextMonth);
     setDate((currentDate) => (
       currentDate !== null && currentDate.slice(0, 7) !== nextMonth ? null : currentDate

@@ -9,6 +9,7 @@ import type {
   TransactionListSnapshot,
   TransactionRowModel,
 } from '../../view-model/types';
+import { TransactionRow } from './TransactionRow';
 import { TransactionsPage } from './TransactionsPage';
 
 const transferRow: TransactionRowModel = {
@@ -53,6 +54,36 @@ const incomeRow: TransactionRowModel = {
   amountCents: 500_000,
   amountLabel: '+¥5,000.00',
   amountTone: 'income',
+  version: 1,
+};
+
+const refundRow: TransactionRowModel = {
+  id: 'transaction-refund',
+  type: 'refund',
+  title: '早餐退款',
+  categoryName: '餐饮',
+  categoryIconKey: 'food',
+  occurredAt: '2026-07-19T02:00:00.000Z',
+  timeLabel: '10:00',
+  accountLabel: '储蓄卡',
+  amountCents: 3_000,
+  amountLabel: '+¥30.00',
+  amountTone: 'refund',
+  version: 1,
+};
+
+const positiveAdjustmentRow: TransactionRowModel = {
+  id: 'transaction-positive-adjustment',
+  type: 'adjustment',
+  title: '余额校准',
+  categoryName: null,
+  categoryIconKey: 'adjustment',
+  occurredAt: '2026-07-20T03:00:00.000Z',
+  timeLabel: '11:00',
+  accountLabel: '现金',
+  amountCents: 1_234,
+  amountLabel: '+¥12.34',
+  amountTone: 'adjustment',
   version: 1,
 };
 
@@ -156,6 +187,20 @@ describe('TransactionsPage filters', () => {
 
     await screen.findByLabelText('账户');
     expect(screen.getByLabelText('日期')).toHaveAttribute('max', '2026-02-28');
+  });
+
+  it('rejects an empty month without changing date bounds or querying invalid filters', async () => {
+    const { viewModel } = renderPage();
+    const getTransactions = vi.mocked(viewModel.getTransactions);
+
+    await screen.findByLabelText('账户');
+    expect(getTransactions).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByLabelText('月份'), { target: { value: '' } });
+
+    expect(screen.getByLabelText('月份')).toHaveValue('2026-07');
+    expect(screen.getByLabelText('日期')).toHaveAttribute('min', '2026-07-01');
+    expect(screen.getByLabelText('日期')).toHaveAttribute('max', '2026-07-31');
+    expect(getTransactions).toHaveBeenCalledTimes(1);
   });
 
   it('makes exactly one complete combined-filter call for each control change', async () => {
@@ -274,6 +319,38 @@ describe('TransactionsPage list', () => {
     expect(
       getComputedStyle(document.documentElement).getPropertyValue('--control-height').trim(),
     ).toBe('44px');
+  });
+});
+
+describe('TransactionRow amount semantics', () => {
+  it.each([
+    {
+      label: 'income',
+      row: incomeRow,
+      visibleAmount: '+¥5,000.00',
+      accessibleAmount: /收入正5000.00元/,
+    },
+    {
+      label: 'refund',
+      row: refundRow,
+      visibleAmount: '+¥30.00',
+      accessibleAmount: /退款正30.00元/,
+    },
+    {
+      label: 'positive adjustment',
+      row: positiveAdjustmentRow,
+      visibleAmount: '+¥12.34',
+      accessibleAmount: /调增正12.34元/,
+    },
+  ])('preserves the authoritative positive sign and $label semantics', ({
+    row,
+    visibleAmount,
+    accessibleAmount,
+  }) => {
+    render(<TransactionRow row={row} onOpen={vi.fn()} />);
+
+    const button = screen.getByRole('button', { name: accessibleAmount });
+    expect(within(button).getByText(visibleAmount)).toHaveAttribute('aria-hidden', 'true');
   });
 });
 

@@ -1,5 +1,4 @@
-import type { AssetKey } from '../../assets/registry';
-import { Amount } from '../../design-system/components/Amount';
+import type { ComponentProps } from 'react';
 import { HandDrawnIcon } from '../../design-system/components/HandDrawnIcon';
 import type { TransactionRowModel } from '../../view-model/types';
 import styles from './TransactionsPage.module.css';
@@ -9,9 +8,11 @@ export type TransactionRowProps = {
   onOpen: (id: string) => void;
 };
 
-function categoryAsset(iconKey: string): AssetKey {
-  const asset = `category:${iconKey}` as AssetKey;
-  const knownAssets: readonly AssetKey[] = [
+type CategoryAsset = ComponentProps<typeof HandDrawnIcon>['asset'];
+
+function categoryAsset(iconKey: string): CategoryAsset {
+  const asset = `category:${iconKey}` as CategoryAsset;
+  const knownAssets: readonly CategoryAsset[] = [
     'category:food',
     'category:transport',
     'category:shopping',
@@ -27,14 +28,19 @@ function categoryAsset(iconKey: string): AssetKey {
   return knownAssets.includes(asset) ? asset : 'category:other';
 }
 
-function spokenAmount(amountLabel: string): string {
-  const negative = amountLabel.startsWith('-');
-  return `${negative ? '负' : ''}${amountLabel.replace(/[+\-¥,]/g, '')}元`;
+function spokenAmount(row: TransactionRowModel): string {
+  const amount = row.amountLabel.replace(/[+\-¥,]/g, '');
+  if (row.amountLabel.startsWith('-')) return `负${amount}元`;
+  if (!row.amountLabel.startsWith('+')) return `${amount}元`;
+  if (row.type === 'income') return `收入正${amount}元`;
+  if (row.type === 'refund') return `退款正${amount}元`;
+  if (row.type === 'adjustment') return `调增正${amount}元`;
+  return `正${amount}元`;
 }
 
 export function TransactionRow({ row, onOpen }: TransactionRowProps) {
   const category = row.categoryName ? `，${row.categoryName}` : '';
-  const accessibleName = `${row.title}${category}，${row.timeLabel}，${row.accountLabel}，${spokenAmount(row.amountLabel)}`;
+  const accessibleName = `${row.title}${category}，${row.timeLabel}，${row.accountLabel}，${spokenAmount(row)}`;
 
   return (
     <button
@@ -49,11 +55,14 @@ export function TransactionRow({ row, onOpen }: TransactionRowProps) {
         <strong>{row.title}</strong>
         <span>{row.timeLabel} · {row.accountLabel}</span>
       </span>
-      <Amount
-        cents={row.amountLabel.startsWith('-') ? -row.amountCents : row.amountCents}
-        label={row.title}
-        tone={row.amountTone}
-      />
+      <span
+        className={styles.rowAmount}
+        aria-hidden="true"
+        data-numeric=""
+        data-tone={row.amountTone}
+      >
+        {row.amountLabel}
+      </span>
     </button>
   );
 }
