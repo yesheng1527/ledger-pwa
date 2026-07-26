@@ -951,7 +951,7 @@ git commit -m "feat: integrate seabreeze five page shell"
 - Consumes: complete phase-one UI in deterministic E2E mode.
 - Produces: browser evidence for 320×568, 390×844 and 430×932 without updating official screenshots.
 
-- [ ] **Step 1: Add failing browser journeys**
+- [x] **Step 1: Add failing browser journeys**
 
 At all three viewports cover:
 
@@ -963,21 +963,21 @@ At all three viewports cover:
 - Profile real sync status;
 - no document overflow and targets ≥44px.
 
-- [ ] **Step 2: Add focus and reduced-motion checks**
+- [x] **Step 2: Add focus and reduced-motion checks**
 
 Verify entry/detail focus enter/trap/Escape/restore, exactly one active `main`, shell `inert` while full-screen entry/detail is open, and reduced-motion removes nonessential animation without hiding save/undo/sync state.
 
-- [ ] **Step 3: Run browser tests and observe RED**
+- [x] **Step 3: Run browser tests and observe RED**
 
 Run: `npm.cmd run test:e2e -- e2e/seabreeze-phase-1.spec.ts e2e/accessibility.spec.ts`
 
 Expected: any missing fixture or responsive behavior fails with an exact assertion.
 
-- [ ] **Step 4: Make only the minimal fixture/responsive fixes**
+- [x] **Step 4: Make only the minimal fixture/responsive fixes**
 
 Keep the fixture behind `mode === 'test-e2e'` dynamic import. Do not add fixture constants or fake account state to production components.
 
-- [ ] **Step 5: Run the non-visual phase gate**
+- [x] **Step 5: Run the non-visual phase gate**
 
 Run:
 
@@ -994,7 +994,7 @@ git diff --check
 
 Expected: tests/type/build/browser/gate pass; both production scans return no matches.
 
-- [ ] **Step 6: Commit Task 10**
+- [x] **Step 6: Commit Task 10**
 
 ```powershell
 git add e2e/seabreeze-phase-1.spec.ts e2e/accessibility.spec.ts src/test
