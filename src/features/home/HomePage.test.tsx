@@ -149,6 +149,17 @@ describe('HomePage', () => {
     ]);
   });
 
+  it('orders metrics for reading as today expense, balance, income, then expense', async () => {
+    renderHome();
+
+    await screen.findByLabelText('今日支出，50.00元');
+    const metricLabels = screen
+      .getAllByLabelText(/^(今日支出|本月结余|本月收入|本月支出)，/)
+      .map((amount) => amount.getAttribute('aria-label')?.split('，')[0]);
+
+    expect(metricLabels).toEqual(['今日支出', '本月结余', '本月收入', '本月支出']);
+  });
+
   it('starts category and uncategorized entries from the five quick actions', async () => {
     const user = userEvent.setup();
     const { onStartEntry } = renderHome();
@@ -224,6 +235,14 @@ describe('HomePage', () => {
 
     expect(await screen.findByText('已超支')).toBeInTheDocument();
     expect(screen.getByLabelText('预算剩余，负230.00元')).toHaveTextContent('-¥230.00');
+    expect(screen.getByRole('progressbar', { name: '本月预算' })).toHaveAttribute(
+      'aria-valuenow',
+      '100000',
+    );
+    expect(screen.getByRole('progressbar', { name: '本月预算' })).toHaveAttribute(
+      'aria-valuetext',
+      '已用¥1230.00，已超支¥230.00',
+    );
   });
 
   it.each([

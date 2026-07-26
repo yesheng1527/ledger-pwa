@@ -102,13 +102,13 @@ function Hero({
 function Metrics({ snapshot }: { snapshot: HomeSnapshot }) {
   const metrics = [
     { label: '今日支出', cents: snapshot.todayExpenseCents, tone: 'expense' as const },
-    { label: '本月收入', cents: snapshot.monthIncomeCents, tone: 'income' as const },
-    { label: '本月支出', cents: snapshot.monthExpenseCents, tone: 'expense' as const },
     {
       label: '本月结余',
       cents: snapshot.monthBalanceCents,
       tone: metricTone(snapshot.monthBalanceCents),
     },
+    { label: '本月收入', cents: snapshot.monthIncomeCents, tone: 'income' as const },
+    { label: '本月支出', cents: snapshot.monthExpenseCents, tone: 'expense' as const },
   ];
 
   return (
@@ -139,6 +139,11 @@ function Budget({ budget }: Pick<HomeSnapshot, 'budget'>) {
     ? Math.min(100, Math.max(0, budget.usedCents / budget.amountCents * 100))
     : 100;
   const overspent = budget.remainingCents < 0;
+  const progressMax = Math.max(0, budget.amountCents);
+  const progressNow = Math.min(progressMax, Math.max(0, budget.usedCents));
+  const progressText = overspent
+    ? `已用${formatYuan(budget.usedCents)}，已超支${formatYuan(Math.abs(budget.remainingCents))}`
+    : `已用${formatYuan(budget.usedCents)}`;
 
   return (
     <Card>
@@ -152,9 +157,9 @@ function Budget({ budget }: Pick<HomeSnapshot, 'budget'>) {
           role="progressbar"
           aria-label="本月预算"
           aria-valuemin={0}
-          aria-valuemax={budget.amountCents}
-          aria-valuenow={budget.usedCents}
-          aria-valuetext={`已用${formatYuan(budget.usedCents)}`}
+          aria-valuemax={progressMax}
+          aria-valuenow={progressNow}
+          aria-valuetext={progressText}
         >
           <span className={styles.progressFill} style={{ width: `${progress}%` }} />
         </div>
