@@ -589,11 +589,11 @@ export interface EntryDraftController {
 }
 ```
 
-- [ ] **Step 1: Write failing default/retention tests**
+- [x] **Step 1: Write failing default/retention tests**
 
 Require current local minute, expense default, quick-category intent, last valid account, first compatible category, explicit adjustment direction and draft preservation when ViewModel options refresh.
 
-- [ ] **Step 2: Write failing validation/error-focus tests**
+- [x] **Step 2: Write failing validation/error-focus tests**
 
 Use `parseYuan()` and assert exact Chinese messages:
 
@@ -606,13 +606,13 @@ Use `parseYuan()` and assert exact Chinese messages:
 
 Rejected submit must preserve state and expose the responsible `EntryField`.
 
-- [ ] **Step 3: Run controller tests and observe RED**
+- [x] **Step 3: Run controller tests and observe RED**
 
 Run: `npm.cmd run test:run -- src/features/entry/entry-draft.test.ts`
 
 Expected: module missing.
 
-- [ ] **Step 4: Implement a framework-independent controller**
+- [x] **Step 4: Implement a framework-independent controller**
 
 The controller stores yuan text, never cents. `validate()` converts exactly once via `parseYuan()` and returns the discriminated union. `submit()` sets `submitting=true`, calls `viewModel.createTransaction(input)`, stores the last successful account, and only clears the draft after success.
 
@@ -622,7 +622,7 @@ Map raw errors to one of:
 - stale referenced record → `账户、分类或原支出已经变化，请重新选择`;
 - fallback → `保存失败，请稍后重试`.
 
-- [ ] **Step 5: Verify GREEN and commit Task 5**
+- [x] **Step 5: Verify GREEN and commit Task 5**
 
 Run:
 
