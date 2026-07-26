@@ -658,11 +658,11 @@ export type TransactionEntryPageProps = {
 };
 ```
 
-- [ ] **Step 1: Write failing page hierarchy and type-switch tests**
+- [x] **Step 1: Write failing page hierarchy and type-switch tests**
 
 Require a dialog-like full-screen layer with heading `记账`, close button, `支出/收入/转账` primary type switch, `退款/余额校准` under `更多类型`, auto-focused decimal amount, category grid, note, local date-time, account fields and one fixed `保存` button.
 
-- [ ] **Step 2: Write failing focus/error/keyboard tests**
+- [x] **Step 2: Write failing focus/error/keyboard tests**
 
 Assert:
 
@@ -674,13 +674,13 @@ Assert:
 - successful save calls `onSaved` once;
 - all buttons/inputs are at least 44px by class contract.
 
-- [ ] **Step 3: Run tests and observe RED**
+- [x] **Step 3: Run tests and observe RED**
 
 Run: `npm.cmd run test:run -- src/features/entry`
 
 Expected: page missing.
 
-- [ ] **Step 4: Implement the responsive page**
+- [x] **Step 4: Implement the responsive page**
 
 Render semantic buttons with independent asset icons; no emoji. The save area uses:
 
@@ -695,7 +695,7 @@ Render semantic buttons with independent asset icons; no emoji. The save area us
 
 At 320×568 the form scrolls but the save button remains reachable; the document itself never scrolls horizontally. Refund account is read-only text from the original expense. Adjustment exposes text-backed radio controls `增加余额` and `减少余额`.
 
-- [ ] **Step 5: Verify GREEN and commit Task 6**
+- [x] **Step 5: Verify GREEN and commit Task 6**
 
 Run:
 
