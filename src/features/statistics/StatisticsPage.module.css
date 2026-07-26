@@ -1,0 +1,159 @@
+.page {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: var(--space-4);
+}
+
+.controls {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.controls label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.controls input,
+.error button {
+  min-height: var(--control-min-size);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  background: rgb(255 253 248 / 90%);
+  color: var(--color-ink);
+  font: inherit;
+}
+
+.customDates,
+.summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.customDates {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.rangeLabel {
+  margin: 0;
+  color: var(--color-muted);
+}
+
+.summaryCard {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.summaryCard span {
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+}
+
+.summaryCard strong {
+  overflow: hidden;
+  font-size: clamp(1rem, 4vw, 1.35rem);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+}
+
+.summaryCard strong[data-tone='expense'] {
+  color: var(--color-expense);
+}
+
+.summaryCard strong[data-tone='income'] {
+  color: var(--color-income);
+}
+
+.summaryCard strong[data-tone='balance'] {
+  color: var(--color-balance);
+}
+
+.section,
+.chartCard section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.section h2,
+.section p,
+.chartCard h2,
+.chartCard p {
+  margin: 0;
+}
+
+.chartCard section > div {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.chartCard svg {
+  width: 100%;
+  max-height: 15rem;
+}
+
+.chartCard ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chartCard li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.chartCard table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.chartCard th,
+.chartCard td {
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-2);
+  text-align: right;
+}
+
+.chartCard th:first-child {
+  text-align: left;
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+@media (max-width: 480px) {
+  .page {
+    padding-inline: var(--space-3);
+  }
+
+  .summary {
+    grid-template-columns: 1fr;
+  }
+
+  .chartCard section > div {
+    grid-template-columns: 1fr;
+  }
+
+  .chartCard svg {
+    max-height: 11rem;
+  }
+}

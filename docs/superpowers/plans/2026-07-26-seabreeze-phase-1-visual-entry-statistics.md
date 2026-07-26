@@ -826,29 +826,29 @@ export type ProfilePageProps = {
 };
 ```
 
-- [ ] **Step 1: Write failing statistics tests**
+- [x] **Step 1: Write failing statistics tests**
 
 Require month/year/custom controls, expense/income/balance cards, budget, category share, trend, monthly comparison and asset/liability distribution. Every chart must expose a heading and a visible or screen-reader text list containing the same labels and values.
 
-- [ ] **Step 2: Write failing profile tests**
+- [x] **Step 2: Write failing profile tests**
 
 Require seaside header, shell mark, display name, real sync label/pending count, real budget summary and grouped management entries. Unimplemented phase-two/three rows use `aria-disabled="true"` plus visible `后续阶段开放`; they must not navigate or pretend success.
 
-- [ ] **Step 3: Run tests and observe RED**
+- [x] **Step 3: Run tests and observe RED**
 
 Run: `npm.cmd run test:run -- src/features/statistics src/features/profile`
 
 Expected: modules missing.
 
-- [ ] **Step 4: Implement SVG charts without a chart dependency**
+- [x] **Step 4: Implement SVG charts without a chart dependency**
 
 The donut chart uses SVG circles/paths with `aria-hidden="true"` plus a semantic list. The trend chart uses a fixed `viewBox`, computed points, distinct markers/line styles for income and expense, and a text table. Zero data renders authored empty copy instead of malformed paths.
 
-- [ ] **Step 5: Implement ProfilePage**
+- [x] **Step 5: Implement ProfilePage**
 
 Use independent management icons and button rows. Only sync retry is active in phase one. Do not include account tokens, email credentials, raw SyncEngine errors or fake counts.
 
-- [ ] **Step 6: Verify GREEN and commit Task 8**
+- [x] **Step 6: Verify GREEN and commit Task 8**
 
 Run:
 
