@@ -18,6 +18,12 @@ function currentLocalMonth(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function lastDateOfMonth(month: string): string {
+  const [year, monthNumber] = month.split('-').map(Number);
+  const lastDay = new Date(year, monthNumber, 0).getDate();
+  return `${month}-${String(lastDay).padStart(2, '0')}`;
+}
+
 function groupedYuan(cents: number): string {
   return formatYuan(cents).replace(/\d+(?=\.)/, (yuan) =>
     yuan.replace(/\B(?=(\d{3})+(?!\d))/g, ','),
@@ -90,6 +96,7 @@ export function TransactionsPage({
             <input
               type="month"
               value={month}
+              required
               onChange={(event) => changeMonth(event.target.value)}
             />
           </label>
@@ -111,7 +118,7 @@ export function TransactionsPage({
               type="date"
               value={date ?? ''}
               min={`${month}-01`}
-              max={`${month}-31`}
+              max={lastDateOfMonth(month)}
               onChange={(event) => setDate(event.target.value || null)}
             />
           </label>

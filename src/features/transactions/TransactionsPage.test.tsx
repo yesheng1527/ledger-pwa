@@ -150,13 +150,22 @@ describe('TransactionsPage filters', () => {
     expect(screen.getByRole('group', { name: '分类筛选' })).toBeInTheDocument();
   });
 
-  it('sends every active month, account, date, category and query on each filter change', async () => {
+  it('uses the actual last calendar day as the selected month date limit', async () => {
+    vi.setSystemTime(new Date(2026, 1, 15, 12));
+    renderPage();
+
+    await screen.findByLabelText('账户');
+    expect(screen.getByLabelText('日期')).toHaveAttribute('max', '2026-02-28');
+  });
+
+  it('makes exactly one complete combined-filter call for each control change', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const { viewModel } = renderPage();
     const getTransactions = vi.mocked(viewModel.getTransactions);
 
     await screen.findByRole('button', { name: /储蓄卡转到现金/ });
-    expect(getTransactions).toHaveBeenLastCalledWith({
+    expect(getTransactions).toHaveBeenCalledTimes(1);
+    expect(getTransactions.mock.calls[0]?.[0]).toEqual({
       month: '2026-07',
       accountId: null,
       date: null,
@@ -165,61 +174,57 @@ describe('TransactionsPage filters', () => {
     });
 
     await user.selectOptions(screen.getByLabelText('账户'), 'account-savings');
-    await waitFor(() => expect(getTransactions).toHaveBeenLastCalledWith({
+    await waitFor(() => expect(getTransactions).toHaveBeenCalledTimes(2));
+    expect(getTransactions.mock.calls[1]?.[0]).toEqual({
       month: '2026-07',
       accountId: 'account-savings',
       date: null,
       categoryId: null,
       query: '',
-    }));
+    });
 
     fireEvent.change(screen.getByLabelText('日期'), { target: { value: '2026-07-17' } });
-    await waitFor(() => expect(getTransactions).toHaveBeenLastCalledWith({
+    await waitFor(() => expect(getTransactions).toHaveBeenCalledTimes(3));
+    expect(getTransactions.mock.calls[2]?.[0]).toEqual({
       month: '2026-07',
       accountId: 'account-savings',
       date: '2026-07-17',
       categoryId: null,
       query: '',
-    }));
+    });
 
     await user.click(screen.getByRole('button', { name: '餐饮' }));
-    await waitFor(() => expect(getTransactions).toHaveBeenLastCalledWith({
+    await waitFor(() => expect(getTransactions).toHaveBeenCalledTimes(4));
+    expect(getTransactions.mock.calls[3]?.[0]).toEqual({
       month: '2026-07',
       accountId: 'account-savings',
       date: '2026-07-17',
       categoryId: 'category-food',
       query: '',
-    }));
+    });
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索流水' }), '早餐');
-    await waitFor(() => expect(getTransactions).toHaveBeenLastCalledWith({
+    fireEvent.change(
+      screen.getByRole('searchbox', { name: '搜索流水' }),
+      { target: { value: '早餐' } },
+    );
+    await waitFor(() => expect(getTransactions).toHaveBeenCalledTimes(5));
+    expect(getTransactions.mock.calls[4]?.[0]).toEqual({
       month: '2026-07',
       accountId: 'account-savings',
       date: '2026-07-17',
       categoryId: 'category-food',
       query: '早餐',
-    }));
-  });
+    });
 
-  it('clears a selected date when the month changes but preserves the other filters', async () => {
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    const { viewModel } = renderPage();
-    const getTransactions = vi.mocked(viewModel.getTransactions);
-
-    await screen.findByLabelText('账户');
-    await user.selectOptions(screen.getByLabelText('账户'), 'account-savings');
-    fireEvent.change(screen.getByLabelText('日期'), { target: { value: '2026-07-17' } });
-    await user.click(screen.getByRole('button', { name: '餐饮' }));
-    await user.type(screen.getByRole('searchbox', { name: '搜索流水' }), '早餐');
     fireEvent.change(screen.getByLabelText('月份'), { target: { value: '2026-08' } });
-
-    await waitFor(() => expect(getTransactions).toHaveBeenLastCalledWith({
+    await waitFor(() => expect(getTransactions).toHaveBeenCalledTimes(6));
+    expect(getTransactions.mock.calls[5]?.[0]).toEqual({
       month: '2026-08',
       accountId: 'account-savings',
       date: null,
       categoryId: 'category-food',
       query: '早餐',
-    }));
+    });
     expect(screen.getByLabelText('日期')).toHaveValue('');
   });
 });
