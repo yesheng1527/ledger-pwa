@@ -1,0 +1,259 @@
+.page {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-card);
+  box-shadow: var(--shadow-card);
+}
+
+.heroArt {
+  position: absolute;
+  inset: 0;
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+.heroArt img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.heroContent {
+  position: relative;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-6);
+}
+
+.greeting h1,
+.greeting p,
+.syncStatus,
+.totalAssets span,
+.section h2,
+.muted {
+  margin: 0;
+}
+
+.greeting {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.greeting p,
+.syncStatus,
+.metric > span:first-child,
+.muted,
+.recentCopy > span {
+  color: var(--color-muted);
+}
+
+.syncLine {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.syncStatus {
+  min-width: 0;
+  font-size: 0.875rem;
+}
+
+.syncStatus[data-tone='warning'] {
+  color: var(--color-balance);
+}
+
+.syncStatus[data-tone='error'] {
+  color: var(--color-expense);
+}
+
+.syncRetry,
+.stateAction {
+  min-width: var(--control-height);
+  min-height: var(--control-height);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-card);
+  color: var(--color-focus);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.totalAssets {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.totalAssets [data-numeric] {
+  font-size: clamp(2rem, 9vw, 3rem);
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.metric {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+.metric [data-numeric] {
+  overflow-wrap: anywhere;
+  font-size: clamp(1rem, 5vw, 1.375rem);
+  font-weight: 750;
+}
+
+.metric [data-tone='expense'],
+.recentButton [data-tone='expense'] {
+  color: var(--color-expense);
+}
+
+.metric [data-tone='income'],
+.recentButton [data-tone='income'],
+.recentButton [data-tone='refund'] {
+  color: var(--color-income);
+}
+
+.section {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.sectionHeading,
+.budgetDetails {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.overspent {
+  color: var(--color-expense);
+}
+
+.progressTrack {
+  overflow: hidden;
+  height: var(--space-3);
+  border-radius: var(--radius-round);
+  background: var(--color-border);
+}
+
+.progressFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-coral);
+}
+
+.budgetDetails {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.budgetDetails [data-tone='expense'] {
+  color: var(--color-expense);
+  font-weight: 700;
+}
+
+.quickGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.quickButton {
+  display: flex;
+  min-width: 0;
+  min-height: var(--control-height);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-1);
+  background: transparent;
+  color: var(--color-ink);
+  cursor: pointer;
+  font-size: 0.8125rem;
+}
+
+.quickButton img {
+  width: var(--space-8);
+  height: var(--space-8);
+}
+
+.recentList {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recentList li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+.recentButton {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-control);
+  padding: var(--space-3) 0;
+  background: transparent;
+  color: var(--color-ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.recentCopy {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.recentCopy > span {
+  overflow: hidden;
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feedback {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
+@media (max-width: 22rem) {
+  .heroContent {
+    padding: var(--space-4);
+  }
+
+  .quickGrid {
+    grid-template-columns: repeat(5, minmax(3.25rem, 1fr));
+    overflow-x: auto;
+  }
+}

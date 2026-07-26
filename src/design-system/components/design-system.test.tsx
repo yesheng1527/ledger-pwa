@@ -2,6 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Amount } from './Amount';
 import { BottomNavigation, type NavigationItem } from './BottomNavigation';
 import { Card } from './Card';
 import { EmptyState } from './EmptyState';
@@ -12,6 +13,23 @@ import { TextField } from './TextField';
 afterEach(() => cleanup());
 
 describe('design-system accessibility contracts', () => {
+  it('formats signed amounts with a Chinese accessible label and tabular numerals', () => {
+    render(<Amount cents={-5000} label="今日支出" tone="expense" />);
+
+    const amount = screen.getByLabelText('今日支出，负50.00元');
+    expect(amount).toHaveTextContent('-¥50.00');
+    expect(amount).toHaveAttribute('data-tone', 'expense');
+    expect(amount).toHaveAttribute('data-numeric');
+  });
+
+  it('keeps amount tone independent from its numeric sign', () => {
+    render(<Amount cents={5000} label="退款" tone="expense" />);
+
+    const amount = screen.getByLabelText('退款，50.00元');
+    expect(amount).toHaveTextContent('¥50.00');
+    expect(amount).toHaveAttribute('data-tone', 'expense');
+  });
+
   it('gives semantic icons their required accessible label', () => {
     render(<HandDrawnIcon asset="brand:shell" label="海风小账本" />);
 
