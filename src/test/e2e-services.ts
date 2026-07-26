@@ -1,7 +1,7 @@
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import type { AppProviderServices } from '../app/providers';
 import { LedgerViewModel } from '../view-model/ledger-view-model';
-import { createMutableLedgerFixture, fixtureIds } from './ledger-fixture';
+import { createMutableLedgerFixture, fixtureIds, fixtureNow } from './ledger-fixture';
 
 export type E2eFixtureName = 'logged-out' | 'recovery' | 'logged-in';
 
@@ -69,7 +69,10 @@ export function createE2eServices(fixture: E2eFixtureName): AppProviderServices 
       subscribe: () => () => undefined,
       async syncNow() {},
     }),
-    createLedgerViewModel: (options) => new LedgerViewModel(options),
+    createLedgerViewModel: (options) => new LedgerViewModel({
+      ...options,
+      now: () => new Date(fixtureNow),
+    }),
     isOnline: () => true,
   };
 }

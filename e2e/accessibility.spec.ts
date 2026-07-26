@@ -25,10 +25,10 @@ for (const viewport of viewports) {
       await expect(page.getByRole('button', { name: '首页' })).toHaveAttribute('aria-current', 'page');
       await expect(page.getByRole('img')).toHaveCount(0);
 
-      await page.getByRole('button', { name: '记账' }).click();
+      await page.getByRole('button', { name: '记账', exact: true }).click();
       await expect(page.getByRole('dialog', { name: '记账功能建设中' })).toBeVisible();
       await page.keyboard.press('Escape');
-      await expect(page.getByRole('button', { name: '记账' })).toBeFocused();
+      await expect(page.getByRole('button', { name: '记账', exact: true })).toBeFocused();
     });
 
     test('removes ambient animation and transitions for reduced motion', async ({ page }) => {

@@ -2,7 +2,7 @@ import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LedgerOperation } from '../domain/operations';
 import type { Transaction } from '../domain/types';
-import { fixtureIds } from './ledger-fixture';
+import { fixtureIds, fixtureNow } from './ledger-fixture';
 import { createE2eServices, parseE2eFixture, type E2eFixtureName } from './e2e-services';
 
 const otherLedgerId = '00000000-0000-4000-8000-000000000002';
@@ -96,6 +96,27 @@ describe('parseE2eFixture', () => {
 });
 
 describe('createE2eServices', () => {
+  it('pins ViewModel time to the deterministic fixture instead of the caller clock', async () => {
+    const services = createE2eServices('logged-in');
+    const viewModel = services.createLedgerViewModel({
+      ledgerId: fixtureIds.ledger,
+      repository: services.repo,
+      saveOperation: (operation) => services.repo.saveOperation(operation),
+      syncNow: async () => undefined,
+      now: () => new Date('2040-01-01T00:00:00.000Z'),
+      makeUuid: () => '00000000-0000-4000-8000-000000009999',
+    });
+
+    const home = await viewModel.getHomeSnapshot();
+    const deletion = await viewModel.deleteTransaction(fixtureIds.foodTransaction);
+
+    expect(home.todayExpenseCents).toBe(5_000);
+    expect(deletion.undoUntil).toBe(
+      new Date(fixtureNow.getTime() + 8_000).toISOString(),
+    );
+    viewModel.dispose();
+  });
+
   it('scopes every snapshot collection to the requested ledger', async () => {
     const services = createE2eServices('logged-in');
     const main = await services.repo.readLedgerSnapshot(fixtureIds.ledger);

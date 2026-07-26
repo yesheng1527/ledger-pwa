@@ -90,7 +90,7 @@ for (const viewport of viewports) {
       ).toBeLessThanOrEqual(1);
 
       const safeAreaLayout = await page.evaluate(() => {
-        const main = document.querySelector('main')!;
+        const main = document.querySelector<HTMLElement>('[data-shell-scroll]')!;
         const navigation = document.querySelector('nav')!;
         const rootStyle = getComputedStyle(document.documentElement);
         const mainStyle = getComputedStyle(main);
@@ -132,7 +132,7 @@ for (const viewport of viewports) {
       expect(safeAreaLayout.navigationBottom).toBeLessThanOrEqual(viewport.height);
       await expect(shellMain).toBeVisible();
 
-      const entryButton = page.getByRole('button', { name: '记账' });
+      const entryButton = page.getByRole('button', { name: '记账', exact: true });
       await entryButton.click();
       const dialog = page.getByRole('dialog', { name: '记账功能建设中' });
       await expect(dialog).toBeVisible();

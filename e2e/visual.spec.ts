@@ -52,7 +52,7 @@ test('390x844 home', async ({ page }) => {
 test('390x844 entry dialog', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openHome(page);
-  await page.getByRole('button', { name: '记账' }).click();
+  await page.getByRole('button', { name: '记账', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '记账功能建设中' })).toBeVisible();
   await expectScreenshot(page, '390x844-entry-dialog.png');
 });
