@@ -432,6 +432,72 @@ describe('TransactionOverlays editing', () => {
     expect(screen.queryByText(/secret posting details/i)).not.toBeInTheDocument();
   });
 
+  it('uses the selected source snapshot when an archived transfer source returns a generic account error', async () => {
+    const user = userEvent.setup();
+    const detail = detailFor('transfer', {
+      entries: [
+        { accountId: 'account-archived', accountName: '已归档卡', deltaCents: -6_880 },
+        { accountId: 'account-cash', accountName: '现金', deltaCents: 6_880 },
+      ],
+    });
+    const viewModel = makeViewModel(detail, {
+      updateTransaction: vi.fn(async () => {
+        throw new Error('账户不存在或已归档');
+      }),
+    });
+    render(<OverlayHarness viewModel={viewModel} initialId={detail.id} />);
+
+    await user.click(await screen.findByRole('button', { name: '编辑流水' }));
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('转出账户不可用，请重新选择');
+    expect(screen.getByLabelText('转出账户')).toHaveFocus();
+    expect(screen.queryByText('账户不存在或已归档')).not.toBeInTheDocument();
+  });
+
+  it('keeps a generic archived transfer destination error focused on the destination', async () => {
+    const user = userEvent.setup();
+    const detail = detailFor('transfer', {
+      entries: [
+        { accountId: 'account-card', accountName: '储蓄卡', deltaCents: -6_880 },
+        { accountId: 'account-archived', accountName: '已归档卡', deltaCents: 6_880 },
+      ],
+    });
+    const viewModel = makeViewModel(detail, {
+      updateTransaction: vi.fn(async () => {
+        throw new Error('账户不存在或已归档');
+      }),
+    });
+    render(<OverlayHarness viewModel={viewModel} initialId={detail.id} />);
+
+    await user.click(await screen.findByRole('button', { name: '编辑流水' }));
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('账户不可用，请重新选择');
+    expect(screen.getByLabelText('转入账户')).toHaveFocus();
+  });
+
+  it('keeps a generic archived expense account error focused on its account field', async () => {
+    const user = userEvent.setup();
+    const detail = detailFor('expense', {
+      entries: [
+        { accountId: 'account-archived', accountName: '已归档卡', deltaCents: -6_880 },
+      ],
+    });
+    const viewModel = makeViewModel(detail, {
+      updateTransaction: vi.fn(async () => {
+        throw new Error('账户不存在或已归档');
+      }),
+    });
+    render(<OverlayHarness viewModel={viewModel} initialId={detail.id} />);
+
+    await user.click(await screen.findByRole('button', { name: '编辑流水' }));
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('账户不可用，请重新选择');
+    expect(screen.getByLabelText('账户')).toHaveFocus();
+  });
+
   it('rejects notes over 500 characters locally and focuses the note field', async () => {
     const user = userEvent.setup();
     const viewModel = makeViewModel();

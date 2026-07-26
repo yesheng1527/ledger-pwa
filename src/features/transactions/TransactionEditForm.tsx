@@ -171,8 +171,11 @@ export function TransactionEditForm({
         || raw.includes('version');
       const invalidCategory = raw.includes('分类') || raw.includes('鍒嗙被');
       const invalidAccount = raw.includes('账户') || raw.includes('璐︽埛');
+      const selectedSourceUnavailable = detail.type === 'transfer'
+        && !detail.accountOptions.some((account) => account.id === fromAccountId);
       const invalidTransferSource = raw.includes('转出账户')
-        || raw.includes('杞嚭璐︽埛');
+        || raw.includes('杞嚭璐︽埛')
+        || (invalidAccount && selectedSourceUnavailable);
       const refundLimit = raw.includes('退款总额') || raw.includes('閫€娆炬€婚');
       if (stale) {
         setError('流水已更新，请刷新后重试');
