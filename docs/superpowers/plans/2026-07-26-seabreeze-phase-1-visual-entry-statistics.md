@@ -877,7 +877,7 @@ git commit -m "feat: add statistics and profile pages"
 - Consumes: Tasks 3–8 and existing shared transaction overlays.
 - Produces: four always-mounted panels plus an independent full-screen entry layer; no repeated global top bar.
 
-- [ ] **Step 1: Write failing shell integration tests**
+- [x] **Step 1: Write failing shell integration tests**
 
 Assert:
 
@@ -890,17 +890,17 @@ Assert:
 - closing restores source focus;
 - existing detail/edit/delete/undo controller still opens from Home/Transactions.
 
-- [ ] **Step 2: Write failing Home/Transactions visual-structure tests**
+- [x] **Step 2: Write failing Home/Transactions visual-structure tests**
 
 Home order: seaside greeting/reminder, month and financial overview, budget, quick entry, recent three, sync status. Transactions order: title/search, month/account/date, horizontal categories, descending compact groups. Keep current query/error/empty behaviors.
 
-- [ ] **Step 3: Run tests and observe RED**
+- [x] **Step 3: Run tests and observe RED**
 
 Run: `npm.cmd run test:run -- src/app src/features/home src/features/transactions`
 
 Expected: placeholders/global header/current entry dialog violate the new contracts.
 
-- [ ] **Step 4: Integrate the new pages**
+- [x] **Step 4: Integrate the new pages**
 
 Replace `panelCopy` placeholders with `StatisticsPage` and `ProfilePage`. Replace `entryOpen` placeholder dialog with a controller created once per open action. Preserve `detailTransactionId`, `detailOpen`, source focus and scroll map.
 
@@ -920,11 +920,11 @@ The shell grid becomes:
 }
 ```
 
-- [ ] **Step 5: Reflow Home and Transactions without changing financial semantics**
+- [x] **Step 5: Reflow Home and Transactions without changing financial semantics**
 
 Extend `getHomeSnapshot({ month })` if needed so the selected month controls month metrics/budget while total assets remains a true ledger balance. Keep recent transaction open behavior and all five combined transaction filters.
 
-- [ ] **Step 6: Verify regression tests and commit Task 9**
+- [x] **Step 6: Verify regression tests and commit Task 9**
 
 Run:
 

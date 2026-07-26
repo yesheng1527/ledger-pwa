@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createE2eServices } from '../test/e2e-services';
@@ -37,19 +37,24 @@ function createViewModel(): LedgerViewModel {
 function renderShell(
   syncState: HomeSyncState = quietSyncState,
   onRetrySync = vi.fn(),
+  viewModel = createViewModel(),
 ) {
-  return render(
+  return {
+    viewModel,
+    ...render(
     <AppShell
-      viewModel={createViewModel()}
+      viewModel={viewModel}
       syncState={syncState}
       onRetrySync={onRetrySync}
     />,
-  );
+    ),
+  };
 }
 
 afterEach(() => {
   cleanup();
   createdViewModels.splice(0).forEach((viewModel) => viewModel.dispose());
+  localStorage.clear();
   vi.restoreAllMocks();
 });
 
@@ -77,21 +82,27 @@ describe('application navigation model', () => {
 });
 
 describe('AppShell', () => {
-  it('replaces only home and transactions while keeping every regular panel mounted', async () => {
+  it('keeps all four real pages mounted without a global brand header', async () => {
+    const user = userEvent.setup();
     const { container } = renderShell();
+    const background = container.querySelector<HTMLElement>('[data-shell-background]');
 
     expect(container.querySelectorAll('[id^="panel-"]')).toHaveLength(4);
+    expect(background?.firstElementChild).toHaveAttribute('data-shell-scroll');
     expect(await screen.findByRole('heading', { name: '首页' })).toBeInTheDocument();
     expect(screen.queryByText('首页内容将在下一阶段接入真实账本数据。')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: '流水' }));
+    await user.click(screen.getByRole('button', { name: '流水' }));
     expect(await screen.findByRole('heading', { name: '流水' })).toBeInTheDocument();
     expect(screen.queryByText('流水列表将在下一阶段接入筛选和明细。')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: '统计' }));
-    expect(screen.getByText('统计图表将在真实数据接口完成后开放。')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: '我的' }));
-    expect(screen.getByText('账户、分类和备份设置将在后续阶段开放。')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '统计' }));
+    expect(await screen.findByRole('heading', { name: '统计' })).toBeInTheDocument();
+    expect(screen.queryByText('统计图表将在真实数据接口完成后开放。')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '我的' }));
+    expect(await screen.findByRole('heading', { name: '我的' })).toBeInTheDocument();
+    expect(screen.queryByText('账户、分类和备份设置将在后续阶段开放。')).not.toBeInTheDocument();
   });
 
   it('exposes exactly one main landmark for every active regular panel', async () => {
@@ -104,15 +115,15 @@ describe('AppShell', () => {
 
     await user.click(screen.getByRole('button', { name: '统计' }));
     expect(screen.getAllByRole('main')).toHaveLength(1);
-    expect(screen.getByRole('main')).toHaveTextContent(
-      '统计图表将在真实数据接口完成后开放。',
-    );
+    expect(within(screen.getByRole('main')).getByRole('heading', { name: '统计' }))
+      .toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '我的' }));
     expect(screen.getAllByRole('main')).toHaveLength(1);
-    expect(screen.getByRole('main')).toHaveTextContent(
-      '账户、分类和备份设置将在后续阶段开放。',
-    );
+    expect(within(screen.getByRole('main')).getByRole('heading', { name: '我的' }))
+      .toBeInTheDocument();
+    expect(within(screen.getByRole('main')).getByRole('heading', { name: '账本管理' }))
+      .toBeInTheDocument();
   });
 
   it('keeps mounted page filters and each regular tab scroll offset', async () => {
@@ -153,19 +164,49 @@ describe('AppShell', () => {
     expect(container.querySelector('[data-shell-background]')).not.toHaveAttribute('inert');
   });
 
-  it('passes a quick category intent without changing the approved center dialog', async () => {
+  it('passes quick-category intent into the full-screen entry and clears it for center entry', async () => {
     const user = userEvent.setup();
-    renderShell();
+    const { container } = renderShell();
 
-    await user.click(await screen.findByRole('button', { name: '快速记账：餐饮' }));
-    expect(screen.getByRole('dialog', { name: '记账功能建设中' })).toBeVisible();
-    expect(screen.getByText('已预选：餐饮')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '关闭' }));
+    const quickEntry = await screen.findByRole('button', { name: '快速记账：餐饮' });
+    await user.click(quickEntry);
+    await screen.findByRole('button', { name: '餐饮' });
+    expect(screen.getByRole('dialog', { name: '记账' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '餐饮' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('金额')).toHaveFocus();
+    expect(container.querySelector('[data-shell-background]')).toHaveAttribute('inert');
+    await user.click(screen.getByRole('button', { name: '关闭记账' }));
+    await waitFor(() => expect(quickEntry).toHaveFocus());
 
     await user.click(screen.getByRole('button', { name: '记账' }));
-    expect(screen.getByRole('dialog', { name: '记账功能建设中' })).toBeVisible();
-    expect(screen.queryByText(/已预选：/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '关闭' })).toHaveFocus();
+    await screen.findByRole('button', { name: '娱乐' });
+    expect(screen.getByRole('button', { name: '娱乐' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '餐饮' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByLabelText('金额')).toHaveFocus();
+  });
+
+  it('refreshes home and statistics subscribers after a successful entry', async () => {
+    const user = userEvent.setup();
+    const viewModel = createViewModel();
+    const homeQuery = vi.spyOn(viewModel, 'getHomeSnapshot');
+    const statisticsQuery = vi.spyOn(viewModel, 'getStatistics');
+    renderShell(quietSyncState, vi.fn(), viewModel);
+
+    await screen.findByRole('heading', { name: '首页' });
+    await waitFor(() => expect(statisticsQuery).toHaveBeenCalled());
+    const homeCallsBeforeSave = homeQuery.mock.calls.length;
+    const statisticsCallsBeforeSave = statisticsQuery.mock.calls.length;
+
+    await user.click(screen.getByRole('button', { name: '记账' }));
+    await screen.findByLabelText('金额');
+    await user.type(screen.getByLabelText('金额'), '12.34');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '记账' })).not.toBeInTheDocument();
+      expect(homeQuery.mock.calls.length).toBeGreaterThan(homeCallsBeforeSave);
+      expect(statisticsQuery.mock.calls.length).toBeGreaterThan(statisticsCallsBeforeSave);
+    });
   });
 
   it('keeps a visible undo toast outside the inert shell background', async () => {
@@ -182,9 +223,11 @@ describe('AppShell', () => {
   it('keeps quiet sync states quiet and exposes retryable authored status', async () => {
     const user = userEvent.setup();
     const retry = vi.fn();
-    const { rerender } = renderShell(quietSyncState, retry);
+    const { container, rerender } = renderShell(quietSyncState, retry);
+    const homePanel = container.querySelector<HTMLElement>('#panel-home');
+    expect(homePanel).not.toBeNull();
 
-    expect(screen.getByText('已同步')).toHaveAttribute('data-tone', 'quiet');
+    expect(within(homePanel!).getByText('已同步')).toHaveAttribute('data-tone', 'quiet');
     expect(screen.queryByRole('button', { name: '重试同步' })).not.toBeInTheDocument();
 
     rerender(
@@ -204,7 +247,7 @@ describe('AppShell', () => {
         onRetrySync={retry}
       />,
     );
-    expect(screen.getByText('有同步冲突待处理')).toBeVisible();
+    expect(within(homePanel!).getByText('有同步冲突待处理')).toBeVisible();
     expect(screen.queryByRole('button', { name: '重试同步' })).not.toBeInTheDocument();
   });
 });

@@ -26,7 +26,7 @@
   --shadow-card: 0 0.75rem 2rem rgb(116 82 43 / 12%);
   --shadow-raised: 0 0.5rem 1rem rgb(244 109 88 / 28%);
   --control-min-size: 44px;
-  --control-height: var(--control-min-size);
+  --control-height: 44px;
   --safe-area-top: max(0px, env(safe-area-inset-top));
   --safe-area-bottom: max(var(--space-3), env(safe-area-inset-bottom));
   --numeric-font-settings: "tnum" 1, "lnum" 1;

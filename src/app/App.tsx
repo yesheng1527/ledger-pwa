@@ -28,13 +28,26 @@ export function toHomeSyncState(status: SyncStatus): HomeSyncState {
 }
 
 function AuthenticatedShell() {
-  const { ledgerViewModel, syncStatus, syncNow } = useAppRuntime();
+  const {
+    ledgerViewModel,
+    session,
+    syncStatus,
+    syncNow,
+  } = useAppRuntime();
   if (!ledgerViewModel) return null;
+
+  const metadataName = session?.user.user_metadata?.display_name;
+  const displayName = typeof metadataName === 'string' && metadataName.trim()
+    ? metadataName.trim()
+    : session?.user.email?.split('@')[0] || '记账人';
 
   return (
     <AppShell
       viewModel={ledgerViewModel}
       syncState={toHomeSyncState(syncStatus)}
+      pendingCount={syncStatus.pendingCount}
+      displayName={displayName}
+      ledgerName="个人生活账本"
       onRetrySync={() => void syncNow()}
     />
   );

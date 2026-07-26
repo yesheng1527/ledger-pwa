@@ -147,6 +147,7 @@ describe('HomePage', () => {
       '快速记账',
       '最近流水',
     ]);
+    expect(screen.getByRole('main').lastElementChild).toHaveTextContent('刚刚已同步');
   });
 
   it('orders metrics for reading as today expense, balance, income, then expense', async () => {

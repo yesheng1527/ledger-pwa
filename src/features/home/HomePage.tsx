@@ -70,12 +70,8 @@ function SyncStatus({
 
 function Hero({
   snapshot,
-  syncState,
-  onRetrySync,
 }: {
   snapshot?: HomeSnapshot;
-  syncState: HomeSyncState;
-  onRetrySync(): void;
 }) {
   return (
     <header className={styles.hero}>
@@ -87,7 +83,6 @@ function Hero({
           <h1 id="home-page-title">首页</h1>
           <p>海风吹来，慢慢记好每一笔。</p>
         </div>
-        <SyncStatus syncState={syncState} onRetrySync={onRetrySync} />
         {snapshot ? (
           <div className={styles.totalAssets}>
             <span>总资产</span>
@@ -299,8 +294,6 @@ export function HomePage({
     <main className={styles.page} aria-labelledby="home-page-title">
       <Hero
         snapshot={query.status === 'ready' ? query.data : undefined}
-        syncState={syncState}
-        onRetrySync={onRetrySync}
       />
       {query.status === 'loading' ? (
         <Card className={styles.feedback} role="status">
@@ -330,6 +323,7 @@ export function HomePage({
           />
         </>
       ) : null}
+      <SyncStatus syncState={syncState} onRetrySync={onRetrySync} />
     </main>
   );
 }

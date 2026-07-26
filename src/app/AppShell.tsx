@@ -1,18 +1,34 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { BottomNavigation, type NavigationItem } from '../design-system/components/BottomNavigation';
-import { EmptyState } from '../design-system/components/EmptyState';
-import { HandDrawnIcon } from '../design-system/components/HandDrawnIcon';
+import {
+  createEntryDraftController,
+  type EntryDraftController,
+  type EntryPreferencePort,
+} from '../features/entry/entry-draft';
+import { TransactionEntryPage } from '../features/entry/TransactionEntryPage';
 import { HomePage } from '../features/home/HomePage';
+import { ProfilePage } from '../features/profile/ProfilePage';
+import { StatisticsPage } from '../features/statistics/StatisticsPage';
 import { TransactionOverlays } from '../features/transactions/TransactionOverlays';
 import { TransactionsPage } from '../features/transactions/TransactionsPage';
 import type { LedgerViewModel } from '../view-model/ledger-view-model';
-import type { HomeSyncState } from '../view-model/types';
+import type { EntryOptions, HomeSyncState } from '../view-model/types';
 import styles from './AppShell.module.css';
 import { navigationItems, type RegularTabId } from './navigation';
 
-type AppShellProps = {
+export type AppShellProps = {
   viewModel: LedgerViewModel;
   syncState: HomeSyncState;
+  pendingCount?: number;
+  displayName?: string;
+  ledgerName?: string;
   onRetrySync(): void;
 };
 
@@ -20,59 +36,49 @@ type EntryIntent = {
   categoryId: string | null;
 };
 
-const panelCopy: Record<'statistics' | 'settings', { title: string; description: string }> = {
-  statistics: {
-    title: '统计',
-    description: '统计图表将在真实数据接口完成后开放。',
-  },
-  settings: {
-    title: '我的',
-    description: '账户、分类和备份设置将在后续阶段开放。',
-  },
-};
+type EntryLayerState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | {
+      status: 'ready';
+      controller: EntryDraftController;
+      options: EntryOptions;
+    };
 
 const regularTabIds = navigationItems
   .filter((item) => item.kind === 'tab')
   .map((item) => item.id);
 
-function EntryIntentLabel({
-  viewModel,
-  intent,
-}: {
-  viewModel: LedgerViewModel;
-  intent: EntryIntent;
-}) {
-  const [label, setLabel] = useState<string | null>(null);
-
-  useLayoutEffect(() => {
-    let active = true;
-    if (intent.categoryId === null) {
-      setLabel(null);
-      return () => {
-        active = false;
-      };
-    }
-    void viewModel.getHomeSnapshot().then((snapshot) => {
-      if (!active) return;
-      const category = snapshot.quickCategories.find((item) => item.id === intent.categoryId);
-      setLabel(category?.name ?? null);
-    });
-    return () => {
-      active = false;
-    };
-  }, [intent.categoryId, viewModel]);
-
-  return label ? <p className={styles.entryIntent}>已预选：{label}</p> : null;
+function lastAccountPreferences(ledgerId: string): EntryPreferencePort {
+  const key = `seabreeze:last-entry-account:${ledgerId}`;
+  return {
+    loadLastAccountId() {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    saveLastAccountId(accountId) {
+      try {
+        localStorage.setItem(key, accountId);
+      } catch {
+        // Remembering this convenience choice must never block a saved transaction.
+      }
+    },
+  };
 }
 
 export function AppShell({
   viewModel,
   syncState,
+  pendingCount = 0,
+  displayName = '记账人',
+  ledgerName = '个人生活账本',
   onRetrySync,
 }: AppShellProps) {
   const [activeTab, setActiveTab] = useState<RegularTabId>('home');
-  const [entryOpen, setEntryOpen] = useState(false);
-  const [entryIntent, setEntryIntent] = useState<EntryIntent | null>(null);
+  const [entryLayer, setEntryLayer] = useState<EntryLayerState | null>(null);
   const [detailTransactionId, setDetailTransactionId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const scrollOffsets = useRef<Record<RegularTabId, number>>({
@@ -83,9 +89,13 @@ export function AppShell({
   });
   const mainRef = useRef<HTMLDivElement>(null);
   const entryButtonRef = useRef<HTMLButtonElement>(null);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const entrySourceRef = useRef<HTMLElement | null>(null);
   const entryWasOpenRef = useRef(false);
+  const entryRequestId = useRef(0);
+  const entryPreferences = useMemo(
+    () => lastAccountPreferences(viewModel.ledgerId),
+    [viewModel.ledgerId],
+  );
 
   useLayoutEffect(() => {
     if (mainRef.current) {
@@ -94,32 +104,71 @@ export function AppShell({
   }, [activeTab]);
 
   useLayoutEffect(() => {
-    if (entryOpen) {
+    if (entryLayer) {
       entryWasOpenRef.current = true;
-      closeButtonRef.current?.focus();
       return;
     }
+    if (!entryWasOpenRef.current) return;
 
-    if (entryWasOpenRef.current) {
-      entryWasOpenRef.current = false;
-      const source = entrySourceRef.current;
-      entrySourceRef.current = null;
-      setEntryIntent(null);
-      queueMicrotask(() => source?.focus());
-    }
-  }, [entryOpen]);
+    entryWasOpenRef.current = false;
+    const source = entrySourceRef.current;
+    entrySourceRef.current = null;
+    queueMicrotask(() => source?.focus());
+  }, [entryLayer]);
+
+  useEffect(() => {
+    if (entryLayer?.status !== 'ready') return;
+    const { controller } = entryLayer;
+    let active = true;
+    const refreshOptions = () => {
+      void viewModel.getEntryOptions().then((options) => {
+        if (!active) return;
+        controller.setOptions(options);
+        setEntryLayer((current) => (
+          current?.status === 'ready' && current.controller === controller
+            ? { ...current, options }
+            : current
+        ));
+      });
+    };
+    const unsubscribe = viewModel.subscribe(refreshOptions);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [entryLayer, viewModel]);
+
+  const closeEntry = useCallback(() => {
+    entryRequestId.current += 1;
+    setEntryLayer(null);
+  }, []);
 
   const openEntry = useCallback((intent: EntryIntent | null) => {
     entrySourceRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : entryButtonRef.current;
-    setEntryIntent(intent);
-    setEntryOpen(true);
-  }, []);
+    const requestId = ++entryRequestId.current;
+    setEntryLayer({ status: 'loading' });
+    void viewModel.getEntryOptions().then(
+      (options) => {
+        if (requestId !== entryRequestId.current) return;
+        const controller = createEntryDraftController({
+          options,
+          quickCategoryId: intent?.categoryId ?? null,
+          preferences: entryPreferences,
+          createTransaction: (input) => viewModel.createTransaction(input),
+          now: () => new Date(),
+        });
+        setEntryLayer({ status: 'ready', controller, options });
+      },
+      () => {
+        if (requestId === entryRequestId.current) setEntryLayer({ status: 'error' });
+      },
+    );
+  }, [entryPreferences, viewModel]);
 
   function activateRegularTab(nextTab: RegularTabId) {
     if (nextTab === activeTab) return;
-
     if (mainRef.current) {
       scrollOffsets.current[activeTab] = mainRef.current.scrollTop;
     }
@@ -136,7 +185,6 @@ export function AppShell({
         onActivate: () => openEntry(null),
       };
     }
-
     return {
       ...item,
       active: item.id === activeTab,
@@ -144,7 +192,7 @@ export function AppShell({
     };
   });
 
-  const modalOpen = entryOpen || detailOpen;
+  const modalOpen = entryLayer !== null || detailOpen;
 
   return (
     <div className={styles.shell}>
@@ -154,15 +202,9 @@ export function AppShell({
         inert={modalOpen ? true : undefined}
         aria-hidden={modalOpen ? 'true' : undefined}
       >
-        <header className={styles.header}>
-          <HandDrawnIcon asset="brand:shell" decorative />
-          <span className={styles.brandName}>海风小账本</span>
-        </header>
-
         <div ref={mainRef} className={styles.main} data-shell-scroll>
           {regularTabIds.map((tabId) => {
             const active = tabId === activeTab;
-
             return (
               <div
                 key={tabId}
@@ -185,13 +227,16 @@ export function AppShell({
                     onOpenTransaction={setDetailTransactionId}
                   />
                 ) : null}
-                {tabId === 'statistics' || tabId === 'settings' ? (
-                  <main>
-                    <EmptyState
-                      title={panelCopy[tabId].title}
-                      description={panelCopy[tabId].description}
-                    />
-                  </main>
+                {tabId === 'statistics' ? <StatisticsPage viewModel={viewModel} /> : null}
+                {tabId === 'settings' ? (
+                  <ProfilePage
+                    viewModel={viewModel}
+                    displayName={displayName}
+                    ledgerName={ledgerName}
+                    syncState={syncState}
+                    pendingCount={pendingCount}
+                    onRetrySync={onRetrySync}
+                  />
                 ) : null}
               </div>
             );
@@ -203,32 +248,42 @@ export function AppShell({
         </div>
       </div>
 
-      {entryOpen ? (
-        <div
-          className={styles.entryLayer}
+      {entryLayer?.status === 'loading' ? (
+        <section
+          className={styles.entryFeedback}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="entry-loading-title"
           onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              setEntryOpen(false);
-            }
+            if (event.key === 'Escape') closeEntry();
           }}
         >
-          <div className={styles.backdrop} aria-hidden="true" />
-          <section
-            className={styles.dialog}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="entry-dialog-title"
-          >
-            <h2 id="entry-dialog-title">记账功能建设中</h2>
-            {entryIntent ? (
-              <EntryIntentLabel viewModel={viewModel} intent={entryIntent} />
-            ) : null}
-            <button ref={closeButtonRef} type="button" onClick={() => setEntryOpen(false)}>
-              关闭
-            </button>
-          </section>
-        </div>
+          <h1 id="entry-loading-title">记账</h1>
+          <p role="status">正在准备记账选项…</p>
+          <button type="button" onClick={closeEntry}>关闭记账</button>
+        </section>
+      ) : null}
+
+      {entryLayer?.status === 'error' ? (
+        <section
+          className={styles.entryFeedback}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="entry-error-title"
+        >
+          <h1 id="entry-error-title">记账</h1>
+          <p role="alert">记账选项暂时无法读取</p>
+          <button type="button" onClick={closeEntry}>关闭记账</button>
+        </section>
+      ) : null}
+
+      {entryLayer?.status === 'ready' ? (
+        <TransactionEntryPage
+          controller={entryLayer.controller}
+          options={entryLayer.options}
+          onClose={closeEntry}
+          onSaved={closeEntry}
+        />
       ) : null}
 
       <TransactionOverlays

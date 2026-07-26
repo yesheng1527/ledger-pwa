@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SyncStatus } from '../sync/sync-engine';
@@ -64,10 +64,12 @@ describe('App', () => {
   });
 
   it('composes the authenticated runtime with the real ledger shell', async () => {
-    render(<App />);
+    const { container } = render(<App />);
 
     expect(await screen.findByRole('heading', { name: '首页' })).toBeInTheDocument();
-    expect(screen.getByText('已同步')).toBeVisible();
+    expect(
+      within(container.querySelector<HTMLElement>('#panel-home')!).getByText('已同步'),
+    ).toBeVisible();
     expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(
       expect.arrayContaining(['首页', '流水', '记账', '统计', '我的']),
     );
