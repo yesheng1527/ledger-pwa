@@ -1,6 +1,7 @@
 import {
   useEffect,
   useRef,
+  useState,
   useSyncExternalStore,
   type FormEvent,
   type KeyboardEvent,
@@ -25,10 +26,10 @@ export type TransactionEntryPageProps = {
 const primaryTypes: Array<{ type: EntryType; label: string }> = [
   { type: 'expense', label: '支出' },
   { type: 'income', label: '收入' },
-  { type: 'transfer', label: '转账' },
 ];
 
 const moreTypes: Array<{ type: EntryType; label: string }> = [
+  { type: 'transfer', label: '转账' },
   { type: 'refund', label: '退款' },
   { type: 'adjustment', label: '余额校准' },
 ];
@@ -58,6 +59,7 @@ export function TransactionEntryPage({
   const toAccountRef = useRef<HTMLSelectElement>(null);
   const originalExpenseRef = useRef<HTMLSelectElement>(null);
   const occurredAtRef = useRef<HTMLInputElement>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useEffect(() => {
     controller.setOptions(options);
@@ -152,10 +154,6 @@ export function TransactionEntryPage({
     >
       <form className={styles.page} onSubmit={submit}>
         <header className={styles.header}>
-          <div>
-            <p className={styles.eyebrow}>把每一笔生活，轻轻记下来</p>
-            <h1 id="transaction-entry-title" className={styles.title}>记账</h1>
-          </div>
           <button
             ref={closeRef}
             className={styles.iconButton}
@@ -167,21 +165,17 @@ export function TransactionEntryPage({
           >
             <HandDrawnIcon asset="action:close" decorative />
           </button>
-        </header>
-
-        <div className={styles.scroller}>
+          <h1 id="transaction-entry-title" className={styles.srOnly}>记账</h1>
           <fieldset className={styles.typeGroup} aria-label="主要记账类型">
             <legend className={styles.srOnly}>主要记账类型</legend>
             {primaryTypes.map(typeButton)}
           </fieldset>
+          <span className={styles.headerSpacer} aria-hidden="true" />
+        </header>
 
-          <fieldset className={styles.moreGroup} aria-label="更多类型">
-            <legend>更多类型</legend>
-            <div className={styles.moreButtons}>{moreTypes.map(typeButton)}</div>
-          </fieldset>
-
-          <label className={styles.field}>
-            <span>金额</span>
+        <div className={styles.scroller}>
+          <label className={`${styles.field} ${styles.amountField}`}>
+            <span className={styles.srOnly}>金额</span>
             <span className={styles.amountShell}>
               <span aria-hidden="true">¥</span>
               <input
@@ -200,34 +194,66 @@ export function TransactionEntryPage({
           </label>
 
           {values.type === 'expense' || values.type === 'income' ? (
-            <>
-              <fieldset
-                className={styles.categoryGroup}
-                aria-label={values.type === 'expense' ? '支出分类' : '收入分类'}
-              >
-                <legend>{values.type === 'expense' ? '支出分类' : '收入分类'}</legend>
-                <div className={styles.categoryGrid}>
-                  {categories.map((category, index) => (
-                    <button
-                      key={category.id}
-                      ref={index === 0 ? categoryRef : undefined}
-                      className={styles.categoryButton}
-                      type="button"
-                      aria-pressed={values.categoryId === category.id}
-                      data-entry-control="true"
-                      disabled={state.submitting}
-                      onClick={() => controller.update({ categoryId: category.id })}
-                    >
-                      <HandDrawnIcon asset={categoryAsset(category.iconKey)} decorative />
-                      <span>{category.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-              <label className={styles.field}>
-                <span>{values.type === 'income' ? '收入账户' : '支出账户'}</span>
+            <fieldset
+              className={styles.categoryGroup}
+              aria-label={values.type === 'expense' ? '支出分类' : '收入分类'}
+            >
+              <legend className={styles.srOnly}>
+                {values.type === 'expense' ? '支出分类' : '收入分类'}
+              </legend>
+              <div className={styles.categoryGrid}>
+                {categories.map((category, index) => (
+                  <button
+                    key={category.id}
+                    ref={index === 0 ? categoryRef : undefined}
+                    className={styles.categoryButton}
+                    type="button"
+                    aria-pressed={values.categoryId === category.id}
+                    data-entry-control="true"
+                    disabled={state.submitting}
+                    onClick={() => controller.update({ categoryId: category.id })}
+                  >
+                    <HandDrawnIcon asset={categoryAsset(category.iconKey)} decorative />
+                    <span>{category.name}</span>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          ) : null}
+
+          <section className={styles.detailCard} aria-label="记账详情">
+            <label className={styles.detailField}>
+              <span>备注</span>
+              <textarea
+                rows={1}
+                maxLength={500}
+                placeholder="点击写备注…"
+                data-entry-control="true"
+                disabled={state.submitting}
+                value={values.note}
+                onChange={(event) => controller.update({ note: event.target.value })}
+              />
+            </label>
+
+            <label className={styles.detailField}>
+              <span>日期</span>
+              <input
+                ref={occurredAtRef}
+                aria-label="发生时间"
+                type="datetime-local"
+                data-entry-control="true"
+                disabled={state.submitting}
+                value={values.occurredAtLocal}
+                onChange={(event) => controller.update({ occurredAtLocal: event.target.value })}
+              />
+            </label>
+
+            {values.type === 'expense' || values.type === 'income' ? (
+              <label className={styles.detailField}>
+                <span>账户</span>
                 <select
                   ref={accountRef}
+                  aria-label={values.type === 'income' ? '收入账户' : '支出账户'}
                   data-entry-control="true"
                   disabled={state.submitting}
                   value={values.accountId ?? ''}
@@ -241,144 +267,138 @@ export function TransactionEntryPage({
                   ))}
                 </select>
               </label>
-            </>
-          ) : null}
+            ) : null}
 
-          {values.type === 'transfer' ? (
-            <div className={styles.transferFields}>
-              <label className={styles.field}>
-                <span>转出账户</span>
-                <select
-                  ref={fromAccountRef}
-                  data-entry-control="true"
-                  disabled={state.submitting}
-                  value={values.fromAccountId ?? ''}
-                  onChange={(event) => controller.update({
-                    fromAccountId: event.target.value || null,
-                  })}
-                >
-                  {options.accounts
-                    .filter((account) => account.accountClass === 'asset')
-                    .map((account) => (
+            {values.type === 'transfer' ? (
+              <div className={styles.transferFields}>
+                <label className={styles.detailField}>
+                  <span>转出账户</span>
+                  <select
+                    ref={fromAccountRef}
+                    data-entry-control="true"
+                    disabled={state.submitting}
+                    value={values.fromAccountId ?? ''}
+                    onChange={(event) => controller.update({
+                      fromAccountId: event.target.value || null,
+                    })}
+                  >
+                    {options.accounts
+                      .filter((account) => account.accountClass === 'asset')
+                      .map((account) => (
+                        <option key={account.id} value={account.id}>{account.name}</option>
+                      ))}
+                  </select>
+                </label>
+                <label className={styles.detailField}>
+                  <span>转入账户</span>
+                  <select
+                    ref={toAccountRef}
+                    data-entry-control="true"
+                    disabled={state.submitting}
+                    value={values.toAccountId ?? ''}
+                    onChange={(event) => controller.update({
+                      toAccountId: event.target.value || null,
+                    })}
+                  >
+                    {options.accounts.map((account) => (
                       <option key={account.id} value={account.id}>{account.name}</option>
                     ))}
-                </select>
-              </label>
-              <label className={styles.field}>
-                <span>转入账户</span>
-                <select
-                  ref={toAccountRef}
-                  data-entry-control="true"
-                  disabled={state.submitting}
-                  value={values.toAccountId ?? ''}
-                  onChange={(event) => controller.update({
-                    toAccountId: event.target.value || null,
-                  })}
-                >
-                  {options.accounts.map((account) => (
-                    <option key={account.id} value={account.id}>{account.name}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          ) : null}
+                  </select>
+                </label>
+              </div>
+            ) : null}
 
-          {values.type === 'refund' ? (
-            <>
-              <label className={styles.field}>
-                <span>原支出</span>
-                <select
-                  ref={originalExpenseRef}
-                  data-entry-control="true"
-                  disabled={state.submitting}
-                  value={values.originalTransactionId ?? ''}
-                  onChange={(event) => controller.update({
-                    originalTransactionId: event.target.value || null,
-                  })}
-                >
-                  <option value="">请选择</option>
-                  {options.refundableExpenses.map((expense) => (
-                    <option key={expense.id} value={expense.id}>
-                      {expense.title} · 可退 ¥{(expense.remainingCents / 100).toFixed(2)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <p className={styles.readOnlyAccount}>
-                {refundAccount ? `退款原账户：${refundAccount.name}` : '选择原支出后显示退款账户'}
-              </p>
-            </>
-          ) : null}
-
-          {values.type === 'adjustment' ? (
-            <>
-              <fieldset className={styles.directionGroup}>
-                <legend>调整方向</legend>
-                <label>
-                  <input
-                    type="radio"
-                    name="adjustment-direction"
-                    value="increase"
-                    checked={values.adjustmentDirection === 'increase'}
+            {values.type === 'refund' ? (
+              <>
+                <label className={styles.detailField}>
+                  <span>原支出</span>
+                  <select
+                    ref={originalExpenseRef}
                     data-entry-control="true"
                     disabled={state.submitting}
-                    onChange={() => controller.update({ adjustmentDirection: 'increase' })}
-                  />
-                  <span>增加余额</span>
+                    value={values.originalTransactionId ?? ''}
+                    onChange={(event) => controller.update({
+                      originalTransactionId: event.target.value || null,
+                    })}
+                  >
+                    <option value="">请选择</option>
+                    {options.refundableExpenses.map((expense) => (
+                      <option key={expense.id} value={expense.id}>
+                        {expense.title} · 可退 ¥{(expense.remainingCents / 100).toFixed(2)}
+                      </option>
+                    ))}
+                  </select>
                 </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="adjustment-direction"
-                    value="decrease"
-                    checked={values.adjustmentDirection === 'decrease'}
+                <p className={styles.readOnlyAccount}>
+                  {refundAccount ? `退款原账户：${refundAccount.name}` : '选择原支出后显示退款账户'}
+                </p>
+              </>
+            ) : null}
+
+            {values.type === 'adjustment' ? (
+              <>
+                <fieldset className={styles.directionGroup}>
+                  <legend>调整方向</legend>
+                  <label>
+                    <input
+                      type="radio"
+                      name="adjustment-direction"
+                      value="increase"
+                      checked={values.adjustmentDirection === 'increase'}
+                      data-entry-control="true"
+                      disabled={state.submitting}
+                      onChange={() => controller.update({ adjustmentDirection: 'increase' })}
+                    />
+                    <span>增加余额</span>
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="adjustment-direction"
+                      value="decrease"
+                      checked={values.adjustmentDirection === 'decrease'}
+                      data-entry-control="true"
+                      disabled={state.submitting}
+                      onChange={() => controller.update({ adjustmentDirection: 'decrease' })}
+                    />
+                    <span>减少余额</span>
+                  </label>
+                </fieldset>
+                <label className={styles.detailField}>
+                  <span>调整账户</span>
+                  <select
+                    ref={accountRef}
                     data-entry-control="true"
                     disabled={state.submitting}
-                    onChange={() => controller.update({ adjustmentDirection: 'decrease' })}
-                  />
-                  <span>减少余额</span>
+                    value={values.accountId ?? ''}
+                    onChange={(event) => controller.update({ accountId: event.target.value || null })}
+                  >
+                    {options.accounts.map((account) => (
+                      <option key={account.id} value={account.id}>{account.name}</option>
+                    ))}
+                  </select>
                 </label>
-              </fieldset>
-              <label className={styles.field}>
-                <span>调整账户</span>
-                <select
-                  ref={accountRef}
-                  data-entry-control="true"
-                  disabled={state.submitting}
-                  value={values.accountId ?? ''}
-                  onChange={(event) => controller.update({ accountId: event.target.value || null })}
-                >
-                  {options.accounts.map((account) => (
-                    <option key={account.id} value={account.id}>{account.name}</option>
-                  ))}
-                </select>
-              </label>
-            </>
+              </>
+            ) : null}
+          </section>
+
+          <button
+            className={styles.moreTypeTrigger}
+            type="button"
+            aria-expanded={advancedOpen}
+            data-entry-control="true"
+            disabled={state.submitting}
+            onClick={() => setAdvancedOpen((open) => !open)}
+          >
+            更多记账类型
+          </button>
+
+          {advancedOpen ? (
+            <fieldset className={styles.moreGroup} aria-label="更多类型">
+              <legend className={styles.srOnly}>更多类型</legend>
+              <div className={styles.moreButtons}>{moreTypes.map(typeButton)}</div>
+            </fieldset>
           ) : null}
-
-          <label className={styles.field}>
-            <span>发生时间</span>
-            <input
-              ref={occurredAtRef}
-              type="datetime-local"
-              data-entry-control="true"
-              disabled={state.submitting}
-              value={values.occurredAtLocal}
-              onChange={(event) => controller.update({ occurredAtLocal: event.target.value })}
-            />
-          </label>
-
-          <label className={styles.field}>
-            <span>备注</span>
-            <textarea
-              rows={2}
-              maxLength={500}
-              data-entry-control="true"
-              disabled={state.submitting}
-              value={values.note}
-              onChange={(event) => controller.update({ note: event.target.value })}
-            />
-          </label>
 
           {state.error ? (
             <p className={styles.error} role="alert">{state.error.message}</p>

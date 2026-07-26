@@ -1,5 +1,5 @@
 .shell {
-  --navigation-height: calc(3.5rem + var(--space-4));
+  --navigation-height: 4.65rem;
 
   min-height: 100vh;
   min-height: 100dvh;
@@ -19,6 +19,11 @@
   padding: var(--safe-area-top) var(--space-3)
     calc(var(--navigation-height) + var(--safe-area-bottom));
   overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.main::-webkit-scrollbar {
+  display: none;
 }
 
 .navigation {

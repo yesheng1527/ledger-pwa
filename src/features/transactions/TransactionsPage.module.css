@@ -1,39 +1,34 @@
 .page {
   display: grid;
-  width: 100%;
-  max-width: 100%;
+  width: min(100%, 27rem);
+  max-width: 27rem;
   min-width: 0;
-  gap: var(--space-4);
+  gap: var(--space-2);
+  margin: 0 auto;
+  padding-top: 1.75rem;
 }
 
-.heading {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(12rem, 20rem);
-  align-items: end;
-  gap: var(--space-4);
-}
-
-.heading h1,
-.heading p,
 .filterField span,
 .searchField span,
 .groupHeading h3 {
   margin: 0;
 }
 
-.heading p {
-  color: var(--color-muted);
-  font-size: 0.875rem;
-}
-
 .searchField,
 .filterField {
   display: grid;
   min-width: 0;
-  gap: var(--space-1);
-  font-size: 0.875rem;
-  font-weight: 650;
+}
+
+.searchField span,
+.filterField span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .searchField input,
@@ -44,34 +39,40 @@
   min-width: 0;
   min-height: var(--control-height);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  padding: var(--space-2) var(--space-3);
-  background: rgb(255 255 255 / 74%);
+  border-color: var(--color-border-soft);
+  border-radius: 0.75rem;
+  padding: var(--space-2) 0.7rem;
+  background: rgb(255 255 255 / 82%);
   color: var(--color-ink);
+  font-size: 0.875rem;
 }
 
 .filters {
   display: grid;
   min-width: 0;
-  gap: var(--space-3);
-  padding: var(--space-4);
+  gap: var(--space-2);
 }
 
 .filterGrid {
   display: grid;
   min-width: 0;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: 1.04fr 0.92fr 1.1fr;
+  gap: var(--space-2);
 }
 
 .categoryScroller {
   display: flex;
   max-width: 100%;
   min-width: 0;
-  gap: var(--space-2);
+  gap: 0.45rem;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.categoryScroller::-webkit-scrollbar {
+  display: none;
 }
 
 .categoryScroller button,
@@ -79,18 +80,19 @@
   min-width: var(--control-height);
   min-height: var(--control-height);
   flex: 0 0 auto;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-round);
-  padding: var(--space-2) var(--space-4);
-  background: var(--color-card);
+  padding: 0.45rem 0.9rem;
+  background: rgb(255 255 255 / 78%);
   color: var(--color-ink);
   cursor: pointer;
+  font-size: 0.8125rem;
 }
 
 .categoryScroller button[aria-pressed='true'] {
   border-color: var(--color-coral);
-  background: color-mix(in srgb, var(--color-coral), white 84%);
-  color: color-mix(in srgb, var(--color-coral), var(--color-ink) 35%);
+  background: var(--color-coral);
+  color: white;
   font-weight: 700;
 }
 
@@ -109,12 +111,13 @@
 .groupList {
   display: grid;
   min-width: 0;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .dateGroup {
   min-width: 0;
-  padding: 0 var(--space-4);
+  border-color: var(--color-border-soft);
+  padding: 0 0.8rem;
 }
 
 .groupHeading {
@@ -122,8 +125,14 @@
   min-width: 0;
   align-items: baseline;
   justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-4) 0 var(--space-2);
+  gap: var(--space-2);
+  padding: 0.7rem 0 0.35rem;
+}
+
+.groupHeading h3 {
+  color: var(--color-ink);
+  font-size: 0.875rem;
+  font-weight: 700;
 }
 
 .dailyTotals {
@@ -131,9 +140,9 @@
   min-width: 0;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--space-1) var(--space-3);
+  gap: var(--space-1) var(--space-2);
   color: var(--color-muted);
-  font-size: 0.8125rem;
+  font-size: 0.6875rem;
 }
 
 .rows {
@@ -148,10 +157,10 @@
   min-height: var(--control-height);
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-3);
+  gap: 0.65rem;
   border: 0;
   border-top: 1px solid var(--color-border);
-  padding: var(--space-3) 0;
+  padding: 0.48rem 0;
   background: transparent;
   color: var(--color-ink);
   cursor: pointer;
@@ -161,7 +170,7 @@
 .rowCopy {
   display: grid;
   min-width: 0;
-  gap: var(--space-1);
+  gap: 0.1rem;
 }
 
 .rowCopy > strong,
@@ -173,11 +182,13 @@
 
 .rowCopy > span {
   color: var(--color-muted);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
 }
 
 .rowAmount {
   white-space: nowrap;
+  font-size: 0.875rem;
+  font-weight: 700;
 }
 
 .transactionRow [data-tone='expense'] {
@@ -403,18 +414,6 @@
 }
 
 @media (max-width: 36rem) {
-  .heading {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .filterGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .filterField:last-child {
-    grid-column: 1 / -1;
-  }
-
   .detailDialog {
     max-height: calc(100vh - var(--safe-area-bottom) - var(--space-4));
     border-bottom-right-radius: 0;
@@ -423,8 +422,12 @@
 }
 
 @media (max-width: 22rem) {
-  .filters {
-    padding-inline: var(--space-3);
+  .filterGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .filterField:last-child {
+    grid-column: 1 / -1;
   }
 
   .groupHeading {

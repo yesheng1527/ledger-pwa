@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Card } from '../../design-system/components/Card';
 import { EmptyState } from '../../design-system/components/EmptyState';
+import { PageHeader } from '../../design-system/components/PageHeader';
 import { formatYuan } from '../../domain/money';
 import type { LedgerViewModel } from '../../view-model/ledger-view-model';
 import type { TransactionDateGroup } from '../../view-model/types';
@@ -56,6 +57,7 @@ export function TransactionsPage({
   const [date, setDate] = useState<string | null>(null);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const queryKey = JSON.stringify({ month, accountId, date, categoryId, query });
   const result = useLedgerQuery(
     viewModel,
@@ -71,6 +73,11 @@ export function TransactionsPage({
     ));
   };
 
+  const toggleSearch = () => {
+    if (searchOpen) setQuery('');
+    setSearchOpen((open) => !open);
+  };
+
   const snapshot = result.status === 'ready' ? result.data : null;
   const groups = snapshot
     ? [...snapshot.groups].sort((left, right) => right.dateKey.localeCompare(left.dateKey))
@@ -78,23 +85,30 @@ export function TransactionsPage({
 
   return (
     <main className={styles.page} aria-labelledby="transactions-page-title">
-      <header className={styles.heading}>
-        <div>
-          <p>每一笔，都有迹可循</p>
-          <h1 id="transactions-page-title">流水</h1>
-        </div>
+      <PageHeader
+        title="流水"
+        titleId="transactions-page-title"
+        action={{
+          label: '搜索流水',
+          asset: 'action:search',
+          onActivate: toggleSearch,
+        }}
+      />
+
+      {searchOpen ? (
         <label className={styles.searchField}>
           <span>搜索流水</span>
           <input
             type="search"
+            autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索备注、分类或账户"
           />
         </label>
-      </header>
+      ) : null}
 
-      <Card className={styles.filters}>
+      <section className={styles.filters} aria-label="流水筛选">
         <div className={styles.filterGrid}>
           <label className={styles.filterField}>
             <span>月份</span>
@@ -152,7 +166,7 @@ export function TransactionsPage({
             </button>
           ))}
         </div>
-      </Card>
+      </section>
 
       {result.status === 'loading' ? (
         <Card className={styles.feedback} role="status">

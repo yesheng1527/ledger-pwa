@@ -68,8 +68,8 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: '首页' })).toBeInTheDocument();
     expect(
-      within(container.querySelector<HTMLElement>('#panel-home')!).getByText('已同步'),
-    ).toBeVisible();
+      within(container.querySelector<HTMLElement>('#panel-home')!).queryByText('已同步'),
+    ).not.toBeInTheDocument();
     expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(
       expect.arrayContaining(['首页', '流水', '记账', '统计', '我的']),
     );

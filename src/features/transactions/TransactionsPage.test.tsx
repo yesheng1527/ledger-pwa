@@ -172,13 +172,45 @@ afterEach(() => {
 
 describe('TransactionsPage filters', () => {
   it('renders the complete compact filter surface for the local current month', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     renderPage();
 
+    expect(screen.getByRole('heading', { name: '流水' })).toBeInTheDocument();
+    expect(screen.queryByRole('searchbox', { name: '搜索流水' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '搜索流水' }));
     expect(screen.getByRole('searchbox', { name: '搜索流水' })).toBeInTheDocument();
     expect(screen.getByLabelText('月份')).toHaveValue('2026-07');
     expect(await screen.findByLabelText('账户')).toBeInTheDocument();
     expect(screen.getByLabelText('日期')).toBeInTheDocument();
     expect(screen.getByRole('group', { name: '分类筛选' })).toBeInTheDocument();
+  });
+
+  it('clears an active text filter when the search field is closed', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const { viewModel } = renderPage();
+    const getTransactions = vi.mocked(viewModel.getTransactions);
+
+    await screen.findByLabelText('账户');
+    await user.click(screen.getByRole('button', { name: '搜索流水' }));
+    await user.type(screen.getByRole('searchbox', { name: '搜索流水' }), '早餐');
+    await waitFor(() => expect(getTransactions).toHaveBeenLastCalledWith({
+      month: '2026-07',
+      accountId: null,
+      date: null,
+      categoryId: null,
+      query: '早餐',
+    }));
+
+    await user.click(screen.getByRole('button', { name: '搜索流水' }));
+
+    expect(screen.queryByRole('searchbox', { name: '搜索流水' })).not.toBeInTheDocument();
+    await waitFor(() => expect(getTransactions).toHaveBeenLastCalledWith({
+      month: '2026-07',
+      accountId: null,
+      date: null,
+      categoryId: null,
+      query: '',
+    }));
   });
 
   it('uses the actual last calendar day as the selected month date limit', async () => {
@@ -248,6 +280,7 @@ describe('TransactionsPage filters', () => {
       query: '',
     });
 
+    await user.click(screen.getByRole('button', { name: '搜索流水' }));
     fireEvent.change(
       screen.getByRole('searchbox', { name: '搜索流水' }),
       { target: { value: '早餐' } },
@@ -302,9 +335,13 @@ describe('TransactionsPage list', () => {
   });
 
   it('keeps every filter, chip and transaction action at least 44px tall', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     renderPage();
 
+    const searchAction = screen.getByRole('button', { name: '搜索流水' });
+    await user.click(searchAction);
     const controls = [
+      searchAction,
       screen.getByRole('searchbox', { name: '搜索流水' }),
       screen.getByLabelText('月份'),
       await screen.findByLabelText('账户'),

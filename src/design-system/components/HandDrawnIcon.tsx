@@ -1,8 +1,14 @@
 import { assetRegistry, type AssetKey } from '../../assets/registry';
 
-export type HandDrawnIconProps =
+type ImageLoadingProps = {
+  loading?: 'eager' | 'lazy';
+  decoding?: 'async' | 'auto' | 'sync';
+};
+
+export type HandDrawnIconProps = (
   | { asset: AssetKey; decorative: true; label?: never }
-  | { asset: AssetKey; decorative?: false; label: string };
+  | { asset: AssetKey; decorative?: false; label: string }
+) & ImageLoadingProps;
 
 export function HandDrawnIcon(props: HandDrawnIconProps) {
   const decorative = props.decorative === true;
@@ -13,6 +19,8 @@ export function HandDrawnIcon(props: HandDrawnIconProps) {
       src={assetRegistry[props.asset]}
       alt={decorative ? '' : props.label}
       aria-hidden={decorative ? 'true' : undefined}
+      loading={props.loading}
+      decoding={props.decoding}
     />
   );
 }

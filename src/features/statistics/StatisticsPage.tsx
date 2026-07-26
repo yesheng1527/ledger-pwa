@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
+import { Export } from '@phosphor-icons/react';
 import { Card } from '../../design-system/components/Card';
-import { PageHeader } from '../../design-system/components/PageHeader';
-import { ProgressBar } from '../../design-system/components/ProgressBar';
 import { SegmentedControl } from '../../design-system/components/SegmentedControl';
 import type { LedgerViewModel } from '../../view-model/ledger-view-model';
 import type {
@@ -36,6 +35,29 @@ function monthKey(date: Date): string {
 
 type RangeMode = StatisticsRange['kind'];
 
+function csvCell(value: unknown): string {
+  const text = String(value ?? '');
+  const safeText = /^[\t\r ]*[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replaceAll('"', '""')}"`;
+}
+
+export function statisticsCsv(snapshot: StatisticsSnapshot): string {
+  const rows = [
+    ['区间', snapshot.rangeLabel],
+    ['支出', formatCny(snapshot.expenseCents)],
+    ['收入', formatCny(snapshot.incomeCents)],
+    ['结余', formatCny(snapshot.balanceCents)],
+    [],
+    ['分类', '金额', '占比'],
+    ...snapshot.expenseCategories.map((category) => [
+      category.name,
+      formatCny(category.cents),
+      `${category.percentage.toFixed(2)}%`,
+    ]),
+  ];
+  return rows.map((row) => row.map(csvCell).join(',')).join('\n');
+}
+
 function Summary({ snapshot }: { snapshot: StatisticsSnapshot }) {
   const items = [
     { label: '支出', cents: snapshot.expenseCents, tone: 'expense' },
@@ -59,45 +81,50 @@ function Summary({ snapshot }: { snapshot: StatisticsSnapshot }) {
   );
 }
 
+function MonthlyComparison({ snapshot }: { snapshot: StatisticsSnapshot }) {
+  return (
+    <Card className={`${styles.chartCard} ${styles.monthlyCard}`}>
+      <section>
+        <h2>月度对比</h2>
+        <div className={styles.monthlyGrid}>
+          {snapshot.monthlyComparison.slice(-2).map((month) => (
+            <article key={month.month}>
+              <strong>{month.month.slice(5)}月</strong>
+              <span>
+                结余
+                <b data-tone={month.balanceCents >= 0 ? 'income' : 'expense'}>
+                  {formatCny(month.balanceCents)}
+                </b>
+              </span>
+            </article>
+          ))}
+        </div>
+        {snapshot.monthlyComparison.length > 0 ? (
+          <table aria-label="月度对比数据">
+            <thead>
+              <tr><th scope="col">时间</th><th scope="col">支出</th><th scope="col">收入</th></tr>
+            </thead>
+            <tbody>
+              {snapshot.monthlyComparison.map((month) => (
+                <tr key={month.month}>
+                  <th scope="row">{month.month}</th>
+                  <td>{formatCny(month.expenseCents)}</td>
+                  <td>{formatCny(month.incomeCents)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <p>暂无可展示的统计数据</p>}
+      </section>
+    </Card>
+  );
+}
+
 function StatisticsContent({ snapshot }: { snapshot: StatisticsSnapshot }) {
-  const budgetText = snapshot.totalBudget
-    ? `已用 ${formatCny(snapshot.totalBudget.usedCents)}，预算 `
-      + `${formatCny(snapshot.totalBudget.amountCents)}`
-    : '';
   return (
     <>
       <p className={styles.rangeLabel}>{snapshot.rangeLabel}</p>
       <Summary snapshot={snapshot} />
-
-      <Card>
-        <section className={styles.section}>
-          <h2>预算执行</h2>
-          {snapshot.totalBudget ? (
-            <>
-              <ProgressBar
-                label="总预算"
-                value={snapshot.totalBudget.usedCents}
-                max={snapshot.totalBudget.amountCents}
-                valueText={budgetText}
-                tone={snapshot.totalBudget.remainingCents < 0 ? 'warning' : 'coral'}
-              />
-              <p>
-                剩余 {formatCny(snapshot.totalBudget.remainingCents)}
-              </p>
-              {snapshot.categoryBudgets.length > 0 ? (
-                <ul aria-label="分类预算">
-                  {snapshot.categoryBudgets.map((budget) => (
-                    <li key={budget.categoryId}>
-                      {budget.name}
-                      {formatCny(budget.usedCents)} / {formatCny(budget.amountCents)}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </>
-          ) : <p>当前区间尚未设置预算</p>}
-        </section>
-      </Card>
 
       <Card className={styles.chartCard}>
         <AccessibleDonutChart
@@ -115,17 +142,7 @@ function StatisticsContent({ snapshot }: { snapshot: StatisticsSnapshot }) {
         <AccessibleTrendChart title="收支趋势" data={snapshot.trend} />
       </Card>
 
-      <Card className={styles.chartCard}>
-        <AccessibleTrendChart
-          title="月度对比"
-          data={snapshot.monthlyComparison.map((month) => ({
-            key: month.month,
-            label: month.month,
-            expenseCents: month.expenseCents,
-            incomeCents: month.incomeCents,
-          }))}
-        />
-      </Card>
+      <MonthlyComparison snapshot={snapshot} />
 
       <Card className={styles.chartCard}>
         <AccessibleDonutChart
@@ -161,10 +178,33 @@ export function StatisticsPage({ viewModel }: StatisticsPageProps) {
     `statistics:${queryKey}`,
     () => viewModel.getStatistics(range),
   );
+  const exportStatistics = () => {
+    if (query.status !== 'ready') return;
+    const snapshot = query.data;
+    const csv = statisticsCsv(snapshot);
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `海风小账本-${snapshot.rangeLabel}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <main className={styles.page} aria-labelledby="statistics-page-title">
-      <PageHeader title="统计" titleId="statistics-page-title" eyebrow="看见钱流向哪里" />
+      <header className={styles.header}>
+        <span aria-hidden="true" />
+        <h1 id="statistics-page-title">统计</h1>
+        <button
+          type="button"
+          aria-label="导出统计"
+          disabled={query.status !== 'ready'}
+          onClick={exportStatistics}
+        >
+          <Export size={21} weight="regular" aria-hidden="true" />
+        </button>
+      </header>
       <div className={styles.controls}>
         <SegmentedControl<RangeMode>
           label="统计区间"

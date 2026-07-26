@@ -47,11 +47,18 @@ const required: AssetKey[] = [
 describe('minimal visual asset registry', () => {
   it('contains every shell asset as an independent file', () => {
     expect(Object.keys(assetRegistry).sort()).toEqual([...required].sort());
-    for (const key of required) expect(assetRegistry[key]).toMatch(/\.(svg|webp)$/);
+    for (const key of required) expect(assetRegistry[key]).toMatch(/\.(svg|png|webp)$/);
   });
 
   it('does not expose the full reference board to production code', () => {
     expect(Object.values(assetRegistry).join('\n')).not.toContain('visual-reference');
+  });
+
+  it('uses independent reference-directed raster scenes for the two app heroes', () => {
+    expect(assetRegistry['illustration:home-seaside'])
+      .toMatch(/home-seaside-reference\.webp/);
+    expect(assetRegistry['illustration:profile-seaside'])
+      .toMatch(/profile-seaside-reference\.webp/);
   });
 
   it('is immutable at runtime', () => {
@@ -59,7 +66,6 @@ describe('minimal visual asset registry', () => {
   });
 
   it.each([
-    'illustration:home-seaside',
     'illustration:empty-ledger',
     'category:food',
     'category:transport',
@@ -72,7 +78,7 @@ describe('minimal visual asset registry', () => {
     'category:travel',
     'category:income',
     'category:other',
-  ] as const)('registers %s as an independent hashed asset', (key) => {
+  ] as const)('registers %s as an independent SVG asset', (key) => {
     expect((assetRegistry as Record<string, string>)[key]).toMatch(/\.(svg)(\?|$)/);
   });
 

@@ -79,7 +79,8 @@ afterEach(() => {
 });
 
 describe('transaction entry page hierarchy', () => {
-  it('renders the full five-type form and focuses the decimal amount', async () => {
+  it('renders the reference-first entry hierarchy and keeps advanced types available', async () => {
+    const user = userEvent.setup();
     renderEntry();
 
     const dialog = screen.getByRole('dialog', { name: '记账' });
@@ -90,8 +91,11 @@ describe('transaction entry page hierarchy', () => {
     expect(within(dialog).getByRole('button', { name: '支出' }))
       .toHaveAttribute('aria-pressed', 'true');
     expect(within(dialog).getByRole('button', { name: '收入' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: '转账' })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('region', { name: '记账详情' })).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getByLabelText('金额')).toHaveFocus());
+    await user.click(within(dialog).getByRole('button', { name: '更多记账类型' }));
     expect(within(dialog).getByRole('button', { name: '转账' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('group', { name: '更多类型' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: '退款' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: '余额校准' })).toBeInTheDocument();
     expect(within(dialog).getByRole('group', { name: '支出分类' })).toBeInTheDocument();
@@ -101,7 +105,6 @@ describe('transaction entry page hierarchy', () => {
       'datetime-local',
     );
     expect(within(dialog).getByRole('button', { name: '保存' })).toBeInTheDocument();
-    await waitFor(() => expect(within(dialog).getByLabelText('金额')).toHaveFocus());
     expect(within(dialog).getByLabelText('金额')).toHaveAttribute('inputmode', 'decimal');
   });
 
@@ -114,6 +117,7 @@ describe('transaction entry page hierarchy', () => {
     expect(screen.getByRole('button', { name: '工资' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: '收入账户' })).not.toHaveTextContent('信用卡');
 
+    await user.click(screen.getByRole('button', { name: '更多记账类型' }));
     await user.click(screen.getByRole('button', { name: '转账' }));
     expect(screen.getByRole('combobox', { name: '转出账户' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: '转入账户' })).toBeInTheDocument();

@@ -122,7 +122,7 @@ describe('AppShell', () => {
     expect(screen.getAllByRole('main')).toHaveLength(1);
     expect(within(screen.getByRole('main')).getByRole('heading', { name: '我的' }))
       .toBeInTheDocument();
-    expect(within(screen.getByRole('main')).getByRole('heading', { name: '账本管理' }))
+    expect(within(screen.getByRole('main')).getByRole('region', { name: '账本与数据' }))
       .toBeInTheDocument();
   });
 
@@ -135,6 +135,7 @@ describe('AppShell', () => {
     scrollContainer!.scrollTop = 137;
     await user.click(screen.getByRole('button', { name: '流水' }));
     expect(scrollContainer!.scrollTop).toBe(0);
+    await user.click(screen.getByRole('button', { name: '搜索流水' }));
     const search = await screen.findByRole('searchbox', { name: '搜索流水' });
     await user.type(search, '午餐');
 
@@ -179,9 +180,9 @@ describe('AppShell', () => {
     await waitFor(() => expect(quickEntry).toHaveFocus());
 
     await user.click(screen.getByRole('button', { name: '记账' }));
-    await screen.findByRole('button', { name: '娱乐' });
-    expect(screen.getByRole('button', { name: '娱乐' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: '餐饮' })).toHaveAttribute('aria-pressed', 'false');
+    await screen.findByRole('button', { name: '餐饮' });
+    expect(screen.getByRole('button', { name: '餐饮' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '娱乐' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByLabelText('金额')).toHaveFocus();
   });
 
@@ -227,8 +228,12 @@ describe('AppShell', () => {
     const homePanel = container.querySelector<HTMLElement>('#panel-home');
     expect(homePanel).not.toBeNull();
 
-    expect(within(homePanel!).getByText('已同步')).toHaveAttribute('data-tone', 'quiet');
+    expect(within(homePanel!).queryByText('已同步')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '重试同步' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '我的' }));
+    expect(screen.getByRole('button', {
+      name: /备份与恢复.*已同步.*暂未开放/,
+    })).toBeDisabled();
 
     rerender(
       <AppShell
@@ -237,7 +242,9 @@ describe('AppShell', () => {
         onRetrySync={retry}
       />,
     );
-    await user.click(screen.getByRole('button', { name: '重试同步' }));
+    await user.click(screen.getByRole('button', {
+      name: /备份与恢复.*当前离线，可继续记账/,
+    }));
     expect(retry).toHaveBeenCalledOnce();
 
     rerender(
@@ -247,7 +254,9 @@ describe('AppShell', () => {
         onRetrySync={retry}
       />,
     );
-    expect(within(homePanel!).getByText('有同步冲突待处理')).toBeVisible();
+    expect(screen.getByRole('button', {
+      name: /备份与恢复.*有同步冲突待处理.*暂未开放/,
+    })).toBeDisabled();
     expect(screen.queryByRole('button', { name: '重试同步' })).not.toBeInTheDocument();
   });
 });

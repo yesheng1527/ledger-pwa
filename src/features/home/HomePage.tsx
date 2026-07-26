@@ -1,9 +1,10 @@
+import { useState } from 'react';
+import { CaretRight, Eye, EyeSlash } from '@phosphor-icons/react';
 import type { AssetKey } from '../../assets/registry';
-import { Amount, type AmountTone } from '../../design-system/components/Amount';
+import { Amount } from '../../design-system/components/Amount';
 import { Card } from '../../design-system/components/Card';
 import { EmptyState } from '../../design-system/components/EmptyState';
 import { HandDrawnIcon } from '../../design-system/components/HandDrawnIcon';
-import { formatYuan } from '../../domain/money';
 import type { LedgerViewModel } from '../../view-model/ledger-view-model';
 import type {
   HomeSnapshot,
@@ -46,14 +47,12 @@ function spokenRowAmount(amountLabel: string): string {
   return `${negative ? '负' : positive ? '正' : ''}${amount}元`;
 }
 
-function metricTone(cents: number): AmountTone {
-  return cents < 0 ? 'expense' : 'balance';
-}
-
 function SyncStatus({
   syncState,
   onRetrySync,
 }: Pick<HomePageProps, 'syncState' | 'onRetrySync'>) {
+  if (syncState.tone === 'quiet') return null;
+
   return (
     <div className={styles.syncLine}>
       <p className={styles.syncStatus} data-tone={syncState.tone}>
@@ -68,11 +67,12 @@ function SyncStatus({
   );
 }
 
-function Hero({
-  snapshot,
-}: {
-  snapshot?: HomeSnapshot;
-}) {
+function currentMonthLabel(): string {
+  const now = new Date();
+  return `${now.getFullYear()}年${now.getMonth() + 1}月`;
+}
+
+function Hero() {
   return (
     <header className={styles.hero}>
       <div className={styles.heroArt}>
@@ -80,91 +80,67 @@ function Hero({
       </div>
       <div className={styles.heroContent}>
         <div className={styles.greeting}>
-          <h1 id="home-page-title">首页</h1>
-          <p>海风吹来，慢慢记好每一笔。</p>
+          <h1 id="home-page-title" className={styles.homeTitle}>首页</h1>
+          <strong>早上好，海风～</strong>
+          <p>今天也要好好生活呀！</p>
         </div>
-        {snapshot ? (
-          <div className={styles.totalAssets}>
-            <span>总资产</span>
-            <Amount cents={snapshot.totalAssetsCents} label="总资产" tone="neutral" />
-          </div>
-        ) : null}
+        <HandDrawnIcon asset="action:reminder" decorative />
       </div>
     </header>
   );
 }
 
-function Metrics({ snapshot }: { snapshot: HomeSnapshot }) {
-  const metrics = [
-    { label: '今日支出', cents: snapshot.todayExpenseCents, tone: 'expense' as const },
-    {
-      label: '本月结余',
-      cents: snapshot.monthBalanceCents,
-      tone: metricTone(snapshot.monthBalanceCents),
-    },
-    { label: '本月收入', cents: snapshot.monthIncomeCents, tone: 'income' as const },
-    { label: '本月支出', cents: snapshot.monthExpenseCents, tone: 'expense' as const },
-  ];
-
-  return (
-    <section className={styles.metrics} aria-label="收支概览">
-      {metrics.map((metric) => (
-        <Card className={styles.metric} key={metric.label}>
-          <span>{metric.label}</span>
-          <Amount cents={metric.cents} label={metric.label} tone={metric.tone} />
-        </Card>
-      ))}
-    </section>
-  );
-}
-
-function Budget({ budget }: Pick<HomeSnapshot, 'budget'>) {
-  if (budget === null) {
-    return (
-      <Card>
-        <section className={styles.section}>
-          <h2>本月预算</h2>
-          <p className={styles.muted}>本月尚未设置预算</p>
-        </section>
-      </Card>
-    );
-  }
-
-  const progress = budget.amountCents > 0
-    ? Math.min(100, Math.max(0, budget.usedCents / budget.amountCents * 100))
-    : 100;
-  const overspent = budget.remainingCents < 0;
-  const progressMax = Math.max(0, budget.amountCents);
-  const progressNow = Math.min(progressMax, Math.max(0, budget.usedCents));
-  const progressText = overspent
-    ? `已用${formatYuan(budget.usedCents)}，已超支${formatYuan(Math.abs(budget.remainingCents))}`
-    : `已用${formatYuan(budget.usedCents)}`;
+function Overview({ snapshot }: { snapshot: HomeSnapshot }) {
+  const monthLabel = currentMonthLabel();
+  const [amountsHidden, setAmountsHidden] = useState(false);
+  const amount = (
+    cents: number,
+    label: string,
+    tone: 'expense' | 'income' | 'balance',
+  ) => amountsHidden ? (
+    <span
+      className={`ds-amount ${styles.hiddenAmount}`}
+      data-numeric=""
+      data-tone={tone}
+      aria-label="金额已隐藏"
+    >
+      ¥••••••
+    </span>
+  ) : <Amount cents={cents} label={label} tone={tone} />;
 
   return (
     <Card>
-      <section className={styles.section}>
-        <div className={styles.sectionHeading}>
-          <h2>本月预算</h2>
-          {overspent ? <strong className={styles.overspent}>已超支</strong> : null}
+      <section className={styles.overview} aria-label={`${monthLabel}财务总览`}>
+        <div className={styles.overviewHeading}>
+          <strong>{monthLabel}</strong>
+          <button
+            className={styles.privacyAction}
+            type="button"
+            aria-label={amountsHidden ? '显示金额' : '隐藏金额'}
+            onClick={() => setAmountsHidden((hidden) => !hidden)}
+          >
+            {amountsHidden
+              ? <EyeSlash size={18} weight="regular" aria-hidden="true" />
+              : <Eye size={18} weight="regular" aria-hidden="true" />}
+          </button>
         </div>
-        <div
-          className={styles.progressTrack}
-          role="progressbar"
-          aria-label="本月预算"
-          aria-valuemin={0}
-          aria-valuemax={progressMax}
-          aria-valuenow={progressNow}
-          aria-valuetext={progressText}
-        >
-          <span className={styles.progressFill} style={{ width: `${progress}%` }} />
+        <div className={styles.balanceBlock}>
+          <span>本月结余（元）</span>
+          {amount(
+            snapshot.monthBalanceCents,
+            '本月结余',
+            snapshot.monthBalanceCents < 0 ? 'expense' : 'balance',
+          )}
         </div>
-        <div className={styles.budgetDetails}>
-          <span data-numeric="">已用 {formatYuan(budget.usedCents)}</span>
-          <Amount
-            cents={budget.remainingCents}
-            label="预算剩余"
-            tone={overspent ? 'expense' : 'balance'}
-          />
+        <div className={styles.overviewBreakdown}>
+          <div>
+            <span>本月收入</span>
+            {amount(snapshot.monthIncomeCents, '本月收入', 'income')}
+          </div>
+          <div>
+            <span>本月支出</span>
+            {amount(snapshot.monthExpenseCents, '本月支出', 'expense')}
+          </div>
         </div>
       </section>
     </Card>
@@ -187,7 +163,13 @@ function QuickEntry({
   return (
     <Card>
       <section className={styles.section}>
-        <h2>快速记账</h2>
+        <div className={styles.sectionHeading}>
+          <h2>快速记账</h2>
+          <span className={styles.sectionLink}>
+            全部
+            <CaretRight aria-hidden="true" weight="bold" />
+          </span>
+        </div>
         <div className={styles.quickGrid}>
           {actions.map((action) => (
             <button
@@ -254,7 +236,13 @@ function RecentTransactions({
   return (
     <Card>
       <section className={styles.section}>
-        <h2>最近流水</h2>
+        <div className={styles.sectionHeading}>
+          <h2>最近流水</h2>
+          <span className={styles.sectionLink}>
+            更多
+            <CaretRight aria-hidden="true" weight="bold" />
+          </span>
+        </div>
         {transactions.length === 0 ? (
           <EmptyState
             title="还没有流水"
@@ -292,9 +280,7 @@ export function HomePage({
 
   return (
     <main className={styles.page} aria-labelledby="home-page-title">
-      <Hero
-        snapshot={query.status === 'ready' ? query.data : undefined}
-      />
+      <Hero />
       {query.status === 'loading' ? (
         <Card className={styles.feedback} role="status">
           正在加载首页…
@@ -311,8 +297,7 @@ export function HomePage({
       ) : null}
       {query.status === 'ready' ? (
         <>
-          <Metrics snapshot={query.data} />
-          <Budget budget={query.data.budget} />
+          <Overview snapshot={query.data} />
           <QuickEntry
             categories={query.data.quickCategories}
             onStartEntry={onStartEntry}

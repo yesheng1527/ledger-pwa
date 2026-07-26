@@ -44,7 +44,7 @@ function makeViewModel() {
 afterEach(() => cleanup());
 
 describe('ProfilePage', () => {
-  it('renders identity, real sync state, pending count and budget summary', async () => {
+  it('renders the reference identity, budget and retryable backup row', async () => {
     const onRetrySync = vi.fn();
     const user = userEvent.setup();
     const { container } = render(
@@ -65,20 +65,26 @@ describe('ProfilePage', () => {
       'aria-hidden',
       'true',
     );
-    expect(screen.getByText('小海')).toBeInTheDocument();
-    expect(screen.getByText('我们的生活账本')).toBeInTheDocument();
-    expect(screen.getByText('同步失败，可以重试')).toBeInTheDocument();
-    expect(screen.getByText('2 笔待同步')).toBeInTheDocument();
+    expect(container.querySelector('img[src*="profile-seaside"]')).toHaveAttribute(
+      'loading',
+      'lazy',
+    );
+    expect(screen.getByText('海风的小账本')).toBeInTheDocument();
+    expect(screen.getByText('记录生活，遇见美好')).toBeInTheDocument();
+    expect(screen.queryByText('小海')).not.toBeInTheDocument();
+    expect(screen.queryByText('我们的生活账本')).not.toBeInTheDocument();
     expect(screen.getByRole('progressbar', { name: '本月预算' })).toHaveAttribute(
       'aria-valuenow',
       '23000',
     );
 
-    await user.click(screen.getByRole('button', { name: '重试同步' }));
+    await user.click(screen.getByRole('button', {
+      name: /备份与恢复.*同步失败，可以重试.*2 笔待同步/,
+    }));
     expect(onRetrySync).toHaveBeenCalledOnce();
   });
 
-  it('groups management entries and honestly marks future work unavailable', async () => {
+  it('groups management entries without adding visible copy absent from the reference', async () => {
     render(
       <ProfilePage
         viewModel={makeViewModel()}
@@ -89,17 +95,17 @@ describe('ProfilePage', () => {
         onRetrySync={vi.fn()}
       />,
     );
-    await screen.findByText('小海');
+    await screen.findByText('海风的小账本');
 
-    expect(screen.getByRole('heading', { name: '账本管理' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '数据与偏好' })).toBeInTheDocument();
-    const futureRows = screen.getAllByRole('button', { name: /后续阶段开放/ });
+    expect(screen.getByRole('region', { name: '账本与数据' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '外观与关于' })).toBeInTheDocument();
+    const futureRows = screen.getAllByRole('button', { name: /暂未开放/ });
     expect(futureRows.length).toBeGreaterThanOrEqual(7);
     futureRows.forEach((row) => {
       expect(row).toHaveAttribute('aria-disabled', 'true');
       expect(row).toBeDisabled();
     });
-    expect(screen.queryByRole('button', { name: '重试同步' })).not.toBeInTheDocument();
+    expect(screen.queryByText('后续阶段开放')).not.toBeInTheDocument();
     expect(screen.queryByText(/成功|访问令牌|密码/)).not.toBeInTheDocument();
   });
 });

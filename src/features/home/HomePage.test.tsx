@@ -125,40 +125,49 @@ function renderHome(
 afterEach(() => cleanup());
 
 describe('HomePage', () => {
-  it('renders the fixed hierarchy and every home metric from the snapshot', async () => {
+  it('renders the reference greeting, monthly overview, quick actions and recent rows', async () => {
     renderHome();
 
     expect(await screen.findByRole('heading', { name: '首页', level: 1 })).toBeInTheDocument();
-    expect(screen.getByLabelText('总资产，3500.00元')).toHaveTextContent('¥3,500.00');
-    expect(screen.getByLabelText('今日支出，50.00元')).toHaveTextContent('¥50.00');
+    expect(screen.getByText('早上好，海风～')).toBeInTheDocument();
+    expect(screen.getByText('今天也要好好生活呀！')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /财务总览/ })).toBeInTheDocument();
     expect(screen.getByLabelText('本月收入，5000.00元')).toHaveTextContent('¥5,000.00');
     expect(screen.getByLabelText('本月支出，230.00元')).toHaveTextContent('¥230.00');
     expect(screen.getByLabelText('本月结余，4770.00元')).toHaveTextContent('¥4,770.00');
-    expect(screen.getByRole('progressbar', { name: '本月预算' })).toHaveAttribute(
-      'aria-valuenow',
-      '23000',
-    );
     expect(screen.getAllByRole('button', { name: /快速记账/ })).toHaveLength(5);
     expect(screen.getAllByRole('button', { name: /查看流水/ })).toHaveLength(3);
 
     const sectionHeadings = screen.getAllByRole('heading', { level: 2 });
     expect(sectionHeadings.map((heading) => heading.textContent)).toEqual([
-      '本月预算',
       '快速记账',
       '最近流水',
     ]);
-    expect(screen.getByRole('main').lastElementChild).toHaveTextContent('刚刚已同步');
+    expect(screen.queryByText('刚刚已同步')).not.toBeInTheDocument();
   });
 
-  it('orders metrics for reading as today expense, balance, income, then expense', async () => {
+  it('orders monthly amounts for reading as balance, income, then expense', async () => {
     renderHome();
 
-    await screen.findByLabelText('今日支出，50.00元');
+    await screen.findByLabelText('本月结余，4770.00元');
     const metricLabels = screen
-      .getAllByLabelText(/^(今日支出|本月结余|本月收入|本月支出)，/)
+      .getAllByLabelText(/^(本月结余|本月收入|本月支出)，/)
       .map((amount) => amount.getAttribute('aria-label')?.split('，')[0]);
 
-    expect(metricLabels).toEqual(['今日支出', '本月结余', '本月收入', '本月支出']);
+    expect(metricLabels).toEqual(['本月结余', '本月收入', '本月支出']);
+  });
+
+  it('lets the overview privacy action hide and restore monthly amounts', async () => {
+    const user = userEvent.setup();
+    renderHome();
+
+    await screen.findByLabelText('本月结余，4770.00元');
+    await user.click(screen.getByRole('button', { name: '隐藏金额' }));
+    expect(screen.getAllByLabelText('金额已隐藏')).toHaveLength(3);
+    expect(screen.queryByText('¥4,770.00')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '显示金额' }));
+    expect(screen.getByLabelText('本月结余，4770.00元')).toHaveTextContent('¥4,770.00');
   });
 
   it('starts category and uncategorized entries from the five quick actions', async () => {
@@ -201,14 +210,15 @@ describe('HomePage', () => {
     const retry = await screen.findByRole('button', { name: '重试加载' });
     expect(screen.getByRole('alert')).toHaveTextContent('首页加载失败');
     await user.click(retry);
-    expect(await screen.findByLabelText('总资产，3500.00元')).toBeInTheDocument();
+    expect(await screen.findByLabelText('本月结余，4770.00元')).toBeInTheDocument();
     expect(attempts).toBe(2);
   });
 
-  it('renders no progressbar when this month has no budget', async () => {
+  it('keeps the home hierarchy independent from whether a budget exists', async () => {
     renderHome(async () => ({ ...snapshot, budget: null }));
 
-    expect(await screen.findByText('本月尚未设置预算')).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: /财务总览/ })).toBeInTheDocument();
+    expect(screen.queryByText('本月预算')).not.toBeInTheDocument();
     expect(screen.queryByRole('progressbar', { name: '本月预算' })).not.toBeInTheDocument();
   });
 
@@ -224,25 +234,19 @@ describe('HomePage', () => {
       recentTransactions: [],
     }));
 
-    expect(await screen.findByLabelText('总资产，0.00元')).toHaveTextContent('¥0.00');
+    expect(await screen.findByLabelText('本月结余，0.00元')).toHaveTextContent('¥0.00');
     expect(screen.getByRole('heading', { name: '还没有流水' })).toBeInTheDocument();
   });
 
-  it('marks a negative budget remainder as overspent', async () => {
+  it('marks a negative monthly balance as an expense amount', async () => {
     renderHome(async () => ({
       ...snapshot,
-      budget: { amountCents: 100_000, usedCents: 123_000, remainingCents: -23_000 },
+      monthBalanceCents: -23_000,
     }));
 
-    expect(await screen.findByText('已超支')).toBeInTheDocument();
-    expect(screen.getByLabelText('预算剩余，负230.00元')).toHaveTextContent('-¥230.00');
-    expect(screen.getByRole('progressbar', { name: '本月预算' })).toHaveAttribute(
-      'aria-valuenow',
-      '100000',
-    );
-    expect(screen.getByRole('progressbar', { name: '本月预算' })).toHaveAttribute(
-      'aria-valuetext',
-      '已用¥1230.00，已超支¥230.00',
+    expect(await screen.findByLabelText('本月结余，负230.00元')).toHaveAttribute(
+      'data-tone',
+      'expense',
     );
   });
 
@@ -254,15 +258,14 @@ describe('HomePage', () => {
 
     const status = screen.getByText(label);
     expect(status).toHaveAttribute('data-tone', tone);
-    expect(await screen.findByLabelText('总资产，3500.00元')).toBeVisible();
+    expect(await screen.findByLabelText('本月结余，4770.00元')).toBeVisible();
   });
 
-  it('renders the quiet sync label as secondary text', async () => {
+  it('hides quiet sync metadata from the reference home screen', async () => {
     renderHome();
 
-    const status = screen.getByText('刚刚已同步');
-    expect(status).toHaveAttribute('data-tone', 'quiet');
-    expect(await screen.findByLabelText('总资产，3500.00元')).toBeVisible();
+    expect(screen.queryByText('刚刚已同步')).not.toBeInTheDocument();
+    expect(await screen.findByLabelText('本月结余，4770.00元')).toBeVisible();
   });
 
   it('retries synchronization from an accessible 44px action', async () => {

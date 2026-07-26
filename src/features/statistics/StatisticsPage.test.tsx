@@ -5,7 +5,7 @@ import '../../design-system/tokens.css';
 import '../../design-system/global.css';
 import { LedgerViewModel } from '../../view-model/ledger-view-model';
 import type { StatisticsSnapshot } from '../../view-model/types';
-import { StatisticsPage } from './StatisticsPage';
+import { StatisticsPage, statisticsCsv } from './StatisticsPage';
 
 const snapshot: StatisticsSnapshot = {
   rangeLabel: '2026年7月',
@@ -60,19 +60,34 @@ function viewModelFor(result: StatisticsSnapshot = snapshot) {
 afterEach(() => cleanup());
 
 describe('StatisticsPage', () => {
-  it('renders real summaries, budgets and text equivalents for every chart', async () => {
+  it('neutralizes spreadsheet formulas in user-authored export cells', () => {
+    const csv = statisticsCsv({
+      ...snapshot,
+      expenseCategories: [
+        { categoryId: 'equals', name: '=HYPERLINK("https://example.test")', cents: 100, percentage: 25 },
+        { categoryId: 'plus', name: '+SUM(1,1)', cents: 100, percentage: 25 },
+        { categoryId: 'minus', name: '-1+2', cents: 100, percentage: 25 },
+        { categoryId: 'at', name: '@cmd', cents: 100, percentage: 25 },
+      ],
+    });
+
+    expect(csv).toContain(`"'=HYPERLINK(""https://example.test"")"`);
+    expect(csv).toContain(`"'+SUM(1,1)"`);
+    expect(csv).toContain(`"'-1+2"`);
+    expect(csv).toContain(`"'@cmd"`);
+  });
+
+  it('renders the reference summary, export action and text equivalents for every chart', async () => {
     render(<StatisticsPage viewModel={viewModelFor()} />);
 
     expect(await screen.findByRole('heading', { name: '统计', level: 1 }))
       .toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '导出统计' })).toBeInTheDocument();
     expect(screen.getByText('2026年7月')).toBeInTheDocument();
     expect(screen.getByLabelText('支出 230.00 元')).toHaveTextContent('¥230.00');
     expect(screen.getByLabelText('收入 1000.00 元')).toHaveTextContent('¥1,000.00');
     expect(screen.getByLabelText('结余 770.00 元')).toHaveTextContent('¥770.00');
-    expect(screen.getByRole('progressbar', { name: '总预算' })).toHaveAttribute(
-      'aria-valuenow',
-      '23000',
-    );
+    expect(screen.queryByRole('heading', { name: '预算执行' })).not.toBeInTheDocument();
 
     expect(screen.getByRole('heading', { name: '支出分类' })).toBeInTheDocument();
     expect(screen.getByRole('list', { name: '支出分类数据' })).toHaveTextContent(

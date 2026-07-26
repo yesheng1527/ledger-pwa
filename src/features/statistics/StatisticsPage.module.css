@@ -1,64 +1,130 @@
 .page {
   display: grid;
-  gap: var(--space-4);
-  max-width: 52rem;
+  width: min(100%, 27rem);
+  max-width: 27rem;
+  gap: var(--space-2);
   margin: 0 auto;
-  padding: var(--space-4);
+  padding: 1.8rem 0.75rem 0;
+}
+
+.header {
+  display: grid;
+  min-height: var(--control-height);
+  grid-template-columns: var(--control-min-size) minmax(0, 1fr) var(--control-min-size);
+  align-items: center;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.05rem;
+  text-align: center;
+}
+
+.header button {
+  display: grid;
+  width: var(--control-min-size);
+  min-width: var(--control-min-size);
+  min-height: var(--control-height);
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-round);
+  padding: 0;
+  background: transparent;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+
+.header button:disabled {
+  opacity: 0.45;
 }
 
 .controls {
   display: grid;
-  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.controls > :global(.ds-segmented-control) {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.controls > label {
+  grid-column: 1;
+  grid-row: 1;
 }
 
 .controls label {
   display: grid;
-  gap: var(--space-1);
-  color: var(--color-muted);
-  font-size: 0.875rem;
-}
-
-.controls input,
-.error button {
-  min-height: var(--control-min-size);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  padding: var(--space-2) var(--space-3);
-  background: rgb(255 253 248 / 90%);
-  color: var(--color-ink);
-  font: inherit;
-}
-
-.customDates,
-.summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-
-.customDates {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.rangeLabel {
-  margin: 0;
-  color: var(--color-muted);
-}
-
-.summaryCard {
-  display: grid;
-  gap: var(--space-2);
   min-width: 0;
-}
-
-.summaryCard span {
   color: var(--color-muted);
   font-size: 0.8125rem;
 }
 
+.controls label > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.controls input,
+.error button {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-min-size);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 0.7rem;
+  padding: 0.45rem 0.65rem;
+  background: rgb(255 253 248 / 88%);
+  color: var(--color-ink);
+  font: inherit;
+}
+
+.customDates {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.rangeLabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.summaryCard {
+  display: grid;
+  min-width: 0;
+  gap: 0.3rem;
+  border-color: var(--color-border-soft);
+  padding: 0.95rem 0.55rem;
+}
+
+.summaryCard span {
+  color: var(--color-muted);
+  font-size: 0.6875rem;
+}
+
 .summaryCard strong {
   overflow: hidden;
-  font-size: clamp(1rem, 4vw, 1.35rem);
+  font-size: 0.86rem;
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
 }
@@ -75,34 +141,40 @@
   color: var(--color-balance);
 }
 
-.section,
-.chartCard section {
-  display: grid;
-  gap: var(--space-3);
+.chartCard {
+  border-color: var(--color-border-soft);
+  padding: 0.9rem 0.75rem;
 }
 
-.section h2,
-.section p,
+.chartCard section {
+  display: grid;
+  gap: 0.6rem;
+}
+
 .chartCard h2,
 .chartCard p {
   margin: 0;
 }
 
+.chartCard h2 {
+  font-size: 0.9rem;
+}
+
 .chartCard section > div {
   display: grid;
-  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  grid-template-columns: minmax(6.7rem, 8rem) minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-4);
+  gap: 0.7rem;
 }
 
 .chartCard svg {
   width: 100%;
-  max-height: 15rem;
+  max-height: 9.8rem;
 }
 
 .chartCard ul {
   display: grid;
-  gap: var(--space-2);
+  gap: 0.3rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -110,27 +182,72 @@
 
 .chartCard li {
   display: grid;
+  min-width: 0;
   grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: var(--space-2);
+  gap: 0.3rem;
+  color: var(--color-muted);
+  font-size: 0.65rem;
   font-variant-numeric: tabular-nums;
+}
+
+.chartCard li span:first-child {
+  overflow: hidden;
+  color: var(--color-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chartCard table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-.chartCard th,
-.chartCard td {
-  border-bottom: 1px solid var(--color-border);
-  padding: var(--space-2);
-  text-align: right;
+.chartCard section > svg {
+  max-height: 10.9rem;
 }
 
-.chartCard th:first-child {
-  text-align: left;
+.monthlyCard {
+  padding-block: 0.75rem;
+}
+
+.monthlyGrid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.55rem !important;
+}
+
+.monthlyGrid article {
+  display: grid;
+  gap: 0.2rem;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 0.65rem;
+  padding: 0.55rem;
+  background: rgb(255 255 255 / 42%);
+}
+
+.monthlyGrid article > strong {
+  font-size: 0.7rem;
+}
+
+.monthlyGrid article > span {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-muted);
+  font-size: 0.65rem;
+}
+
+.monthlyGrid b[data-tone='income'] {
+  color: var(--color-income);
+}
+
+.monthlyGrid b[data-tone='expense'] {
+  color: var(--color-expense);
 }
 
 .error {
@@ -140,20 +257,21 @@
   gap: var(--space-3);
 }
 
-@media (max-width: 480px) {
+@media (max-width: 359px) {
   .page {
-    padding-inline: var(--space-3);
+    padding-inline: 0.55rem;
   }
 
-  .summary {
+  .controls {
     grid-template-columns: 1fr;
   }
 
-  .chartCard section > div {
-    grid-template-columns: 1fr;
+  .controls > :global(.ds-segmented-control),
+  .controls > label {
+    grid-column: 1;
   }
 
-  .chartCard svg {
-    max-height: 11rem;
+  .controls > :global(.ds-segmented-control) {
+    grid-row: 2;
   }
 }
