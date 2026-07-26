@@ -89,7 +89,7 @@
 - Consumes: current tracked files under `e2e/snapshots/visual.spec.ts/`.
 - Produces: `npm.cmd run verify:visual-gate:phase1` and `npm.cmd run test:e2e:candidate:phase1`; all candidate PNGs resolve below `.superpowers/sdd/seabreeze-phase-1-previews/`.
 
-- [ ] **Step 1: Record the current official PNG inventory**
+- [x] **Step 1: Record the current official PNG inventory**
 
 Run:
 
@@ -123,7 +123,7 @@ Create JSON with this exact shape and the hashes printed by the command:
 
 Include every currently tracked PNG, not only home images. The verifier rejects missing, extra or changed official files while `approvalState` remains locked.
 
-- [ ] **Step 2: Write failing lock behavior tests**
+- [x] **Step 2: Write failing lock behavior tests**
 
 Use `node:test`, a fresh `mkdtemp()` directory and literal file bytes. The tests import `verifyVisualLock()` from the not-yet-created script and cover:
 
@@ -154,13 +154,13 @@ test('rejects changed added and missing official snapshots', async (t) => {
 
 The helper derives expected SHA-256 independently with literal fixture bytes and writes a temporary lock file.
 
-- [ ] **Step 3: Run the behavior tests and observe RED**
+- [x] **Step 3: Run the behavior tests and observe RED**
 
 Run: `node --test scripts/verify-seabreeze-phase-1-visual-gate.test.mjs`
 
 Expected: FAIL with module-not-found because `verify-seabreeze-phase-1-visual-gate.mjs` does not exist.
 
-- [ ] **Step 4: Implement the minimal read-only lock verifier**
+- [x] **Step 4: Implement the minimal read-only lock verifier**
 
 Export:
 
@@ -186,13 +186,13 @@ export async function verifyVisualLock({
 
 When invoked as a CLI, default to the phase-one lock JSON and `e2e/snapshots/visual.spec.ts`. It must never write files.
 
-- [ ] **Step 5: Run the behavior tests and observe GREEN**
+- [x] **Step 5: Run the behavior tests and observe GREEN**
 
 Run: `node --test scripts/verify-seabreeze-phase-1-visual-gate.test.mjs`
 
 Expected: all unchanged/changed/added/missing cases pass.
 
-- [ ] **Step 6: Add the isolated Playwright configuration and a real gate probe**
+- [x] **Step 6: Add the isolated Playwright configuration and a real gate probe**
 
 Use:
 
@@ -225,7 +225,7 @@ await expect(page).toHaveScreenshot('visual-gate-probe.png');
 
 Add the candidate filename to `playwright.config.ts` `testIgnore`. This probe is historical/temporary evidence only and is replaced by the final Task 11 cases; it can never be promoted.
 
-- [ ] **Step 7: Add package commands and verify isolated behavior**
+- [x] **Step 7: Add package commands and verify isolated behavior**
 
 Add:
 
@@ -247,7 +247,7 @@ git diff --check
 
 Expected: lock passes before/after; candidate probe passes from `.superpowers/sdd/seabreeze-phase-1-previews/visual-gate-probe.png`; normal Playwright list does not include `candidate-seabreeze-phase-1.spec.ts`.
 
-- [ ] **Step 8: Commit Task 1**
+- [x] **Step 8: Commit Task 1**
 
 ```powershell
 git add package.json playwright.config.ts playwright.seabreeze-phase-1.config.ts e2e/candidate-seabreeze-phase-1.spec.ts scripts/verify-seabreeze-phase-1-visual-gate.mjs scripts/verify-seabreeze-phase-1-visual-gate.test.mjs docs/verification/seabreeze-phase-1-visual-lock.json

@@ -10,10 +10,12 @@
     "test:run": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:candidate": "playwright test --config playwright.candidate.config.ts",
+    "test:e2e:candidate:phase1": "playwright test --config playwright.seabreeze-phase-1.config.ts",
     "test:e2e:static": "node scripts/build-static-recovery.mjs && playwright test --config playwright.static.config.ts",
     "test:e2e:update": "playwright test --update-snapshots",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false",
+    "verify:visual-gate:phase1": "node scripts/verify-seabreeze-phase-1-visual-gate.mjs"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-sc": "5.2.10",

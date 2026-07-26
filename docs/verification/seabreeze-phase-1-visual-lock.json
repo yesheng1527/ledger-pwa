@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-26",
+  "approvalState": "locked-before-phase-1-candidates",
+  "files": {
+    "320x568-home.png": "669bfb8b33434f956776d88517c04900310f669335276282bed1f984c7865097",
+    "320x568-login.png": "270d83651c3b14451b8f8b534b42f9246e564f835dede62bdfaa5d38be249789",
+    "390x844-entry-dialog.png": "68ae1f40240dcf3396987f57bef20674eb39664681c1e118e649c6d60a330776",
+    "390x844-forgot.png": "29db070e205f60a03eab8af608105bf7f5d46d5187dd4081cbbdcb822ef243a8",
+    "390x844-home.png": "d2bfcc6bbde64a9a918b15bb3bde1ecf3cd265d374cddae8a36b4d2be12883c3",
+    "390x844-login.png": "29cf1b90aa121b05b10951ee4d2c5f22b405a8d5b82b807908f3c2a07ea48ea9",
+    "390x844-recovery.png": "7758d0a53bbe56e6228cd50f063f8cd0cb499a6f97d75ccdbd1179a2c8f8ac51",
+    "430x932-home.png": "83b0678b5a47fe0005f7f5a3ec0a5a26ed3f1d0bd49663b8136d98c5a7fdaa84",
+    "430x932-login.png": "6cb666fc0307da30f548e7c72f9f8e57229e8549806333e07be2901801aabf6e"
+  }
+}
