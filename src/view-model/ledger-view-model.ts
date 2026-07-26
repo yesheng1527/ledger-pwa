@@ -11,8 +11,10 @@ import type {
   Transaction,
 } from '../domain/types';
 import type {
+  EntryOptions,
   HomeSnapshot,
   LedgerViewModelOptions,
+  TransactionCreateInput,
   TransactionDateGroup,
   TransactionDetail,
   TransactionEditInput,
@@ -333,6 +335,162 @@ export class LedgerViewModel {
     }
   }
 
+  async getEntryOptions(): Promise<EntryOptions> {
+    const snapshot = await this.readSnapshot();
+    const options = optionLists(snapshot);
+    const accountMap = new Map(snapshot.accounts.map((item) => [item.id, item]));
+    const categoryMap = new Map(snapshot.categories.map((item) => [item.id, item]));
+    const entryMap = entriesByTransaction(snapshot.entries);
+    const refundedByOriginal = new Map<string, number>();
+
+    for (const transaction of snapshot.transactions) {
+      if (
+        transaction.type !== 'refund'
+        || transaction.deletedAt !== null
+        || !transaction.originalTransactionId
+      ) continue;
+      refundedByOriginal.set(
+        transaction.originalTransactionId,
+        (refundedByOriginal.get(transaction.originalTransactionId) ?? 0)
+          + transaction.amountCents,
+      );
+    }
+
+    const refundableExpenses = activeTransactions(snapshot)
+      .filter((transaction) => transaction.type === 'expense')
+      .flatMap((transaction) => {
+        const originalEntries = entryMap.get(transaction.id) ?? [];
+        if (originalEntries.length !== 1) return [];
+        const originalEntry = originalEntries[0];
+        if (!accountMap.has(originalEntry.accountId)) return [];
+        const remainingCents = transaction.amountCents
+          - (refundedByOriginal.get(transaction.id) ?? 0);
+        if (remainingCents <= 0) return [];
+        const category = transaction.categoryId
+          ? categoryMap.get(transaction.categoryId)
+          : undefined;
+        return [{
+          id: transaction.id,
+          title: transaction.note.trim() || fallbackTitle(transaction, category),
+          accountId: originalEntry.accountId,
+          remainingCents,
+          occurredAt: transaction.occurredAt,
+        }];
+      });
+
+    return {
+      accounts: options.accounts.map(({ id, name, accountClass }) => ({
+        id,
+        name,
+        accountClass,
+      })),
+      expenseCategories: options.categories
+        .filter((category) => category.kind === 'expense')
+        .map(({ id, name, iconKey }) => ({ id, name, iconKey })),
+      incomeCategories: options.categories
+        .filter((category) => category.kind === 'income')
+        .map(({ id, name, iconKey }) => ({ id, name, iconKey })),
+      refundableExpenses,
+    };
+  }
+
+  async createTransaction(
+    input: TransactionCreateInput,
+  ): Promise<{ transactionId: string }> {
+    const snapshot = await this.readSnapshot();
+    let entries: LedgerEntry[];
+    let categoryId: string | null = null;
+    let originalTransactionId: string | null = null;
+
+    switch (input.type) {
+      case 'expense':
+      case 'income': {
+        const account = this.requireActiveAccount(snapshot, input.accountId);
+        this.requireActiveCategory(snapshot, input.categoryId, input.type);
+        entries = buildPosting({
+          type: input.type,
+          amountCents: input.amountCents,
+          account,
+        });
+        categoryId = input.categoryId;
+        break;
+      }
+      case 'transfer':
+        entries = buildPosting({
+          type: 'transfer',
+          amountCents: input.amountCents,
+          from: this.requireActiveAccount(snapshot, input.fromAccountId),
+          to: this.requireActiveAccount(snapshot, input.toAccountId),
+        });
+        break;
+      case 'refund': {
+        const original = snapshot.transactions.find((transaction) => (
+          transaction.id === input.originalTransactionId
+          && transaction.type === 'expense'
+          && transaction.deletedAt === null
+        ));
+        if (!original) throw new Error('原支出不存在');
+        const originalEntries = snapshot.entries.filter((entry) => (
+          entry.transactionId === original.id
+        ));
+        if (originalEntries.length !== 1) throw new Error('原支出分录无效');
+        this.requireLedgerAccount(snapshot, originalEntries[0].accountId);
+        const alreadyRefundedCents = snapshot.transactions
+          .filter((transaction) => (
+            transaction.type === 'refund'
+            && transaction.originalTransactionId === original.id
+            && transaction.deletedAt === null
+          ))
+          .reduce((total, transaction) => total + transaction.amountCents, 0);
+        entries = buildPosting({
+          type: 'refund',
+          amountCents: input.amountCents,
+          originalExpenseAmountCents: original.amountCents,
+          alreadyRefundedCents,
+          originalEntry: originalEntries[0],
+        });
+        categoryId = original.categoryId;
+        originalTransactionId = original.id;
+        break;
+      }
+      case 'adjustment':
+        entries = buildPosting({
+          type: 'adjustment',
+          account: this.requireActiveAccount(snapshot, input.accountId),
+          deltaCents: input.deltaCents,
+        });
+        break;
+    }
+
+    const operationId = this.makeUuid();
+    const amountCents = input.type === 'adjustment'
+      ? Math.abs(input.deltaCents)
+      : input.amountCents;
+    const transaction: Transaction = {
+      id: operationId,
+      operationId,
+      ledgerId: this.ledgerId,
+      type: input.type,
+      amountCents,
+      categoryId,
+      occurredAt: input.occurredAt,
+      note: input.note.trim(),
+      originalTransactionId,
+      version: 1,
+      deletedAt: null,
+    };
+    await this.saveOperation({
+      schemaVersion: 1,
+      operationId,
+      ledgerId: this.ledgerId,
+      createdAt: this.now().toISOString(),
+      kind: 'transaction.create',
+      transaction,
+      entries,
+    });
+    return { transactionId: transaction.id };
+  }
+
   async updateTransaction(input: TransactionEditInput): Promise<void> {
     const snapshot = await this.readSnapshot();
     const current = this.requireActiveTransaction(snapshot, input.id);
@@ -589,8 +747,10 @@ export class LedgerViewModel {
 }
 
 export type {
+  EntryOptions,
   HomeSnapshot,
   LedgerViewModelOptions,
+  TransactionCreateInput,
   TransactionDetail,
   TransactionEditInput,
   TransactionFilters,

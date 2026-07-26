@@ -43,7 +43,11 @@ export const fixtureIds = {
   bank: ids.bank,
   cash: ids.cash,
   credit: ids.credit,
+  archivedAccount: ids.archivedAccount,
   foodCategory: ids.foodCategory,
+  archivedCategory: ids.archivedCategory,
+  incomeCategory: ids.incomeCategory,
+  shoppingTransaction: ids.shoppingTransaction,
   transferTransaction: ids.transferTransaction,
   foodTransaction: ids.foodTransaction,
 };

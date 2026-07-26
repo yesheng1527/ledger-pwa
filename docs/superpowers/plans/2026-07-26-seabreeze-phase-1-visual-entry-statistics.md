@@ -447,7 +447,7 @@ LedgerViewModel.getEntryOptions(): Promise<EntryOptions>;
 LedgerViewModel.createTransaction(input: TransactionCreateInput): Promise<{ transactionId: string }>;
 ```
 
-- [ ] **Step 1: Write failing option and create-operation tests**
+- [x] **Step 1: Write failing option and create-operation tests**
 
 Cover:
 
@@ -479,13 +479,13 @@ expect(saveOperation).toHaveBeenCalledWith({
 });
 ```
 
-- [ ] **Step 2: Run ViewModel tests and observe RED**
+- [x] **Step 2: Run ViewModel tests and observe RED**
 
 Run: `npm.cmd run test:run -- src/view-model/ledger-view-model.test.ts`
 
 Expected: missing types and methods.
 
-- [ ] **Step 3: Implement exhaustive command construction**
+- [x] **Step 3: Implement exhaustive command construction**
 
 Read one fresh scoped snapshot, validate active referenced records, call `buildPosting()` for every branch and construct:
 
@@ -518,11 +518,11 @@ return { transactionId: transaction.id };
 
 Do not catch raw Repository errors here; the UI maps them to authored copy.
 
-- [ ] **Step 4: Extend the mutable fixture**
+- [x] **Step 4: Extend the mutable fixture**
 
 The E2E fixture already applies `transaction.create`; expose the new transaction ID and ensure watcher notifications refresh Home/Transactions/Statistics without replacing the controller draft before the successful promise resolves.
 
-- [ ] **Step 5: Verify GREEN and commit Task 4**
+- [x] **Step 5: Verify GREEN and commit Task 4**
 
 Run:
 

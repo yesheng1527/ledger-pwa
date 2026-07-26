@@ -10,7 +10,7 @@ import {
   fixtureTimes,
 } from '../test/ledger-fixture';
 import { LedgerViewModel } from './ledger-view-model';
-import type { TransactionEditInput } from './types';
+import type { TransactionCreateInput, TransactionEditInput } from './types';
 
 function sequentialUuidFactory() {
   let sequence = 900;
@@ -317,6 +317,195 @@ describe('LedgerViewModel transaction projections', () => {
 });
 
 describe('LedgerViewModel transaction commands', () => {
+  it('builds active entry options and remaining refundable expenses from one snapshot', async () => {
+    const { repository, viewModel } = createFixtureViewModelHarness();
+    const read = vi.spyOn(repository, 'readLedgerSnapshot');
+
+    const options = await viewModel.getEntryOptions();
+
+    expect(options.accounts.map((item) => [item.id, item.accountClass])).toEqual([
+      [fixtureIds.bank, 'asset'],
+      [fixtureIds.cash, 'asset'],
+      [fixtureIds.credit, 'liability'],
+    ]);
+    expect(options.accounts.map((item) => item.id)).not.toContain(fixtureIds.archivedAccount);
+    expect(options.expenseCategories.map((item) => item.id))
+      .not.toContain(fixtureIds.archivedCategory);
+    expect(options.incomeCategories).toEqual([
+      expect.objectContaining({ id: fixtureIds.incomeCategory }),
+    ]);
+    expect(options.refundableExpenses).toEqual([
+      expect.objectContaining({
+        id: fixtureIds.foodTransaction,
+        accountId: fixtureIds.cash,
+        remainingCents: 5000,
+      }),
+      expect.objectContaining({
+        id: fixtureIds.shoppingTransaction,
+        accountId: fixtureIds.credit,
+        remainingCents: 18000,
+      }),
+    ]);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates an expense with a shared transaction and operation id and a trimmed note', async () => {
+    const { saveOperation, viewModel } = createFixtureViewModelHarness();
+    const input: TransactionCreateInput = {
+      type: 'expense',
+      amountCents: 2500,
+      accountId: fixtureIds.credit,
+      categoryId: fixtureIds.foodCategory,
+      occurredAt: fixtureTimes.todayExpense,
+      note: ' 晚餐 ',
+    };
+
+    await expect(viewModel.createTransaction(input)).resolves.toEqual({
+      transactionId: '00000000-0000-4000-9000-000000000900',
+    });
+    expect(saveOperation).toHaveBeenCalledWith({
+      schemaVersion: 1,
+      operationId: '00000000-0000-4000-9000-000000000900',
+      ledgerId: fixtureIds.ledger,
+      createdAt: fixtureNow.toISOString(),
+      kind: 'transaction.create',
+      transaction: {
+        id: '00000000-0000-4000-9000-000000000900',
+        operationId: '00000000-0000-4000-9000-000000000900',
+        ledgerId: fixtureIds.ledger,
+        type: 'expense',
+        amountCents: 2500,
+        categoryId: fixtureIds.foodCategory,
+        occurredAt: fixtureTimes.todayExpense,
+        note: '晚餐',
+        originalTransactionId: null,
+        version: 1,
+        deletedAt: null,
+      },
+      entries: [{ accountId: fixtureIds.credit, deltaCents: 2500 }],
+    });
+  });
+
+  it('creates income on an asset and rejects a liability destination', async () => {
+    const success = createFixtureViewModelHarness();
+    await success.viewModel.createTransaction({
+      type: 'income',
+      amountCents: 120000,
+      accountId: fixtureIds.bank,
+      categoryId: fixtureIds.incomeCategory,
+      occurredAt: fixtureTimes.todayExpense,
+      note: ' 七月工资 ',
+    });
+    expect(success.saveOperation).toHaveBeenCalledWith(expect.objectContaining({
+      entries: [{ accountId: fixtureIds.bank, deltaCents: 120000 }],
+      transaction: expect.objectContaining({
+        type: 'income',
+        categoryId: fixtureIds.incomeCategory,
+        note: '七月工资',
+      }),
+    }));
+
+    const rejected = createFixtureViewModelHarness();
+    await expect(rejected.viewModel.createTransaction({
+      type: 'income',
+      amountCents: 120000,
+      accountId: fixtureIds.credit,
+      categoryId: fixtureIds.incomeCategory,
+      occurredAt: fixtureTimes.todayExpense,
+      note: '',
+    })).rejects.toThrow();
+    expect(rejected.saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('creates ordered transfer entries and rejects a liability source', async () => {
+    const success = createFixtureViewModelHarness();
+    await success.viewModel.createTransaction({
+      type: 'transfer',
+      amountCents: 8000,
+      fromAccountId: fixtureIds.bank,
+      toAccountId: fixtureIds.credit,
+      occurredAt: fixtureTimes.todayExpense,
+      note: '信用卡还款',
+    });
+    expect(success.saveOperation).toHaveBeenCalledWith(expect.objectContaining({
+      entries: [
+        { accountId: fixtureIds.bank, deltaCents: -8000 },
+        { accountId: fixtureIds.credit, deltaCents: -8000 },
+      ],
+      transaction: expect.objectContaining({
+        type: 'transfer',
+        categoryId: null,
+        originalTransactionId: null,
+      }),
+    }));
+
+    const rejected = createFixtureViewModelHarness();
+    await expect(rejected.viewModel.createTransaction({
+      type: 'transfer',
+      amountCents: 8000,
+      fromAccountId: fixtureIds.credit,
+      toAccountId: fixtureIds.bank,
+      occurredAt: fixtureTimes.todayExpense,
+      note: '',
+    })).rejects.toThrow();
+    expect(rejected.saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('creates a refund with inherited account and category and enforces the remaining amount', async () => {
+    const success = createFixtureViewModelHarness();
+    await success.viewModel.createTransaction({
+      type: 'refund',
+      amountCents: 3000,
+      originalTransactionId: fixtureIds.shoppingTransaction,
+      occurredAt: fixtureTimes.todayExpense,
+      note: '补充退款',
+    });
+    expect(success.saveOperation).toHaveBeenCalledWith(expect.objectContaining({
+      entries: [{ accountId: fixtureIds.credit, deltaCents: -3000 }],
+      transaction: expect.objectContaining({
+        type: 'refund',
+        amountCents: 3000,
+        categoryId: success.repository.snapshot.transactions.find(
+          (item) => item.id === fixtureIds.shoppingTransaction,
+        )?.categoryId,
+        originalTransactionId: fixtureIds.shoppingTransaction,
+      }),
+    }));
+
+    const rejected = createFixtureViewModelHarness();
+    await expect(rejected.viewModel.createTransaction({
+      type: 'refund',
+      amountCents: 18001,
+      originalTransactionId: fixtureIds.shoppingTransaction,
+      occurredAt: fixtureTimes.todayExpense,
+      note: '',
+    })).rejects.toThrow();
+    expect(rejected.saveOperation).not.toHaveBeenCalled();
+  });
+
+  it('creates a signed adjustment while storing its absolute amount', async () => {
+    const { saveOperation, viewModel } = createFixtureViewModelHarness();
+
+    await viewModel.createTransaction({
+      type: 'adjustment',
+      deltaCents: -3600,
+      accountId: fixtureIds.cash,
+      occurredAt: fixtureTimes.todayExpense,
+      note: ' 盘点修正 ',
+    });
+
+    expect(saveOperation).toHaveBeenCalledWith(expect.objectContaining({
+      entries: [{ accountId: fixtureIds.cash, deltaCents: -3600 }],
+      transaction: expect.objectContaining({
+        type: 'adjustment',
+        amountCents: 3600,
+        categoryId: null,
+        originalTransactionId: null,
+        note: '盘点修正',
+      }),
+    }));
+  });
+
   it('updates an expense with one new operation id and a regenerated posting', async () => {
     const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
     const current = repository.snapshot.transactions.find(

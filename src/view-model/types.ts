@@ -106,6 +106,51 @@ export type TransactionEditInput =
       note: string;
     };
 
+export type TransactionCreateInput =
+  | {
+      type: 'expense' | 'income';
+      amountCents: number;
+      accountId: string;
+      categoryId: string;
+      occurredAt: string;
+      note: string;
+    }
+  | {
+      type: 'transfer';
+      amountCents: number;
+      fromAccountId: string;
+      toAccountId: string;
+      occurredAt: string;
+      note: string;
+    }
+  | {
+      type: 'refund';
+      amountCents: number;
+      originalTransactionId: string;
+      occurredAt: string;
+      note: string;
+    }
+  | {
+      type: 'adjustment';
+      deltaCents: number;
+      accountId: string;
+      occurredAt: string;
+      note: string;
+    };
+
+export interface EntryOptions {
+  accounts: Array<{ id: string; name: string; accountClass: Account['accountClass'] }>;
+  expenseCategories: Array<{ id: string; name: string; iconKey: string }>;
+  incomeCategories: Array<{ id: string; name: string; iconKey: string }>;
+  refundableExpenses: Array<{
+    id: string;
+    title: string;
+    accountId: string;
+    remainingCents: number;
+    occurredAt: string;
+  }>;
+}
+
 export type LedgerQueryState<T> =
   | { status: 'loading' }
   | { status: 'ready'; data: T }
