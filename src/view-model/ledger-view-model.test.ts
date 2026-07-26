@@ -129,6 +129,26 @@ describe('LedgerViewModel home projection', () => {
   });
 });
 
+describe('LedgerViewModel statistics projection', () => {
+  it('reads one scoped snapshot and delegates the selected range', async () => {
+    const { repository, viewModel } = createFixtureViewModelHarness();
+    const read = vi.spyOn(repository, 'readLedgerSnapshot');
+
+    const statistics = await viewModel.getStatistics({
+      kind: 'month',
+      month: '2026-07',
+    });
+
+    expect(statistics).toMatchObject({
+      rangeLabel: '2026年7月',
+      expenseCents: 23000,
+      incomeCents: 100000,
+      balanceCents: 77000,
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('LedgerViewModel transaction projections', () => {
   it('combines month account date category and trimmed search filters', async () => {
     const result = await createFixtureViewModel().getTransactions({

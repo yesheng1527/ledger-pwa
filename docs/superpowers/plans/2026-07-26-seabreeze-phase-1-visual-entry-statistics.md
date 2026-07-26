@@ -747,7 +747,7 @@ export function selectStatistics(snapshot: LedgerReadSnapshot, range: Statistics
 LedgerViewModel.getStatistics(range: StatisticsRange): Promise<StatisticsSnapshot>;
 ```
 
-- [ ] **Step 1: Write failing financial-semantics tests**
+- [x] **Step 1: Write failing financial-semantics tests**
 
 Using the fixed fixture, prove:
 
@@ -758,17 +758,17 @@ Using the fixed fixture, prove:
 - category percentages sum to 100 within rounding tolerance;
 - account balances include opening balance plus all non-deleted entries.
 
-- [ ] **Step 2: Write failing range/budget/trend tests**
+- [x] **Step 2: Write failing range/budget/trend tests**
 
 Cover valid month, leap-year year, inclusive custom dates, invalid reversed custom range, daily month trend, monthly year trend, total/category budget matching and a stable zero-data result.
 
-- [ ] **Step 3: Run focused tests and observe RED**
+- [x] **Step 3: Run focused tests and observe RED**
 
 Run: `npm.cmd run test:run -- src/domain/statistics.test.ts src/view-model/ledger-view-model.test.ts`
 
 Expected: selector/types/method missing.
 
-- [ ] **Step 4: Implement one-pass indexed selection**
+- [x] **Step 4: Implement one-pass indexed selection**
 
 Build account/category/entry maps once. Use local-date boundaries converted to ISO, call `calculateMetrics()` for summary semantics, and derive category/trend/account arrays from the same scoped snapshot. Sort category shares by cents descending then ID, trends chronologically and accounts by class/order.
 
@@ -782,7 +782,7 @@ const percentage = totalExpenseCents === 0
 
 The UI never re-computes totals.
 
-- [ ] **Step 5: Verify GREEN and commit Task 7**
+- [x] **Step 5: Verify GREEN and commit Task 7**
 
 Run:
 

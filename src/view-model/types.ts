@@ -2,6 +2,11 @@ import type { LocalLedgerRepository } from '../db/local-repository';
 import type { LedgerOperation } from '../domain/operations';
 import type { Account, Category, Transaction } from '../domain/types';
 
+export type {
+  StatisticsRange,
+  StatisticsSnapshot,
+} from '../domain/statistics';
+
 export interface HomeSnapshot {
   totalAssetsCents: number;
   todayExpenseCents: number;

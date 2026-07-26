@@ -3,6 +3,7 @@ import { calculateMetrics } from '../domain/metrics';
 import { formatYuan } from '../domain/money';
 import type { LedgerOperation } from '../domain/operations';
 import { buildPosting } from '../domain/posting';
+import { selectStatistics } from '../domain/statistics';
 import type {
   Account,
   Category,
@@ -14,6 +15,8 @@ import type {
   EntryOptions,
   HomeSnapshot,
   LedgerViewModelOptions,
+  StatisticsRange,
+  StatisticsSnapshot,
   TransactionCreateInput,
   TransactionDateGroup,
   TransactionDetail,
@@ -607,6 +610,10 @@ export class LedgerViewModel {
     };
   }
 
+  async getStatistics(range: StatisticsRange): Promise<StatisticsSnapshot> {
+    return selectStatistics(await this.readSnapshot(), range);
+  }
+
   async getTransactions(filters: TransactionFilters): Promise<TransactionListSnapshot> {
     const snapshot = await this.readSnapshot();
     const { accountMap, categoryMap, entryMap } = projectionContext(snapshot);
@@ -750,6 +757,8 @@ export type {
   EntryOptions,
   HomeSnapshot,
   LedgerViewModelOptions,
+  StatisticsRange,
+  StatisticsSnapshot,
   TransactionCreateInput,
   TransactionDetail,
   TransactionEditInput,
