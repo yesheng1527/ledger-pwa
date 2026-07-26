@@ -48,13 +48,19 @@ export function TransactionOverlays({
   const sourceRef = useRef<HTMLElement | null>(null);
   const previousIdRef = useRef<string | null>(null);
   const previousOpenRef = useRef(false);
+  const activeTransactionIdRef = useRef(transactionId);
+  const deleteLockRef = useRef<string | null>(null);
+  activeTransactionIdRef.current = transactionId;
 
   const detailResult = useLedgerQuery(
     viewModel,
     transactionId ?? 'closed',
-    () => transactionId === null
-      ? Promise.resolve(null)
-      : viewModel.getTransactionDetail(transactionId),
+    async () => ({
+      requestedId: transactionId,
+      detail: transactionId === null
+        ? null
+        : await viewModel.getTransactionDetail(transactionId),
+    }),
   );
 
   useEffect(() => {
@@ -69,7 +75,6 @@ export function TransactionOverlays({
       setMode('detail');
       setEditDetail(null);
       setDeleteError(null);
-      setDeleting(false);
     }
     if (wasOpen !== isOpen) onDetailOpenChange(isOpen);
     if (wasOpen && !isOpen) {
@@ -84,7 +89,11 @@ export function TransactionOverlays({
     dialogRef.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();
   }, [transactionId]);
 
-  const detail = detailResult.status === 'ready' ? detailResult.data : null;
+  const resultMatchesRequest = detailResult.status === 'ready'
+    && detailResult.data.requestedId === transactionId;
+  const detail = resultMatchesRequest ? detailResult.data.detail : null;
+  const detailLoading = detailResult.status === 'loading'
+    || (detailResult.status === 'ready' && !resultMatchesRequest);
   const detailReady = detail !== null;
 
   useEffect(() => {
@@ -126,15 +135,20 @@ export function TransactionOverlays({
   };
 
   const remove = async () => {
-    if (!detail || pendingUndo !== null) return;
+    if (!detail || deleteLockRef.current !== null) return;
+    const deletingId = detail.id;
+    deleteLockRef.current = deletingId;
     setDeleting(true);
     setDeleteError(null);
     try {
-      const result = await viewModel.deleteTransaction(detail.id);
-      setPendingUndo({ transactionId: detail.id, expiresAt: result.undoUntil });
-      close();
+      const result = await viewModel.deleteTransaction(deletingId);
+      setPendingUndo({ transactionId: deletingId, expiresAt: result.undoUntil });
+      if (activeTransactionIdRef.current === deletingId) close();
     } catch {
-      setDeleteError('删除失败，请稍后重试');
+      deleteLockRef.current = null;
+      if (activeTransactionIdRef.current === deletingId) {
+        setDeleteError('删除失败，请稍后重试');
+      }
     } finally {
       setDeleting(false);
     }
@@ -143,11 +157,13 @@ export function TransactionOverlays({
   const undoDelete = useCallback(async () => {
     if (!pendingUndo) return;
     await viewModel.undoTransactionDelete(pendingUndo.transactionId);
+    deleteLockRef.current = null;
     setPendingUndo(null);
   }, [pendingUndo, viewModel]);
 
   const expireDelete = useCallback(async () => {
     await viewModel.flushPendingDelete();
+    deleteLockRef.current = null;
     setPendingUndo(null);
   }, [viewModel]);
 
@@ -172,7 +188,7 @@ export function TransactionOverlays({
               </button>
             </div>
 
-            {detailResult.status === 'loading' ? (
+            {detailLoading ? (
               <p role="status">正在读取流水详情…</p>
             ) : null}
             {detailResult.status === 'error' ? (
@@ -181,7 +197,7 @@ export function TransactionOverlays({
                 <button type="button" onClick={detailResult.retry}>重试</button>
               </div>
             ) : null}
-            {detailResult.status === 'ready' && detail === null ? (
+            {resultMatchesRequest && detail === null ? (
               <p className={styles.overlayError} role="alert">这笔流水已不存在或已删除</p>
             ) : null}
             {detail ? (
@@ -189,10 +205,16 @@ export function TransactionOverlays({
                 <TransactionDetailSheet
                   detail={detail}
                   deleting={deleting}
-                  deleteDisabled={pendingUndo !== null}
-                  deleteMessage={pendingUndo ? '请先处理上一笔删除的撤销机会' : null}
+                  editDisabled={deleteLockRef.current !== null}
+                  deleteDisabled={deleteLockRef.current !== null}
+                  deleteMessage={deleting
+                    ? '上一笔删除正在处理中，请稍候'
+                    : pendingUndo
+                      ? '请先处理上一笔删除的撤销机会'
+                      : null}
                   error={deleteError}
                   onEdit={() => {
+                    if (deleteLockRef.current !== null) return;
                     setEditDetail(detail);
                     setMode('edit');
                   }}

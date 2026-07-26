@@ -68,8 +68,10 @@ export function TransactionEditForm({
   const amountRef = useRef<HTMLInputElement>(null);
   const accountRef = useRef<HTMLSelectElement>(null);
   const categoryRef = useRef<HTMLSelectElement>(null);
+  const fromAccountRef = useRef<HTMLSelectElement>(null);
   const toAccountRef = useRef<HTMLSelectElement>(null);
   const occurredAtRef = useRef<HTMLInputElement>(null);
+  const noteRef = useRef<HTMLInputElement>(null);
 
   const fail = (
     message: string,
@@ -96,6 +98,10 @@ export function TransactionEditForm({
 
     if (!occurredAt || Number.isNaN(new Date(occurredAt).getTime())) {
       fail('请选择有效的发生时间', occurredAtRef);
+      return;
+    }
+    if (note.length > 500) {
+      fail('备注不能超过 500 个字', noteRef);
       return;
     }
     if ((detail.type === 'expense' || detail.type === 'income') && !accountId) {
@@ -165,6 +171,8 @@ export function TransactionEditForm({
         || raw.includes('version');
       const invalidCategory = raw.includes('分类') || raw.includes('鍒嗙被');
       const invalidAccount = raw.includes('账户') || raw.includes('璐︽埛');
+      const invalidTransferSource = raw.includes('转出账户')
+        || raw.includes('杞嚭璐︽埛');
       const refundLimit = raw.includes('退款总额') || raw.includes('閫€娆炬€婚');
       if (stale) {
         setError('流水已更新，请刷新后重试');
@@ -172,6 +180,9 @@ export function TransactionEditForm({
       } else if (invalidCategory) {
         setError('分类不可用，请重新选择');
         queueMicrotask(() => categoryRef.current?.focus());
+      } else if (invalidTransferSource) {
+        setError('转出账户不可用，请重新选择');
+        queueMicrotask(() => fromAccountRef.current?.focus());
       } else if (invalidAccount) {
         setError('账户不可用，请重新选择');
         queueMicrotask(() => (
@@ -246,6 +257,7 @@ export function TransactionEditForm({
           <label className={styles.overlayField}>
             <span>转出账户</span>
             <select
+              ref={fromAccountRef}
               value={fromAccountId}
               onChange={(event) => setFromAccountId(event.target.value)}
             >
@@ -323,7 +335,11 @@ export function TransactionEditForm({
       </label>
       <label className={styles.overlayField}>
         <span>备注</span>
-        <input value={note} onChange={(event) => setNote(event.target.value)} />
+        <input
+          ref={noteRef}
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+        />
       </label>
 
       {error ? <p className={styles.overlayError} role="alert">{error}</p> : null}

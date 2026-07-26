@@ -1,4 +1,12 @@
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -178,6 +186,55 @@ afterEach(() => {
 });
 
 describe('TransactionOverlays detail and focus', () => {
+  it('shows loading instead of a closed-state null result while the first detail request is pending', async () => {
+    const user = userEvent.setup();
+    const pending = deferred<TransactionDetail | null>();
+    const viewModel = makeViewModel(expenseDetail, {
+      getTransactionDetail: vi.fn(() => pending.promise),
+    });
+    render(<OverlayHarness viewModel={viewModel} />);
+
+    await act(async () => undefined);
+    await user.click(screen.getByRole('button', { name: '打开流水' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('正在读取流水详情');
+    expect(screen.queryByText('这笔流水已不存在或已删除')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '编辑流水' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '删除流水' })).not.toBeInTheDocument();
+  });
+
+  it('never exposes or mutates stale detail while switching from transaction A to B', async () => {
+    const user = userEvent.setup();
+    const first = deferred<TransactionDetail | null>();
+    const second = deferred<TransactionDetail | null>();
+    const secondDetail = detailFor('income', {
+      id: 'transaction-second',
+      title: '第二笔记录',
+      note: '第二笔记录',
+    });
+    const viewModel = makeViewModel(expenseDetail, {
+      getTransactionDetail: vi.fn((id: string) => (
+        id === expenseDetail.id ? first.promise : second.promise
+      )),
+    });
+    render(<OverlayHarness viewModel={viewModel} initialId={expenseDetail.id} />);
+
+    await act(async () => first.resolve(expenseDetail));
+    expect(await screen.findByRole('button', { name: '编辑流水' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '打开第二笔流水' }));
+
+    const staleDelete = screen.queryByRole('button', { name: '删除流水' });
+    staleDelete?.click();
+    expect(screen.getByRole('status')).toHaveTextContent('正在读取流水详情');
+    expect(screen.queryByRole('button', { name: '编辑流水' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '删除流水' })).not.toBeInTheDocument();
+    expect(viewModel.deleteTransaction).not.toHaveBeenCalled();
+    expect(viewModel.updateTransaction).not.toHaveBeenCalled();
+
+    await act(async () => second.resolve(secondDetail));
+    expect(await screen.findByText('第二笔记录')).toBeInTheDocument();
+  });
+
   it('moves focus into the dialog while detail loading is still pending', async () => {
     const pending = deferred<TransactionDetail | null>();
     const viewModel = makeViewModel(expenseDetail, {
@@ -357,6 +414,40 @@ describe('TransactionOverlays editing', () => {
     expect(viewModel.updateTransaction).not.toHaveBeenCalled();
   });
 
+  it('maps an invalid transfer source without exposing raw errors and focuses the source', async () => {
+    const user = userEvent.setup();
+    const detail = detailFor('transfer');
+    const viewModel = makeViewModel(detail, {
+      updateTransaction: vi.fn(async () => {
+        throw new Error('转出账户必须是资产账户：secret posting details');
+      }),
+    });
+    render(<OverlayHarness viewModel={viewModel} initialId={detail.id} />);
+
+    await user.click(await screen.findByRole('button', { name: '编辑流水' }));
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('转出账户不可用，请重新选择');
+    expect(screen.getByLabelText('转出账户')).toHaveFocus();
+    expect(screen.queryByText(/secret posting details/i)).not.toBeInTheDocument();
+  });
+
+  it('rejects notes over 500 characters locally and focuses the note field', async () => {
+    const user = userEvent.setup();
+    const viewModel = makeViewModel();
+    render(<OverlayHarness viewModel={viewModel} initialId={expenseDetail.id} />);
+
+    await user.click(await screen.findByRole('button', { name: '编辑流水' }));
+    fireEvent.change(screen.getByLabelText('备注'), {
+      target: { value: '海'.repeat(501) },
+    });
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('备注不能超过 500 个字');
+    expect(screen.getByLabelText('备注')).toHaveFocus();
+    expect(viewModel.updateTransaction).not.toHaveBeenCalled();
+  });
+
   it('offers only asset accounts and income categories for an income edit', async () => {
     const user = userEvent.setup();
     const detail = detailFor('income');
@@ -467,6 +558,57 @@ describe('TransactionOverlays editing', () => {
 });
 
 describe('TransactionOverlays recoverable deletion', () => {
+  it('acquires the delete lock synchronously before the mutation promise settles', async () => {
+    const pendingDelete = deferred<{ undoUntil: string }>();
+    const viewModel = makeViewModel(expenseDetail, {
+      deleteTransaction: vi.fn(() => pendingDelete.promise),
+    });
+    render(<OverlayHarness viewModel={viewModel} initialId={expenseDetail.id} />);
+    const deleteButton = await screen.findByRole('button', { name: '删除流水' });
+    const editButton = screen.getByRole('button', { name: '编辑流水' });
+
+    act(() => {
+      deleteButton.click();
+      editButton.click();
+      deleteButton.click();
+    });
+
+    expect(viewModel.deleteTransaction).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('dialog', { name: '流水详情' })).toBeInTheDocument();
+  });
+
+  it('keeps one protected undo window when A deletion resolves after opening B', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date('2026-07-22T08:00:00.000Z'));
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const pendingDelete = deferred<{ undoUntil: string }>();
+    const viewModel = makeViewModel(expenseDetail, {
+      deleteTransaction: vi.fn(() => pendingDelete.promise),
+    });
+    render(<OverlayHarness viewModel={viewModel} initialId={expenseDetail.id} />);
+
+    await user.click(await screen.findByRole('button', { name: '删除流水' }));
+    await user.click(screen.getByRole('button', { name: '打开第二笔流水' }));
+
+    const editSecond = await screen.findByRole('button', { name: '编辑流水' });
+    const deleteSecond = screen.getByRole('button', { name: '删除流水' });
+    expect(editSecond).toBeDisabled();
+    expect(deleteSecond).toBeDisabled();
+    deleteSecond.click();
+    expect(viewModel.deleteTransaction).toHaveBeenCalledTimes(1);
+
+    await act(async () => pendingDelete.resolve({
+      undoUntil: '2026-07-22T08:00:08.000Z',
+    }));
+
+    expect(screen.getByRole('dialog', { name: '流水详情' })).toBeInTheDocument();
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent('流水已删除');
+    expect(viewModel.deleteTransaction).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(8_000));
+    expect(viewModel.flushPendingDelete).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the dialog and source row when deletion fails without exposing raw errors', async () => {
     const user = userEvent.setup();
     const viewModel = makeViewModel(expenseDetail, {

@@ -19,6 +19,7 @@ function localDateTime(iso: string): string {
 export type TransactionDetailSheetProps = {
   detail: TransactionDetail;
   deleting: boolean;
+  editDisabled: boolean;
   deleteDisabled: boolean;
   deleteMessage: string | null;
   error: string | null;
@@ -29,6 +30,7 @@ export type TransactionDetailSheetProps = {
 export function TransactionDetailSheet({
   detail,
   deleting,
+  editDisabled,
   deleteDisabled,
   deleteMessage,
   error,
@@ -82,6 +84,7 @@ export function TransactionDetailSheet({
           className={styles.secondaryAction}
           type="button"
           data-dialog-initial-focus=""
+          disabled={editDisabled}
           onClick={onEdit}
         >
           编辑流水
