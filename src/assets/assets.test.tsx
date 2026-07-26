@@ -75,6 +75,18 @@ describe('minimal visual asset registry', () => {
       expect(source, `${path} has no scripts`).not.toMatch(/<script\b/i);
       expect(source, `${path} has no foreign objects`).not.toMatch(/<foreignObject\b/i);
       expect(source, `${path} has no text nodes`).not.toMatch(/<text\b/i);
+      expect(source, `${path} has no event-handler attributes`).not.toMatch(
+        /\son[a-z][a-z0-9:_-]*\s*=/i,
+      );
+      expect(source, `${path} has no executable protocol`).not.toMatch(
+        /(?:javascript|vbscript)\s*:/i,
+      );
+      expect(source, `${path} has no remote or embedded CSS URLs`).not.toMatch(
+        /url\s*\(\s*['"]?\s*(?:https?:|data:)/i,
+      );
+      expect(source, `${path} has no encoded markup characters`).not.toMatch(
+        /&#(?:x[0-9a-f]+|\d+);/i,
+      );
       expect(sourceWithoutNamespace, `${path} has no remote URLs`).not.toMatch(/https?:/i);
       expect(source, `${path} has no embedded images`).not.toMatch(/data:image/i);
       expect(source, `${path} has no image elements`).not.toMatch(/<image\b/i);

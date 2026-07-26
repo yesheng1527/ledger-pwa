@@ -263,10 +263,10 @@ git commit -m "test: isolate seabreeze phase one candidates"
 - Modify: `src/assets/assets.test.tsx`
 
 **Interfaces:**
-- Consumes: 1490×1055 reference PNG and current `assetRegistry`.
+- Consumes: 1491×1055 reference PNG and current `assetRegistry`.
 - Produces: a checked asset table with `keep`, `redraw`, or `new` for every phase-one illustration/icon and a stronger SVG security test.
 
-- [ ] **Step 1: Write failing SVG safety assertions**
+- [x] **Step 1: Write failing SVG safety assertions**
 
 Extend the existing source scan to reject:
 
@@ -279,18 +279,18 @@ expect(source).not.toMatch(/&#x?[0-9a-f]+;/i);
 
 Require each registered SVG source to have one `viewBox`, no `<text>`, no `<foreignObject>`, no embedded raster and no external reference.
 
-- [ ] **Step 2: Run asset tests and observe RED or document current GREEN**
+- [x] **Step 2: Run asset tests and observe RED or document current GREEN**
 
 Run: `npm.cmd run test:run -- src/assets/assets.test.tsx`
 
 Expected: either RED on an unsafe current asset, which must be fixed before Task 3, or GREEN recorded as the strengthened starting evidence. Do not weaken the assertions.
 
-- [ ] **Step 3: Measure the supplied board**
+- [x] **Step 3: Measure the supplied board**
 
 Record in the audit:
 
 - Source path and SHA-256.
-- Canvas: 1490×1055.
+- Canvas: 1491×1055.
 - Five phone frames from left to right: 首页、流水、记账、统计、我的.
 - Shared warm paper background, coral active state, 1px warm borders, 14–20px card radii, compact five-column bottom navigation.
 - Reference-only device chrome must be omitted.
@@ -298,7 +298,7 @@ Record in the audit:
 
 Use an explicit per-page table with rows for header/hero, summary, cards, controls, navigation and safe-area behavior. Measurements are approximate design targets, never crop coordinates for production assets.
 
-- [ ] **Step 4: Audit the current independent assets**
+- [x] **Step 4: Audit the current independent assets**
 
 For each current SVG, record filename, `viewBox`, byte size, visual role and decision. The required decisions are:
 
@@ -309,13 +309,13 @@ For each current SVG, record filename, `viewBox`, byte size, visual role and dec
 
 Explicitly state that the old `.superpowers/sdd/home-transactions-previews` images are historical evidence and cannot be promoted.
 
-- [ ] **Step 5: Verify the audit and commit Task 2**
+- [x] **Step 5: Verify the audit and commit Task 2**
 
 Run:
 
 ```powershell
 npm.cmd run test:run -- src/assets/assets.test.tsx
-rg -n "整张|裁片|emoji|远程|官方基线|1490×1055" docs/verification/seabreeze-phase-1-asset-audit.md
+rg -n "整张|裁片|emoji|远程|官方基线|1491×1055" docs/verification/seabreeze-phase-1-asset-audit.md
 git diff --check
 ```
 
