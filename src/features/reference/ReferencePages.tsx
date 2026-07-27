@@ -36,8 +36,8 @@ import profileSubpageBackground from '../../assets/reference-ui-v2/profile-subpa
 import splashBackground from '../../assets/reference-ui-v2/splash-background.webp';
 import afternoonTeaArt from '../../assets/reference-ui-v2/afternoon-tea.webp';
 import bankCardArt from '../../assets/reference-ui-v2/bank-card.webp';
-import budgetProgressIslandArt from '../../assets/reference-ui-v2/budget-progress-island.webp';
-import budgetProgressIslandEmptyArt from '../../assets/reference-ui-v2/budget-progress-island-empty-v2.webp';
+import budgetProgressIslandEmptyArt from '../../assets/reference-ui-v2/budget-progress-empty-island-v4.webp';
+import budgetProgressIslandFillArt from '../../assets/reference-ui-v2/budget-progress-fill-v4.webp';
 import calendarArt from '../../assets/reference-ui-v2/calendar.webp';
 import monthPickerFrame from '../../assets/reference-ui-v2/month-picker-frame.webp';
 import dailyArt from '../../assets/reference-ui-v2/daily.webp';
@@ -888,7 +888,7 @@ export function HomePage({
             <img className={styles.homeBudgetProgressEmpty} src={budgetProgressIslandEmptyArt} alt="" />
             <img
               className={styles.homeBudgetProgressFill}
-              src={budgetProgressIslandArt}
+              src={budgetProgressIslandFillArt}
               alt=""
               aria-hidden="true"
               style={{ WebkitMaskImage: budgetProgressMask, maskImage: budgetProgressMask }}
