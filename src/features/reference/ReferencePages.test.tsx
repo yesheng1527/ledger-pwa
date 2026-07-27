@@ -3,14 +3,16 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppShell } from '../../app/AppShell';
 import type { LedgerViewModel } from '../../view-model/ledger-view-model';
+import { resetProfileAvatar } from './profile-preferences';
 
 const viewModel = {} as LedgerViewModel;
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   localStorage.clear();
   sessionStorage.clear();
   window.history.replaceState(null, '', '/');
+  await resetProfileAvatar();
 });
 
 describe('reference five-page application', () => {
@@ -513,5 +515,36 @@ describe('reference five-page application', () => {
     const assetDialog = screen.getByRole('dialog', { name: '我的资产账户' });
     expect(within(assetDialog).getByText('日常现金')).toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: '资产账户列表' })).getByText('-¥1,288.50')).toBeInTheDocument();
+  });
+
+  it('updates and persists the profile avatar and signature', async () => {
+    const user = userEvent.setup();
+    render(<AppShell viewModel={viewModel} />);
+
+    await user.click(screen.getByRole('button', { name: /^我的$/ }));
+    await user.click(screen.getByRole('button', { name: /海风的小账本/ }));
+
+    const avatar = new File(['custom-avatar'], 'avatar.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText('更换头像'), avatar);
+    expect(await screen.findByText('头像已更新')).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('个人签名'));
+    await user.type(screen.getByLabelText('个人签名'), '今天也要认真记账');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    expect(await screen.findByText('个人资料已保存')).toBeInTheDocument();
+    expect(screen.getByText('今天也要认真记账')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '我的头像' })).toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/));
+    expect(JSON.parse(localStorage.getItem('seabreeze-profile-preferences') ?? '{}')).toMatchObject({
+      signature: '今天也要认真记账',
+    });
+
+    cleanup();
+    render(<AppShell viewModel={viewModel} />);
+    await user.click(screen.getByRole('button', { name: /^我的$/ }));
+
+    expect(screen.getByText('今天也要认真记账')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('img', { name: '我的头像' }))
+      .toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/)));
   });
 });

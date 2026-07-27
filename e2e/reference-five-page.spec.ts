@@ -101,11 +101,11 @@ test('budget saved in profile updates the home balance card', async ({ page }) =
 
   const homeBudget = page.getByRole('group', { name: '本月预算概览' });
   const homeBudgetProgress = page.getByRole('progressbar', { name: '本月剩余预算进度' });
-  const homeBudgetProgressFill = homeBudgetProgress.locator('span > span');
+  const homeBudgetProgressFill = homeBudgetProgress.locator('img').last();
   await expect(homeBudget).toContainText('本月预算¥500.00');
   await expect(homeBudget).toContainText('剩余预算¥270.00');
   await expect(homeBudgetProgress).toHaveAttribute('aria-valuenow', '54');
-  await expect(homeBudgetProgressFill).toHaveCSS('transition-duration', '0.72s');
+  await expect(homeBudgetProgressFill).toHaveCSS('transition-duration', /0\.72s/);
 
   await page.getByRole('button', { name: '我的', exact: true }).click();
   await page.getByRole('button', { name: /预算管理/ }).click();

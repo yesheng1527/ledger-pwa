@@ -24,6 +24,17 @@
   padding: clamp(180px, 23dvh, 220px) 0 24px;
 }
 
+.loginCluster {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+}
+
+.page[data-mode='login'] .loginCluster {
+  transform: translateY(-72px);
+}
+
 .brand {
   display: grid;
   justify-items: center;
@@ -400,6 +411,10 @@
   .content {
     min-height: 680px;
     padding-top: 84px;
+  }
+
+  .page[data-mode='login'] .loginCluster {
+    transform: translateY(-32px);
   }
 
   .homeIsland {

@@ -27,6 +27,11 @@ type AuthPageProps = {
 
 type AuthField = 'email' | 'password' | 'confirmation';
 type FieldErrors = Partial<Record<AuthField, string>>;
+type PasswordCredentialConstructor = new (data: {
+  id: string;
+  name: string;
+  password: string;
+}) => Credential;
 
 const AUTH_STATUS_ID = 'auth-status';
 const REMEMBERED_IDENTIFIER_KEY = 'seabreeze-remembered-identifier';
@@ -55,6 +60,23 @@ function rememberedIdentifier() {
   if (typeof window === 'undefined') return '';
   const remembered = window.localStorage.getItem(REMEMBERED_IDENTIFIER_KEY) ?? '';
   return EMAIL_PATTERN.test(remembered) ? remembered : '';
+}
+
+async function rememberPasswordInBrowser(email: string, password: string) {
+  const PasswordCredentialClass = (
+    globalThis as typeof globalThis & { PasswordCredential?: PasswordCredentialConstructor }
+  ).PasswordCredential;
+  if (!PasswordCredentialClass || !navigator.credentials?.store) return;
+
+  try {
+    await navigator.credentials.store(new PasswordCredentialClass({
+      id: email,
+      name: email,
+      password,
+    }));
+  } catch {
+    // Password-manager support and user approval vary by browser.
+  }
 }
 
 export function AuthPage({ mode, commands }: AuthPageProps) {
@@ -158,8 +180,12 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
     try {
       if (currentMode === 'login') {
         await commands.signIn(email.trim(), password);
-        if (rememberMe) window.localStorage.setItem(REMEMBERED_IDENTIFIER_KEY, email.trim());
-        else window.localStorage.removeItem(REMEMBERED_IDENTIFIER_KEY);
+        if (rememberMe) {
+          window.localStorage.setItem(REMEMBERED_IDENTIFIER_KEY, email.trim());
+          await rememberPasswordInBrowser(email.trim(), password);
+        } else {
+          window.localStorage.removeItem(REMEMBERED_IDENTIFIER_KEY);
+        }
       } else if (currentMode === 'register') {
         await commands.signUp(email.trim(), password);
         if (requestGeneration.current !== generation) return;
@@ -199,23 +225,24 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
   return (
     <main className={styles.page} data-mode={currentMode} data-ambient-motion>
       <div className={styles.content}>
-        <section className={styles.brand} aria-label="海风小账本">
-          <img className={styles.homeIsland} src={homeIslandIcon} alt="" />
-          <div className={styles.brandTitle}>
-            <img src={flowerIcon} alt="" />
-            <span>海风小账本</span>
-            <img src={leafIcon} alt="" />
-          </div>
-          <p><i />记录生活，遇见美好<i /></p>
-        </section>
+        <div className={styles.loginCluster}>
+          <section className={styles.brand} aria-label="海风小账本">
+            <img className={styles.homeIsland} src={homeIslandIcon} alt="" />
+            <div className={styles.brandTitle}>
+              <img src={flowerIcon} alt="" />
+              <span>海风小账本</span>
+              <img src={leafIcon} alt="" />
+            </div>
+            <p><i />记录生活，遇见美好<i /></p>
+          </section>
 
-        <section className={styles.card}>
+          <section className={styles.card}>
           <header className={currentMode === 'login' ? styles.visuallyHidden : styles.modeHeader}>
             <h1>{content.title}</h1>
             {content.introduction ? <p>{content.introduction}</p> : null}
           </header>
 
-          <form className={styles.form} onSubmit={submit} noValidate>
+          <form className={styles.form} onSubmit={submit} autoComplete="on" noValidate>
             {currentMode !== 'reset-password' ? (
               <div className={styles.fieldGroup}>
                 <div className={styles.field} data-invalid={fieldErrors.email ? 'true' : 'false'}>
@@ -224,9 +251,10 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
                   <input
                     ref={emailRef}
                     id="auth-email"
+                    name="username"
                     type="email"
                     inputMode="email"
-                    autoComplete="email"
+                    autoComplete={currentMode === 'login' ? 'username' : 'email'}
                     aria-describedby={describedBy('email')}
                     aria-invalid={fieldErrors.email ? 'true' : undefined}
                     placeholder="邮箱"
@@ -252,6 +280,7 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
                   <input
                     ref={passwordRef}
                     id="auth-password"
+                    name="password"
                     type={passwordVisible ? 'text' : 'password'}
                     autoComplete={currentMode === 'login' ? 'current-password' : 'new-password'}
                     aria-describedby={describedBy('password')}
@@ -330,17 +359,18 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
               <button className={styles.secondary} type="button" disabled={busy} onClick={() => changeMode('login')}>返回登录</button>
             ) : null}
           </form>
-        </section>
-
-        {currentMode === 'login' ? (
-          <section className={styles.alternativeLogin} aria-label="其他登录方式">
-            <div className={styles.divider}><span>或</span></div>
-            <div className={styles.socialButtons}>
-              <button type="button" onClick={() => showNotice('微信登录暂未配置')}><img src={wechatIcon} alt="" />微信登录</button>
-              <button type="button" onClick={() => showNotice('游客体验将在正式环境开放')}><img src={guestIcon} alt="" />游客体验</button>
-            </div>
           </section>
-        ) : null}
+
+          {currentMode === 'login' ? (
+            <section className={styles.alternativeLogin} aria-label="其他登录方式">
+              <div className={styles.divider}><span>或</span></div>
+              <div className={styles.socialButtons}>
+                <button type="button" onClick={() => showNotice('微信登录暂未配置')}><img src={wechatIcon} alt="" />微信登录</button>
+                <button type="button" onClick={() => showNotice('游客体验将在正式环境开放')}><img src={guestIcon} alt="" />游客体验</button>
+              </div>
+            </section>
+          ) : null}
+        </div>
 
         {currentMode === 'login' ? (
           <p className={styles.agreement}>

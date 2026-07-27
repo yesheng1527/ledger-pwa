@@ -10,7 +10,6 @@ import {
   PencilSimple,
   Plus,
   SignOut,
-  Star,
   UploadSimple,
   X,
 } from '@phosphor-icons/react';
@@ -38,6 +37,7 @@ import splashBackground from '../../assets/reference-ui-v2/splash-background.web
 import afternoonTeaArt from '../../assets/reference-ui-v2/afternoon-tea.webp';
 import bankCardArt from '../../assets/reference-ui-v2/bank-card.webp';
 import budgetProgressIslandArt from '../../assets/reference-ui-v2/budget-progress-island.webp';
+import budgetProgressIslandEmptyArt from '../../assets/reference-ui-v2/budget-progress-island-empty-v2.webp';
 import calendarArt from '../../assets/reference-ui-v2/calendar.webp';
 import monthPickerFrame from '../../assets/reference-ui-v2/month-picker-frame.webp';
 import dailyArt from '../../assets/reference-ui-v2/daily.webp';
@@ -59,6 +59,13 @@ import statisticsArt from '../../assets/reference-ui-v2/statistics.webp';
 import transportArt from '../../assets/reference-ui-v2/transport.webp';
 import travelArt from '../../assets/reference-ui-v2/travel.webp';
 import type { BackgroundOverrides, BackgroundSlot } from './background-preferences';
+import {
+  loadProfileAvatar,
+  loadProfileTextPreferences,
+  resetProfileAvatar,
+  saveProfileAvatar,
+  saveProfileTextPreferences,
+} from './profile-preferences';
 import styles from './ReferencePages.module.css';
 
 type NavigateProps = {
@@ -824,7 +831,13 @@ export function HomePage({
   const remainingBudgetProgress = budget.amountCents > 0
     ? Math.min(100, Math.max(0, (budget.remainingCents / budget.amountCents) * 100))
     : 0;
-  const budgetProgressStarPosition = Math.min(97.7, Math.max(2.3, remainingBudgetProgress));
+  const budgetProgressFadeStart = Math.max(0, remainingBudgetProgress - 1.6);
+  const budgetProgressFadeEnd = Math.min(100, remainingBudgetProgress + 1.6);
+  const budgetProgressMask = remainingBudgetProgress <= 0
+    ? 'linear-gradient(transparent, transparent)'
+    : remainingBudgetProgress >= 100
+      ? 'none'
+      : `linear-gradient(to right, black 0%, black ${budgetProgressFadeStart}%, transparent ${budgetProgressFadeEnd}%, transparent 100%)`;
   const budgetProgressLabel = amountsHidden
     ? '金额已隐藏'
     : `剩余 ${formatReferenceYuan(budget.remainingCents)}，预算 ${formatReferenceYuan(budget.amountCents)}`;
@@ -872,18 +885,14 @@ export function HomePage({
             aria-valuenow={Math.round(remainingBudgetProgress)}
             aria-valuetext={budgetProgressLabel}
           >
-            <img src={budgetProgressIslandArt} alt="" />
-            <span className={styles.homeBudgetProgressTrack} aria-hidden="true">
-              <span style={{ width: `${remainingBudgetProgress}%` }} />
-              <Star
-                className={styles.homeBudgetProgressStar}
-                weight="fill"
-                style={{
-                  left: `${budgetProgressStarPosition}%`,
-                  opacity: remainingBudgetProgress > 0 ? 1 : 0,
-                }}
-              />
-            </span>
+            <img className={styles.homeBudgetProgressEmpty} src={budgetProgressIslandEmptyArt} alt="" />
+            <img
+              className={styles.homeBudgetProgressFill}
+              src={budgetProgressIslandArt}
+              alt=""
+              aria-hidden="true"
+              style={{ WebkitMaskImage: budgetProgressMask, maskImage: budgetProgressMask }}
+            />
           </div>
         </div>
       </section>
@@ -2354,8 +2363,14 @@ function ToggleRow({
 
 function ProfileSubpage({
   section,
+  avatar,
   ledgerName,
   setLedgerName,
+  signature,
+  setSignature,
+  onReplaceAvatar,
+  onRestoreAvatar,
+  onSaveProfile,
   budgetAmount,
   setBudgetAmount,
   budgetUsedCents,
@@ -2379,8 +2394,14 @@ function ProfileSubpage({
   onFeedback,
 }: {
   section: ProfileSection;
+  avatar: string;
   ledgerName: string;
   setLedgerName(value: string): void;
+  signature: string;
+  setSignature(value: string): void;
+  onReplaceAvatar(file: File): Promise<void>;
+  onRestoreAvatar(): Promise<void>;
+  onSaveProfile(): void;
   budgetAmount: string;
   setBudgetAmount(value: string): void;
   budgetUsedCents: number;
@@ -2412,6 +2433,9 @@ function ProfileSubpage({
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [backgroundSaving, setBackgroundSaving] = useState<BackgroundSlot | null>(null);
   const [backgroundError, setBackgroundError] = useState<string | null>(null);
+  const [avatarSaving, setAvatarSaving] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
 
   let budgetDraftCents = 0;
   try {
@@ -2471,6 +2495,16 @@ function ProfileSubpage({
   }
 
   async function finish() {
+    if (section === '个人资料') {
+      if (!ledgerName.trim()) {
+        setProfileSaveError('请输入账本名称');
+        return;
+      }
+      onSaveProfile();
+      onFeedback('个人资料已保存', 'success');
+      onBack();
+      return;
+    }
     if (section === '预算管理') {
       let amountCents: number;
       try {
@@ -2498,6 +2532,32 @@ function ProfileSubpage({
     }
     onFeedback(`${section}已保存`, 'success');
     onBack();
+  }
+
+  async function replaceAvatar(file: File) {
+    setAvatarSaving(true);
+    setAvatarError(null);
+    try {
+      await onReplaceAvatar(file);
+      onFeedback('头像已更新', 'success');
+    } catch (caught) {
+      setAvatarError(caught instanceof Error ? caught.message : '头像更新失败，请重试');
+    } finally {
+      setAvatarSaving(false);
+    }
+  }
+
+  async function restoreAvatar() {
+    setAvatarSaving(true);
+    setAvatarError(null);
+    try {
+      await onRestoreAvatar();
+      onFeedback('头像已恢复默认', 'success');
+    } catch (caught) {
+      setAvatarError(caught instanceof Error ? caught.message : '头像恢复失败，请重试');
+    } finally {
+      setAvatarSaving(false);
+    }
   }
 
   function exportBackup() {
@@ -2549,8 +2609,36 @@ function ProfileSubpage({
       <div className={styles.subpageContent}>
         {section === '个人资料' ? (
           <section className={`${styles.card} ${styles.formCard}`}>
-            <label><span>账本名称</span><input aria-label="账本名称" value={ledgerName} onChange={(event) => setLedgerName(event.target.value)} /></label>
-            <label><span>个人签名</span><input aria-label="个人签名" defaultValue="记录生活，遇见美好" /></label>
+            <div className={styles.profileAvatarEditor}>
+              <img className={styles.profileAvatarPreview} src={avatar} alt="当前头像" />
+              <div className={styles.profileAvatarActions}>
+                <label className={styles.profileAvatarAction} aria-disabled={avatarSaving}>
+                  <UploadSimple aria-hidden="true" />
+                  <span>{avatarSaving ? '处理中...' : '更换头像'}</span>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    aria-label="更换头像"
+                    disabled={avatarSaving}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = '';
+                      if (file) void replaceAvatar(file);
+                    }}
+                  />
+                </label>
+                {avatar !== profileArt ? (
+                  <button type="button" className={styles.profileAvatarAction} disabled={avatarSaving} onClick={() => void restoreAvatar()}>
+                    <ArrowCounterClockwise aria-hidden="true" />
+                    <span>恢复默认</span>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {avatarError ? <p className={styles.profileAvatarError} role="alert">{avatarError}</p> : null}
+            <label><span>账本名称</span><input aria-label="账本名称" maxLength={24} value={ledgerName} onChange={(event) => { setLedgerName(event.target.value); setProfileSaveError(null); }} /></label>
+            <label><span>个人签名</span><input aria-label="个人签名" maxLength={40} value={signature} onChange={(event) => setSignature(event.target.value)} /></label>
+            {profileSaveError ? <p className={styles.profileSaveError} role="alert">{profileSaveError}</p> : null}
           </section>
         ) : null}
         {section === '预算管理' ? (
@@ -2734,6 +2822,7 @@ export function ProfilePage({
   onReplaceBackground(slot: BackgroundSlot, file: File): Promise<void>;
   onRestoreBackground(slot: BackgroundSlot): Promise<void>;
 }) {
+  const [initialProfile] = useState(loadProfileTextPreferences);
   const [now] = useState(referenceNow);
   const useLiveAccounts = supportsLedgerQuery(viewModel, 'getAccounts');
   const useLiveBudget = supportsLedgerQuery(viewModel, 'getHomeSnapshot');
@@ -2759,7 +2848,9 @@ export function ProfilePage({
         }),
   );
   const [activeSection, setActiveSection] = useState<ProfileSection | null>(null);
-  const [ledgerName, setLedgerName] = useState('海风的小账本');
+  const [ledgerName, setLedgerName] = useState(initialProfile.ledgerName);
+  const [signature, setSignature] = useState(initialProfile.signature);
+  const [avatar, setAvatar] = useState(profileArt);
   const [budgetAmount, setBudgetAmount] = useState(() => useLiveBudget ? '' : '3000.00');
   const [accounts, setAccounts] = useState<ProfileAccount[]>(() => (
     useLiveAccounts ? [] : loadProfileAccounts()
@@ -2772,6 +2863,14 @@ export function ProfilePage({
   const [signOutPending, setSignOutPending] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const signOutPendingRef = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    void loadProfileAvatar().then((storedAvatar) => {
+      if (active && storedAvatar) setAvatar(storedAvatar);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (useLiveAccounts && accountsQuery.status === 'ready') {
@@ -2848,6 +2947,23 @@ export function ProfilePage({
     setBudgetAmount(formatYuan(amountCents).replace('¥', ''));
   }
 
+  function saveProfile() {
+    const nextLedgerName = ledgerName.trim();
+    const nextSignature = signature.trim();
+    setLedgerName(nextLedgerName);
+    setSignature(nextSignature);
+    saveProfileTextPreferences({ ledgerName: nextLedgerName, signature: nextSignature });
+  }
+
+  async function replaceProfileAvatar(file: File) {
+    setAvatar(await saveProfileAvatar(file));
+  }
+
+  async function restoreProfileAvatar() {
+    await resetProfileAvatar();
+    setAvatar(profileArt);
+  }
+
   const profileBudgetUsedCents = budgetQuery.status === 'ready' ? budgetQuery.data.monthExpenseCents : 0;
 
   function selectSetting(label: ProfileSection) {
@@ -2886,8 +3002,14 @@ export function ProfilePage({
       <PageFrame background={backgrounds.profileSubpage ?? profileSubpageBackground} className={styles.profilePage}>
         <ProfileSubpage
           section={activeSection}
+          avatar={avatar}
           ledgerName={ledgerName}
           setLedgerName={setLedgerName}
+          signature={signature}
+          setSignature={setSignature}
+          onReplaceAvatar={replaceProfileAvatar}
+          onRestoreAvatar={restoreProfileAvatar}
+          onSaveProfile={saveProfile}
           budgetAmount={budgetAmount}
           setBudgetAmount={setBudgetAmount}
           budgetUsedCents={profileBudgetUsedCents}
@@ -2917,8 +3039,8 @@ export function ProfilePage({
   return (
     <PageFrame background={backgrounds.profile ?? profileBackground} className={styles.profilePage}>
       <button type="button" className={styles.profileIdentity} onClick={() => selectSetting('个人资料')}>
-        <img src={profileArt} alt="" />
-        <span><strong>{ledgerName}</strong><small>记录生活，遇见美好</small></span>
+        <img src={avatar} alt="我的头像" data-custom={avatar !== profileArt ? 'true' : 'false'} />
+        <span><strong>{ledgerName}</strong><small>{signature || '暂无个人签名'}</small></span>
         <CaretRight />
       </button>
       <div className={styles.settingsArea}>

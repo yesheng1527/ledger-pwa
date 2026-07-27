@@ -9,6 +9,7 @@ import authPageCss from './AuthPage.module.css?inline';
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
+  vi.unstubAllGlobals();
 });
 
 function createCommands(overrides: Partial<AuthPageCommands> = {}): AuthPageCommands {
@@ -64,6 +65,14 @@ describe('AuthPage', () => {
     expect(authPageCss).toMatch(/overscroll-behavior-y:\s*contain;/);
   });
 
+  it('moves the login controls upward without moving the agreement', () => {
+    expect(authPageCss).toMatch(/transform:\s*translateY\(-72px\)/);
+    render(<AuthPage mode="login" commands={createCommands()} />);
+
+    const agreement = screen.getByText('登录即表示同意', { exact: false });
+    expect(agreement.previousElementSibling).toHaveAttribute('class', expect.stringContaining('loginCluster'));
+  });
+
   it('submits the login email and password', async () => {
     const user = userEvent.setup();
     const commands = createCommands();
@@ -74,6 +83,17 @@ describe('AuthPage', () => {
     await user.click(screen.getByRole('button', { name: '登录' }));
 
     expect(commands.signIn).toHaveBeenCalledWith('hello@example.com', 'password123');
+  });
+
+  it('marks login fields for browser password autofill', () => {
+    render(<AuthPage mode="login" commands={createCommands()} />);
+
+    expect(screen.getByRole('textbox', { name: '邮箱' }))
+      .toHaveAttribute('name', 'username');
+    expect(screen.getByRole('textbox', { name: '邮箱' }))
+      .toHaveAttribute('autocomplete', 'username');
+    expect(screen.getByLabelText('密码')).toHaveAttribute('name', 'password');
+    expect(screen.getByLabelText('密码')).toHaveAttribute('autocomplete', 'current-password');
   });
 
   it('shows a fixed mapped login failure without exposing backend details', async () => {
@@ -428,9 +448,23 @@ describe('AuthPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('注册申请已提交');
   });
 
-  it('remembers only the email when remember me is selected', async () => {
+  it('uses the browser password manager when remember me is selected', async () => {
     const user = userEvent.setup();
     const commands = createCommands();
+    const credentialStore = vi.fn(async (credential: Credential) => credential);
+    class PasswordCredentialMock {
+      id: string;
+      name: string;
+      password: string;
+
+      constructor(data: { id: string; name: string; password: string }) {
+        this.id = data.id;
+        this.name = data.name;
+        this.password = data.password;
+      }
+    }
+    vi.stubGlobal('PasswordCredential', PasswordCredentialMock);
+    vi.stubGlobal('navigator', { credentials: { store: credentialStore } });
     render(<AuthPage mode="login" commands={commands} />);
 
     await user.type(screen.getByRole('textbox', { name: '邮箱' }), 'hello@example.com');
@@ -439,6 +473,11 @@ describe('AuthPage', () => {
     await user.click(screen.getByRole('button', { name: '登录' }));
 
     expect(window.localStorage.getItem('seabreeze-remembered-identifier')).toBe('hello@example.com');
+    await waitFor(() => expect(credentialStore).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'hello@example.com',
+      name: 'hello@example.com',
+      password: 'secret-password',
+    })));
     expect(JSON.stringify(window.localStorage)).not.toContain('secret-password');
   });
 });
