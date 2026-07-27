@@ -38,7 +38,7 @@ for (const viewport of viewports) {
       const authMain = page.getByRole('main');
       await expect.soft(authMain).toHaveCSS(
         'background-image',
-        /login-background(?:-[A-Za-z0-9_-]+)?\.png/,
+        /login-background(?:-[A-Za-z0-9_-]+)?\.webp/,
       );
       await expect(authMain.locator('img[src*="login-background"]')).toHaveCount(0);
 

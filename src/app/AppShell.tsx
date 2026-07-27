@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { X } from '@phosphor-icons/react';
 import type { LedgerViewModel } from '../view-model/ledger-view-model';
-import splashBackground from '../assets/reference-ui-v2/splash-background.png';
+import splashBackground from '../assets/reference-ui-v2/splash-background.webp';
 import {
   EntryPage,
   HomePage,
@@ -63,7 +63,7 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
   useEffect(() => {
     if (!splashVisible) return undefined;
     sessionStorage.setItem('seabreeze-splash-seen', 'true');
-    const timer = window.setTimeout(() => setSplashVisible(false), 3000);
+    const timer = window.setTimeout(() => setSplashVisible(false), 900);
     return () => window.clearTimeout(timer);
   }, [splashVisible]);
 

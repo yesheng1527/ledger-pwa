@@ -1,6 +1,8 @@
 .page {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background-color: #fffaf3;
   background-position: center;
@@ -8,6 +10,25 @@
   background-size: cover;
   color: #202220;
   letter-spacing: 0;
+}
+
+.entryPage {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+}
+
+.entryPage::-webkit-scrollbar {
+  display: none;
+}
+
+.entryPage::after {
+  display: block;
+  width: 1px;
+  height: 884px;
+  content: '';
+  pointer-events: none;
 }
 
 .page button,
@@ -594,7 +615,7 @@
   position: absolute;
   z-index: 55;
   right: 18px;
-  bottom: 105px;
+  bottom: calc(105px + env(safe-area-inset-bottom));
   left: 18px;
   display: flex;
   min-height: 48px;
@@ -631,7 +652,7 @@
   z-index: 2;
   top: 67px;
   right: 22px;
-  left: 132px;
+  left: clamp(100px, 33vw, 132px);
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -971,8 +992,21 @@
   top: 530px;
   left: 13px;
   width: calc(100% - 26px);
-  height: 384px;
+  bottom: calc(68px + env(safe-area-inset-bottom));
+  height: auto;
+  overflow: hidden;
   padding: 0 12px;
+}
+
+.recentCard > div:last-child {
+  height: calc(100% - 43px);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+}
+
+.recentCard > div:last-child::-webkit-scrollbar {
+  display: none;
 }
 
 .transactionRow {
@@ -1035,13 +1069,15 @@
   bottom: 0;
   left: 0;
   display: grid;
-  height: 82px;
+  height: calc(82px + env(safe-area-inset-bottom));
   grid-template-columns: repeat(5, 1fr);
   align-items: end;
+  padding-bottom: env(safe-area-inset-bottom);
   border-top: 1px solid rgb(218 193 157 / 32%);
   background: rgb(255 251 244 / 93%);
   box-shadow: 0 -2px 12px rgb(117 79 33 / 4%);
   backdrop-filter: blur(7px);
+  contain: layout paint;
 }
 
 .navButton,
@@ -1494,7 +1530,7 @@
   position: absolute;
   top: 209px;
   right: 12px;
-  bottom: 81px;
+  bottom: calc(81px + env(safe-area-inset-bottom));
   left: 12px;
   overflow: hidden;
 }
@@ -2066,7 +2102,7 @@
   position: absolute;
   top: 254px;
   right: 13px;
-  bottom: 88px;
+  bottom: calc(88px + env(safe-area-inset-bottom));
   left: 13px;
   display: grid;
   overflow-y: auto;
@@ -2551,14 +2587,95 @@
   to { opacity: 1; transform: translateX(0); }
 }
 
-@media (max-height: 981px) {
-  .page {
-    left: 50%;
-    right: auto;
-    width: 400px;
-    height: 982px;
-    transform: translateX(-50%) scale(calc(100dvh / 982px));
-    transform-origin: top center;
+@media (max-height: 900px) {
+  .donutCard {
+    top: 252px;
+    height: 205px;
+  }
+
+  .donutBody {
+    grid-template-columns: 130px 1fr;
+  }
+
+  .donutChart {
+    width: 110px;
+    height: 110px;
+    margin-top: 2px;
+  }
+
+  .donutChart::after {
+    inset: 26px;
+  }
+
+  .donutBody ul {
+    gap: 7px;
+    margin-top: 2px;
+  }
+
+  .trendCard {
+    top: 468px;
+    height: 190px;
+  }
+
+  .trendChart {
+    height: 122px;
+  }
+
+  .compareCard {
+    top: 669px;
+    height: 106px;
+    padding-top: 9px;
+  }
+
+  .compareCard > div {
+    margin-top: 6px;
+  }
+
+  .compareCard span {
+    height: 45px;
+  }
+}
+
+@media (max-height: 700px) {
+  .homeGreeting {
+    top: 38px;
+  }
+
+  .homeGreeting p {
+    margin-top: 4px;
+  }
+
+  .balanceCard {
+    top: 90px;
+    height: 220px;
+  }
+
+  .balanceMain {
+    padding-top: 7px;
+    padding-bottom: 5px;
+  }
+
+  .quickCard {
+    top: 318px;
+    height: 116px;
+  }
+
+  .sectionTitle {
+    height: 38px;
+  }
+
+  .miniCategory {
+    height: 70px;
+  }
+
+  .miniCategory .categoryArt {
+    width: 42px;
+    height: 42px;
+    flex-basis: 42px;
+  }
+
+  .recentCard {
+    top: 442px;
   }
 }
 

@@ -25,6 +25,14 @@ async function expectPageFitsViewport(page: Page, viewport: (typeof viewports)[n
   expect(overflow.documentHeight).toBe(overflow.viewportHeight);
 }
 
+async function expectNavigationPinned(page: Page, viewport: (typeof viewports)[number]) {
+  const navigationBox = await page.getByRole('navigation', { name: '主要导航' }).boundingBox();
+  expect(navigationBox, 'the bottom navigation must render').not.toBeNull();
+  expect(navigationBox!.x).toBeCloseTo(0, 0);
+  expect(navigationBox!.width).toBeCloseTo(viewport.width, 0);
+  expect(navigationBox!.y + navigationBox!.height).toBeCloseTo(viewport.height, 0);
+}
+
 async function expectCenteredDialog(page: Page, name: string) {
   const dialog = page.getByRole('dialog', { name });
   const box = await dialog.boundingBox();
@@ -44,10 +52,13 @@ for (const viewport of viewports) {
     await expect(page.getByRole('heading', { name: '早上好，海风~' })).toBeVisible();
     await expect(page.getByLabel('状态栏')).toHaveCount(0);
     await expectPageFitsViewport(page, viewport);
+    await expect(page.getByRole('main')).toHaveCSS('transform', 'none');
+    await expectNavigationPinned(page, viewport);
 
     await page.getByRole('button', { name: '流水', exact: true }).click();
     await expect(page.getByRole('heading', { name: '流水' })).toBeVisible();
     await expectPageFitsViewport(page, viewport);
+    await expectNavigationPinned(page, viewport);
 
     await page.getByRole('button', { name: '记账', exact: true }).click();
     await expect(page.getByLabel('金额')).toBeVisible();
@@ -57,11 +68,13 @@ for (const viewport of viewports) {
     await page.getByRole('button', { name: '统计', exact: true }).click();
     await expect(page.getByRole('heading', { name: '统计' })).toBeVisible();
     await expectPageFitsViewport(page, viewport);
+    await expectNavigationPinned(page, viewport);
 
     await page.getByRole('button', { name: '我的', exact: true }).click();
     await expect(page.getByText('海风的小账本')).toBeVisible();
     await expect(page.getByRole('button', { name: '退出登录' })).toBeVisible();
     await expectPageFitsViewport(page, viewport);
+    await expectNavigationPinned(page, viewport);
   });
 }
 
