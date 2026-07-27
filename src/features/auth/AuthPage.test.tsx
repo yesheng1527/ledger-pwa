@@ -59,8 +59,9 @@ describe('mapAuthError', () => {
 });
 
 describe('AuthPage', () => {
-  it('places dynamic viewport height after the viewport-height fallback', () => {
-    expect(authPageCss).toMatch(/min-height:\s*100vh;\s*min-height:\s*100dvh;/);
+  it('keeps short-screen overflow inside the login page', () => {
+    expect(authPageCss).toMatch(/height:\s*100%;[\s\S]*overflow-y:\s*auto;/);
+    expect(authPageCss).toMatch(/overscroll-behavior-y:\s*contain;/);
   });
 
   it('submits the login email and password', async () => {

@@ -63,7 +63,7 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
   useEffect(() => {
     if (!splashVisible) return undefined;
     sessionStorage.setItem('seabreeze-splash-seen', 'true');
-    const timer = window.setTimeout(() => setSplashVisible(false), 900);
+    const timer = window.setTimeout(() => setSplashVisible(false), 450);
     return () => window.clearTimeout(timer);
   }, [splashVisible]);
 

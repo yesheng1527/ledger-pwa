@@ -392,6 +392,20 @@ describe('AppProviders', () => {
     );
   });
 
+  it('opens an authenticated cached ledger online without waiting for bootstrap', async () => {
+    const harness = createHarness({ online: true, cachedLedgerId: ledgerA });
+    render(<AppProviders services={harness.services}><RuntimeProbe /></AppProviders>);
+
+    emitSession(harness.auth, sessionFor('user-a'));
+
+    await waitFor(() => expect(harness.createSyncEngine).toHaveBeenCalledWith(ledgerA));
+    expect(harness.api.bootstrapPersonalLedger).not.toHaveBeenCalled();
+    expect(harness.sync.engine.syncNow).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText('runtime')).toHaveTextContent(
+      '"userId":"user-a","initializing":false,"message":null',
+    );
+  });
+
   it('reports that first login needs a connection when no offline ledger exists', async () => {
     const harness = createHarness({ online: false, cachedLedgerId: null });
     render(<AppProviders services={harness.services}><RuntimeProbe /></AppProviders>);
@@ -467,7 +481,7 @@ describe('AppProviders', () => {
     await waitFor(() => expect(harness.sync.engine.syncNow).toHaveBeenCalledOnce());
   });
 
-  it('bootstraps before synchronizing an offline cached ledger after connectivity recovers', async () => {
+  it('reuses an offline cached ledger when connectivity recovers', async () => {
     const harness = createHarness({ online: false, cachedLedgerId: ledgerA });
     render(<AppProviders services={harness.services}><RuntimeProbe /></AppProviders>);
     await finishInitialization(harness);
@@ -477,13 +491,11 @@ describe('AppProviders', () => {
     window.dispatchEvent(new Event('online'));
 
     await waitFor(() => expect(harness.sync.engine.syncNow).toHaveBeenCalledOnce());
-    expect(harness.api.bootstrapPersonalLedger).toHaveBeenCalledOnce();
-    expect(harness.createSyncEngine).toHaveBeenCalledTimes(2);
-    expect(harness.createLedgerViewModel).toHaveBeenCalledTimes(2);
-    expect(harness.viewModels[0]?.dispose).toHaveBeenCalledOnce();
-    expect(latestRuntime.ledgerViewModel).toBe(harness.viewModels[1]);
-    expect(harness.api.bootstrapPersonalLedger.mock.invocationCallOrder[0])
-      .toBeLessThan(harness.sync.engine.syncNow.mock.invocationCallOrder[0]);
+    expect(harness.api.bootstrapPersonalLedger).not.toHaveBeenCalled();
+    expect(harness.createSyncEngine).toHaveBeenCalledOnce();
+    expect(harness.createLedgerViewModel).toHaveBeenCalledOnce();
+    expect(harness.viewModels[0]?.dispose).not.toHaveBeenCalled();
+    expect(latestRuntime.ledgerViewModel).toBe(harness.viewModels[0]);
   });
 
   it('updates a refreshed session without rebuilding the active engine', async () => {

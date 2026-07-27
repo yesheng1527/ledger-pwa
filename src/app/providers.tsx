@@ -223,8 +223,8 @@ export function AppProviders({
         if (generation !== generationRef.current) return;
 
         let ledgerId = cachedLedgerId;
-        let bootstrapped = false;
-        if (resolvedServices.isOnline()) {
+        let bootstrapped = cachedLedgerId !== null;
+        if (ledgerId === null && resolvedServices.isOnline()) {
           ledgerId = await resolvedServices.api.bootstrapPersonalLedger();
           bootstrapped = true;
           if (generation !== generationRef.current) return;

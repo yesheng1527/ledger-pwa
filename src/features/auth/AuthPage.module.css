@@ -1,9 +1,11 @@
 .page {
   position: relative;
   width: min(100%, 560px);
-  min-height: 100vh;
-  min-height: 100dvh;
-  overflow: hidden;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   margin: 0 auto;
   background-color: #fff9f1;
   background-image: url('../../assets/auth-login/login-background.webp');
@@ -16,8 +18,7 @@
 
 .content {
   display: flex;
-  min-height: 100vh;
-  min-height: 100dvh;
+  min-height: 100%;
   flex-direction: column;
   align-items: center;
   padding: clamp(180px, 23dvh, 220px) 0 24px;
@@ -396,10 +397,6 @@
 }
 
 @media (max-height: 700px) {
-  .page {
-    min-height: 680px;
-  }
-
   .content {
     min-height: 680px;
     padding-top: 84px;
