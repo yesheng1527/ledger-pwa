@@ -374,6 +374,27 @@
   }
 }
 
+@media (max-height: 880px) {
+  .content {
+    padding-top: clamp(164px, 22dvh, 188px);
+    padding-bottom: 12px;
+  }
+
+  .card {
+    margin-top: 12px;
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+
+  .alternativeLogin {
+    margin-top: 10px;
+  }
+
+  .agreement {
+    margin-top: 10px;
+  }
+}
+
 @media (max-height: 700px) {
   .page {
     min-height: 680px;

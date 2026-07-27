@@ -21,6 +21,14 @@ async function expectNoHorizontalOverflow(page: Page) {
   });
 }
 
+async function expectPageFitsViewport(page: Page) {
+  const measurements = await page.evaluate(() => ({
+    documentHeight: document.documentElement.scrollHeight,
+    viewportHeight: window.innerHeight,
+  }));
+  expect(measurements.documentHeight).toBe(measurements.viewportHeight);
+}
+
 async function expectMinimumHeight(locator: Locator, minimum = 44) {
   const box = await locator.boundingBox();
   expect(box, 'control must have a rendered box').not.toBeNull();
@@ -64,6 +72,9 @@ for (const viewport of viewports) {
         }
       }
       await expectNoHorizontalOverflow(page);
+      if (viewport.height >= 844) {
+        await expectPageFitsViewport(page);
+      }
     });
 
   });
