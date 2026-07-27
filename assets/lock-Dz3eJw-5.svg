@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="90" height="100" viewBox="0 0 90 100">
+<defs>
+  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#BDEEFF"/>
+    <stop offset="0.62" stop-color="#EAF8FF"/>
+    <stop offset="1" stop-color="#FFF7E9"/>
+  </linearGradient>
+  <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#73CEF1"/>
+    <stop offset="1" stop-color="#BEEFF4"/>
+  </linearGradient>
+  <linearGradient id="cream" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#FFF8ED"/>
+    <stop offset="1" stop-color="#FFF9F1"/>
+  </linearGradient>
+  <linearGradient id="coral" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#FF866C"/>
+    <stop offset="1" stop-color="#FF6F52"/>
+  </linearGradient>
+  <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+    <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#D6B99A" flood-opacity=".28"/>
+  </filter>
+  <filter id="soft" x="-30%" y="-30%" width="160%" height="180%">
+    <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#D6C2AB" flood-opacity=".22"/>
+  </filter>
+</defs><path d="M29 37 V27 Q29 12 45 12 Q61 12 61 27 V37" fill="none" stroke="#4E595A" stroke-width="5" opacity="1" stroke-linecap="round" stroke-linejoin="round"/><rect x="24" y="35" width="42" height="36" rx="6" fill="#F7C56B" stroke="#4E595A" stroke-width="3" opacity="1"/><circle cx="45" cy="50" r="4" fill="#4E595A" stroke="none" stroke-width="1" opacity="1"/><line x1="45" y1="54" x2="45" y2="62" stroke="#4E595A" stroke-width="3" stroke-linecap="round"/><path d="M54 62.3 Q55.4 56.7 60.3 56 Q65.9 57.05 67.3 62.3 Q64.85 66.5 60.65 66.85 Q56.1 66.5 54 62.3 Z" fill="#FFE5C3" stroke="#B58C62" stroke-width="0.7" opacity="1" stroke-linecap="round" stroke-linejoin="round"/><line x1="60.65" y1="56.7" x2="56.45" y2="65.8" stroke="#E9AA73" stroke-width="0.48999999999999994" stroke-linecap="round"/><line x1="60.65" y1="56.7" x2="58.9" y2="65.8" stroke="#E9AA73" stroke-width="0.48999999999999994" stroke-linecap="round"/><line x1="60.65" y1="56.7" x2="61.35" y2="65.8" stroke="#E9AA73" stroke-width="0.48999999999999994" stroke-linecap="round"/><line x1="60.65" y1="56.7" x2="63.8" y2="65.8" stroke="#E9AA73" stroke-width="0.48999999999999994" stroke-linecap="round"/></svg>
