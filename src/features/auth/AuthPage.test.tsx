@@ -6,10 +6,14 @@ import { mapAuthError } from './auth-errors';
 import { AuthPage, type AuthPageCommands } from './AuthPage';
 import authPageCss from './AuthPage.module.css?inline';
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+});
 
 function createCommands(overrides: Partial<AuthPageCommands> = {}): AuthPageCommands {
   return {
+    signUp: vi.fn(async () => undefined),
     signIn: vi.fn(async () => undefined),
     requestPasswordReset: vi.fn(async () => undefined),
     updatePassword: vi.fn(async () => undefined),
@@ -229,6 +233,20 @@ describe('AuthPage', () => {
     expect(commands.signIn).not.toHaveBeenCalled();
   });
 
+  it('rejects a phone number instead of sending it to Supabase as an email', async () => {
+    const user = userEvent.setup();
+    const commands = createCommands();
+    render(<AuthPage mode="login" commands={commands} />);
+
+    await user.type(screen.getByRole('textbox', { name: '邮箱' }), '13800138000');
+    await user.type(screen.getByLabelText('密码'), 'password123');
+    await user.click(screen.getByRole('button', { name: '登录' }));
+
+    expect(screen.getByText('请输入有效邮箱')).toHaveAttribute('role', 'alert');
+    expect(screen.getByRole('textbox', { name: '邮箱' })).toHaveFocus();
+    expect(commands.signIn).not.toHaveBeenCalled();
+  });
+
   it('authors a required forgot-password email error', async () => {
     const user = userEvent.setup();
     const commands = createCommands();
@@ -330,7 +348,7 @@ describe('AuthPage', () => {
     const forgotPassword = screen.getByRole('button', { name: '忘记密码' });
     expect(forgotPassword).toBeDisabled();
     await user.click(forgotPassword);
-    expect(screen.getByRole('heading', { name: '欢迎回来' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '登录' })).toBeInTheDocument();
 
     await act(async () => signInRequest.resolve());
   });
@@ -345,7 +363,7 @@ describe('AuthPage', () => {
     await waitFor(() => expect(screen.getByRole('textbox', { name: '邮箱' })).toHaveFocus());
 
     await user.click(screen.getByRole('button', { name: '返回登录' }));
-    expect(screen.getByRole('heading', { name: '欢迎回来' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '登录' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('textbox', { name: '邮箱' })).toHaveFocus());
   });
 
@@ -356,11 +374,11 @@ describe('AuthPage', () => {
 
     rerender(<AuthPage mode="reset-password" commands={commands} />);
     expect(screen.getByRole('heading', { name: '设置新密码' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '欢迎回来' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '登录' })).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByLabelText('新密码')).toHaveFocus());
 
     rerender(<AuthPage mode="login" commands={commands} />);
-    expect(screen.getByRole('heading', { name: '欢迎回来' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '登录' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('textbox', { name: '邮箱' })).toHaveFocus());
   });
 
@@ -393,11 +411,33 @@ describe('AuthPage', () => {
     expect(screen.getByLabelText('密码')).toHaveValue('');
   });
 
-  it('does not offer a registration control', () => {
-    const { container } = render(<AuthPage mode="login" commands={createCommands()} />);
+  it('opens registration and submits the email and password', async () => {
+    const user = userEvent.setup();
+    const commands = createCommands();
+    render(<AuthPage mode="login" commands={commands} />);
 
-    expect(screen.queryByRole('link', { name: /注册/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /注册/ })).not.toBeInTheDocument();
-    expect(container.textContent).not.toMatch(/注册/);
+    await user.click(screen.getByRole('button', { name: '注册账号' }));
+    expect(screen.getByRole('heading', { name: '注册账号' })).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: '邮箱' }), 'hello@example.com');
+    await user.type(screen.getByLabelText('密码'), 'password123');
+    await user.type(screen.getByLabelText('确认密码'), 'password123');
+    await user.click(screen.getByRole('button', { name: '注册账号' }));
+
+    expect(commands.signUp).toHaveBeenCalledWith('hello@example.com', 'password123');
+    expect(await screen.findByRole('status')).toHaveTextContent('注册申请已提交');
+  });
+
+  it('remembers only the email when remember me is selected', async () => {
+    const user = userEvent.setup();
+    const commands = createCommands();
+    render(<AuthPage mode="login" commands={commands} />);
+
+    await user.type(screen.getByRole('textbox', { name: '邮箱' }), 'hello@example.com');
+    await user.type(screen.getByLabelText('密码'), 'secret-password');
+    await user.click(screen.getByRole('checkbox', { name: '记住我' }));
+    await user.click(screen.getByRole('button', { name: '登录' }));
+
+    expect(window.localStorage.getItem('seabreeze-remembered-identifier')).toBe('hello@example.com');
+    expect(JSON.stringify(window.localStorage)).not.toContain('secret-password');
   });
 });

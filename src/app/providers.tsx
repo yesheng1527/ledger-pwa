@@ -28,9 +28,11 @@ const idleStatus: SyncStatus = {
 
 type RuntimeAuthService = {
   onSessionChange(listener: SessionChangeListener): () => void;
+  signUp(email: string, password: string): Promise<unknown>;
   signIn(email: string, password: string): Promise<unknown>;
   requestPasswordReset(email: string): Promise<unknown>;
   updatePassword(password: string): Promise<unknown>;
+  signOut(): Promise<void>;
 };
 
 type RuntimeLedgerApi = {
@@ -65,9 +67,11 @@ export type AppRuntimeValue = {
   initializationMessage: string | null;
   syncStatus: SyncStatus;
   ledgerViewModel: LedgerViewModel | null;
+  signUp(email: string, password: string): Promise<void>;
   signIn(email: string, password: string): Promise<void>;
   requestPasswordReset(email: string): Promise<void>;
   updatePassword(password: string): Promise<void>;
+  signOut(): Promise<void>;
   finishPasswordRecovery(): void;
   syncNow(): Promise<void>;
   saveOperation(operation: LedgerOperation): Promise<void>;
@@ -166,12 +170,20 @@ export function AppProviders({
     await resolvedServices.auth.signIn(email, password);
   }, [resolvedServices]);
 
+  const signUp = useCallback(async (email: string, password: string) => {
+    await resolvedServices.auth.signUp(email, password);
+  }, [resolvedServices]);
+
   const requestPasswordReset = useCallback(async (email: string) => {
     await resolvedServices.auth.requestPasswordReset(email);
   }, [resolvedServices]);
 
   const updatePassword = useCallback(async (password: string) => {
     await resolvedServices.auth.updatePassword(password);
+  }, [resolvedServices]);
+
+  const signOut = useCallback(async () => {
+    await resolvedServices.auth.signOut();
   }, [resolvedServices]);
 
   const finishPasswordRecovery = useCallback(() => {
@@ -296,9 +308,11 @@ export function AppProviders({
     initializationMessage,
     syncStatus,
     ledgerViewModel,
+    signUp,
     signIn,
     requestPasswordReset,
     updatePassword,
+    signOut,
     finishPasswordRecovery,
     syncNow,
     saveOperation,

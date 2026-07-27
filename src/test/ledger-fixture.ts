@@ -576,6 +576,36 @@ export function createMutableLedgerFixture(
             ? { ...item, deletedAt: null, version: item.version + 1 }
             : item
         ));
+      } else if (operation.kind === 'account.create') {
+        fixture.snapshot.accounts.push(structuredClone(operation.account));
+      } else if (operation.kind === 'account.update') {
+        fixture.snapshot.accounts = fixture.snapshot.accounts.map((item) => (
+          item.id === operation.accountId && item.ledgerId === operation.ledgerId
+            ? structuredClone(operation.account)
+            : item
+        ));
+      } else if (operation.kind === 'account.archive') {
+        fixture.snapshot.accounts = fixture.snapshot.accounts.map((item) => (
+          item.id === operation.accountId && item.ledgerId === operation.ledgerId
+            ? { ...item, archivedAt: operation.archivedAt, version: item.version + 1 }
+            : item
+        ));
+      } else if (operation.kind === 'category.create') {
+        fixture.snapshot.categories.push(structuredClone(operation.category));
+      } else if (operation.kind === 'category.update') {
+        fixture.snapshot.categories = fixture.snapshot.categories.map((item) => (
+          item.id === operation.categoryId && item.ledgerId === operation.ledgerId
+            ? structuredClone(operation.category)
+            : item
+        ));
+      } else if (operation.kind === 'budget.create') {
+        fixture.snapshot.budgets.push(structuredClone(operation.budget));
+      } else if (operation.kind === 'budget.update') {
+        fixture.snapshot.budgets = fixture.snapshot.budgets.map((item) => (
+          item.id === operation.budgetId && item.ledgerId === operation.ledgerId
+            ? structuredClone(operation.budget)
+            : item
+        ));
       }
       notifyWatchers(operation.ledgerId);
     },

@@ -83,7 +83,7 @@ describe('minimal visual asset registry', () => {
   });
 
   it('keeps every production SVG text-free and self-contained', () => {
-    expect(Object.keys(svgSources)).toHaveLength(34);
+    expect(Object.keys(svgSources)).toHaveLength(42);
 
     for (const [path, source] of Object.entries(svgSources)) {
       const sourceWithoutNamespace = source.replace(

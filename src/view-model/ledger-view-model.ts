@@ -15,6 +15,7 @@ import type {
   EntryOptions,
   HomeSnapshot,
   LedgerViewModelOptions,
+  ManagedAccount,
   StatisticsRange,
   StatisticsSnapshot,
   TransactionCreateInput,
@@ -255,6 +256,20 @@ export class LedgerViewModel {
     return account;
   }
 
+  private accountInternalBalance(snapshot: LedgerReadSnapshot, account: Account): number {
+    const activeTransactionIds = new Set(activeTransactions(snapshot).map((item) => item.id));
+    return snapshot.entries.reduce((balance, entry) => (
+      entry.accountId === account.id && activeTransactionIds.has(entry.transactionId)
+        ? balance + entry.deltaCents
+        : balance
+    ), account.openingBalanceCents);
+  }
+
+  private accountPresentedBalance(snapshot: LedgerReadSnapshot, account: Account): number {
+    const internalBalance = this.accountInternalBalance(snapshot, account);
+    return account.accountClass === 'liability' ? -internalBalance : internalBalance;
+  }
+
   private requireActiveCategory(
     snapshot: LedgerReadSnapshot,
     id: string,
@@ -342,6 +357,12 @@ export class LedgerViewModel {
     const snapshot = await this.readSnapshot();
     const options = optionLists(snapshot);
     const accountMap = new Map(snapshot.accounts.map((item) => [item.id, item]));
+    const activeTransactionIds = new Set(activeTransactions(snapshot).map((transaction) => transaction.id));
+    const accountBalances = new Map(options.accounts.map((account) => [account.id, account.openingBalanceCents]));
+    for (const entry of snapshot.entries) {
+      if (!activeTransactionIds.has(entry.transactionId) || !accountBalances.has(entry.accountId)) continue;
+      accountBalances.set(entry.accountId, accountBalances.get(entry.accountId)! + entry.deltaCents);
+    }
     const categoryMap = new Map(snapshot.categories.map((item) => [item.id, item]));
     const entryMap = entriesByTransaction(snapshot.entries);
     const refundedByOriginal = new Map<string, number>();
@@ -386,6 +407,9 @@ export class LedgerViewModel {
         id,
         name,
         accountClass,
+        balanceCents: accountClass === 'liability'
+          ? -(accountBalances.get(id) ?? 0)
+          : accountBalances.get(id) ?? 0,
       })),
       expenseCategories: options.categories
         .filter((category) => category.kind === 'expense')
@@ -395,6 +419,252 @@ export class LedgerViewModel {
         .map(({ id, name, iconKey }) => ({ id, name, iconKey })),
       refundableExpenses,
     };
+  }
+
+  async getAccounts(): Promise<ManagedAccount[]> {
+    const snapshot = await this.readSnapshot();
+    return optionLists(snapshot).accounts.map((account) => ({
+      id: account.id,
+      name: account.name,
+      kind: account.kind,
+      accountClass: account.accountClass,
+      balanceCents: this.accountPresentedBalance(snapshot, account),
+      version: account.version,
+    }));
+  }
+
+  async createAccount(input: {
+    name: string;
+    openingBalanceCents: number;
+  }): Promise<{ accountId: string }> {
+    const snapshot = await this.readSnapshot();
+    const name = input.name.trim();
+    if (!name) throw new Error('请输入账户名称');
+    if (name.length > 30) throw new Error('账户名称不能超过30个字符');
+    if (!Number.isSafeInteger(input.openingBalanceCents)) throw new Error('账户余额无效');
+    if (snapshot.accounts.some((account) => (
+      account.archivedAt === null
+      && account.name.toLocaleLowerCase() === name.toLocaleLowerCase()
+    ))) {
+      throw new Error('账户名称不能重复');
+    }
+
+    const accountId = this.makeUuid();
+    const account: Account = {
+      id: accountId,
+      ledgerId: this.ledgerId,
+      name,
+      kind: 'custom',
+      accountClass: 'asset',
+      currency: 'CNY',
+      openingBalanceCents: input.openingBalanceCents,
+      sortOrder: snapshot.accounts.reduce((largest, item) => Math.max(largest, item.sortOrder), -1) + 1,
+      version: 1,
+      archivedAt: null,
+    };
+    await this.saveOperation({
+      schemaVersion: 1,
+      operationId: accountId,
+      ledgerId: this.ledgerId,
+      createdAt: this.now().toISOString(),
+      kind: 'account.create',
+      account,
+    });
+    return { accountId };
+  }
+
+  async updateAccount(input: {
+    id: string;
+    name: string;
+    balanceCents: number;
+  }): Promise<void> {
+    const snapshot = await this.readSnapshot();
+    const current = this.requireActiveAccount(snapshot, input.id);
+    const name = input.name.trim();
+    if (!name) throw new Error('请输入账户名称');
+    if (name.length > 30) throw new Error('账户名称不能超过30个字符');
+    if (!Number.isSafeInteger(input.balanceCents)) throw new Error('账户余额无效');
+    if (snapshot.accounts.some((account) => (
+      account.id !== current.id
+      && account.archivedAt === null
+      && account.name.toLocaleLowerCase() === name.toLocaleLowerCase()
+    ))) {
+      throw new Error('账户名称不能重复');
+    }
+
+    const currentInternalBalance = this.accountInternalBalance(snapshot, current);
+    const desiredInternalBalance = current.accountClass === 'liability'
+      ? -input.balanceCents
+      : input.balanceCents;
+    const account: Account = {
+      ...current,
+      name,
+      openingBalanceCents: current.openingBalanceCents
+        + desiredInternalBalance
+        - currentInternalBalance,
+      version: current.version + 1,
+    };
+    await this.saveOperation({
+      schemaVersion: 1,
+      operationId: this.makeUuid(),
+      ledgerId: this.ledgerId,
+      createdAt: this.now().toISOString(),
+      kind: 'account.update',
+      accountId: current.id,
+      baseVersion: current.version,
+      account,
+    });
+  }
+
+  async archiveAccount(id: string): Promise<void> {
+    const snapshot = await this.readSnapshot();
+    const current = this.requireActiveAccount(snapshot, id);
+    if (this.accountPresentedBalance(snapshot, current) !== 0) {
+      throw new Error('请先将账户余额调整为0再移除');
+    }
+    const archivedAt = this.now().toISOString();
+    await this.saveOperation({
+      schemaVersion: 1,
+      operationId: this.makeUuid(),
+      ledgerId: this.ledgerId,
+      createdAt: archivedAt,
+      kind: 'account.archive',
+      accountId: current.id,
+      baseVersion: current.version,
+      archivedAt,
+    });
+  }
+
+  async createCategory(input: {
+    name: string;
+    kind: Category['kind'];
+    iconKey: string;
+  }): Promise<{ categoryId: string }> {
+    const snapshot = await this.readSnapshot();
+    const name = input.name.trim();
+    const iconKey = input.iconKey.trim();
+    if (!name) throw new Error('请输入类目名称');
+    if (name.length > 30) throw new Error('类目名称不能超过30个字符');
+    if (!iconKey || iconKey.length > 50) throw new Error('类目图标无效');
+    if (snapshot.categories.some((category) => (
+      category.archivedAt === null
+      && category.kind === input.kind
+      && category.name.toLocaleLowerCase() === name.toLocaleLowerCase()
+    ))) {
+      throw new Error('同类型下的类目名称不能重复');
+    }
+
+    const categoryId = this.makeUuid();
+    const category: Category = {
+      id: categoryId,
+      ledgerId: this.ledgerId,
+      name,
+      kind: input.kind,
+      iconKey,
+      sortOrder: snapshot.categories
+        .filter((item) => item.kind === input.kind)
+        .reduce((largest, item) => Math.max(largest, item.sortOrder), -1) + 1,
+      version: 1,
+      archivedAt: null,
+    };
+    await this.saveOperation({
+      schemaVersion: 1,
+      operationId: categoryId,
+      ledgerId: this.ledgerId,
+      createdAt: this.now().toISOString(),
+      kind: 'category.create',
+      category,
+    });
+    return { categoryId };
+  }
+
+  async updateCategory(input: {
+    id: string;
+    name: string;
+    iconKey: string;
+  }): Promise<void> {
+    const snapshot = await this.readSnapshot();
+    const current = snapshot.categories.find((category) => (
+      category.id === input.id && category.archivedAt === null
+    ));
+    if (!current) throw new Error('类目不存在或已归档');
+    const name = input.name.trim();
+    const iconKey = input.iconKey.trim();
+    if (!name) throw new Error('请输入类目名称');
+    if (name.length > 30) throw new Error('类目名称不能超过30个字符');
+    if (!iconKey || iconKey.length > 50) throw new Error('类目图标无效');
+    if (snapshot.categories.some((category) => (
+      category.id !== current.id
+      && category.archivedAt === null
+      && category.kind === current.kind
+      && category.name.toLocaleLowerCase() === name.toLocaleLowerCase()
+    ))) {
+      throw new Error('同类型下的类目名称不能重复');
+    }
+
+    await this.saveOperation({
+      schemaVersion: 1,
+      operationId: this.makeUuid(),
+      ledgerId: this.ledgerId,
+      createdAt: this.now().toISOString(),
+      kind: 'category.update',
+      categoryId: current.id,
+      baseVersion: current.version,
+      category: {
+        ...current,
+        name,
+        iconKey,
+        version: current.version + 1,
+      },
+    });
+  }
+
+  async saveMonthlyBudget(input: { month: string; amountCents: number }): Promise<void> {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.month)) throw new Error('预算月份无效');
+    if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) {
+      throw new Error('本月预算必须大于0');
+    }
+
+    const snapshot = await this.readSnapshot();
+    const current = snapshot.budgets.find((budget) => (
+      budget.month === input.month && budget.archivedAt === null
+    ));
+    const createdAt = this.now().toISOString();
+
+    if (current) {
+      await this.saveOperation({
+        schemaVersion: 1,
+        operationId: this.makeUuid(),
+        ledgerId: this.ledgerId,
+        createdAt,
+        kind: 'budget.update',
+        budgetId: current.id,
+        baseVersion: current.version,
+        budget: {
+          ...current,
+          amountCents: input.amountCents,
+          version: current.version + 1,
+        },
+      });
+      return;
+    }
+
+    const budgetId = this.makeUuid();
+    await this.saveOperation({
+      schemaVersion: 1,
+      operationId: budgetId,
+      ledgerId: this.ledgerId,
+      createdAt,
+      kind: 'budget.create',
+      budget: {
+        id: budgetId,
+        ledgerId: this.ledgerId,
+        month: input.month,
+        amountCents: input.amountCents,
+        version: 1,
+        archivedAt: null,
+      },
+    });
   }
 
   async createTransaction(
@@ -584,7 +854,7 @@ export class LedgerViewModel {
       .map(({ id, name, iconKey }) => ({ id, name, iconKey }));
     const { accountMap, categoryMap, entryMap } = projectionContext(snapshot);
     const recentTransactions = activeTransactions(snapshot)
-      .slice(0, 3)
+      .slice(0, 5)
       .map((transaction) => toRow(
         transaction,
         accountMap,

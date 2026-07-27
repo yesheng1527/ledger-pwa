@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:connected": "vite --mode integration",
     "build": "tsc -b && vite build",
     "test": "vitest",
     "test:run": "vitest run",

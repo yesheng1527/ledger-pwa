@@ -47,9 +47,11 @@ function createRuntime(overrides: Partial<AppRuntimeValue> = {}): AppRuntimeValu
       lastSyncedAt: null,
       message: null,
     },
+    signUp: vi.fn(async () => undefined),
     signIn: vi.fn(async () => undefined),
     requestPasswordReset: vi.fn(async () => undefined),
     updatePassword: vi.fn(async () => undefined),
+    signOut: vi.fn(async () => undefined),
     finishPasswordRecovery: vi.fn(),
     syncNow: vi.fn(async () => undefined),
     saveOperation: vi.fn(async () => undefined),
@@ -91,7 +93,7 @@ describe('AuthGateView', () => {
     );
 
     expect(screen.getByText('重置链接无效或已过期')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '欢迎回来' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '登录' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '返回登录' }));
     expect(runtime.finishPasswordRecovery).toHaveBeenCalledOnce();
   });
@@ -114,7 +116,7 @@ describe('AuthGateView', () => {
       </AuthGateView>,
     );
 
-    expect(screen.getByRole('heading', { name: '欢迎回来' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '登录' })).toBeInTheDocument();
     expect(screen.queryByText('应用框架')).not.toBeInTheDocument();
   });
 

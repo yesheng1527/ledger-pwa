@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="60" viewBox="0 0 80 60">
+<defs>
+  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#BDEEFF"/>
+    <stop offset="0.62" stop-color="#EAF8FF"/>
+    <stop offset="1" stop-color="#FFF7E9"/>
+  </linearGradient>
+  <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#73CEF1"/>
+    <stop offset="1" stop-color="#BEEFF4"/>
+  </linearGradient>
+  <linearGradient id="cream" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#FFF8ED"/>
+    <stop offset="1" stop-color="#FFF9F1"/>
+  </linearGradient>
+  <linearGradient id="coral" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#FF866C"/>
+    <stop offset="1" stop-color="#FF6F52"/>
+  </linearGradient>
+  <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+    <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#D6B99A" flood-opacity=".28"/>
+  </filter>
+  <filter id="soft" x="-30%" y="-30%" width="160%" height="180%">
+    <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#D6C2AB" flood-opacity=".22"/>
+  </filter>
+</defs><path d="M20 36.4 Q38.0 22 56.0 36.4 Q38.0 50.8 20 36.4 Z" fill="none" stroke="#A79C91" stroke-width="3.0" opacity="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M24.8 24.4 L29.6 18.4 M38.0 22 V13.6 M50.0 24.4 L54.8 18.4" fill="none" stroke="#A79C91" stroke-width="2.4" opacity="1" stroke-linecap="round" stroke-linejoin="round"/></svg>

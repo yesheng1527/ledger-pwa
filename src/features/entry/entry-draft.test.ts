@@ -10,9 +10,9 @@ const now = new Date(2026, 6, 26, 14, 5, 48);
 
 const options: EntryOptions = {
   accounts: [
-    { id: 'bank', name: '银行卡', accountClass: 'asset' },
-    { id: 'cash', name: '现金', accountClass: 'asset' },
-    { id: 'credit', name: '信用卡', accountClass: 'liability' },
+    { id: 'bank', name: '银行卡', accountClass: 'asset', balanceCents: 300000 },
+    { id: 'cash', name: '现金', accountClass: 'asset', balanceCents: 20000 },
+    { id: 'credit', name: '信用卡', accountClass: 'liability', balanceCents: -50000 },
   ],
   expenseCategories: [
     { id: 'food', name: '餐饮', iconKey: 'food' },

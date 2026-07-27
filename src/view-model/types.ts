@@ -144,7 +144,12 @@ export type TransactionCreateInput =
     };
 
 export interface EntryOptions {
-  accounts: Array<{ id: string; name: string; accountClass: Account['accountClass'] }>;
+  accounts: Array<{
+    id: string;
+    name: string;
+    accountClass: Account['accountClass'];
+    balanceCents: number;
+  }>;
   expenseCategories: Array<{ id: string; name: string; iconKey: string }>;
   incomeCategories: Array<{ id: string; name: string; iconKey: string }>;
   refundableExpenses: Array<{
@@ -154,6 +159,15 @@ export interface EntryOptions {
     remainingCents: number;
     occurredAt: string;
   }>;
+}
+
+export interface ManagedAccount {
+  id: string;
+  name: string;
+  kind: Account['kind'];
+  accountClass: Account['accountClass'];
+  balanceCents: number;
+  version: number;
 }
 
 export type LedgerQueryState<T> =

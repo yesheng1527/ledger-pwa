@@ -1,298 +1,234 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { BottomNavigation, type NavigationItem } from '../design-system/components/BottomNavigation';
-import {
-  createEntryDraftController,
-  type EntryDraftController,
-  type EntryPreferencePort,
-} from '../features/entry/entry-draft';
-import { TransactionEntryPage } from '../features/entry/TransactionEntryPage';
-import { HomePage } from '../features/home/HomePage';
-import { ProfilePage } from '../features/profile/ProfilePage';
-import { StatisticsPage } from '../features/statistics/StatisticsPage';
-import { TransactionOverlays } from '../features/transactions/TransactionOverlays';
-import { TransactionsPage } from '../features/transactions/TransactionsPage';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { X } from '@phosphor-icons/react';
 import type { LedgerViewModel } from '../view-model/ledger-view-model';
-import type { EntryOptions, HomeSyncState } from '../view-model/types';
+import splashBackground from '../assets/reference-ui-v2/splash-background.png';
+import {
+  EntryPage,
+  HomePage,
+  ProfilePage,
+  StatisticsPage,
+  TransactionsPage,
+} from '../features/reference/ReferencePages';
+import {
+  type BackgroundOverrides,
+  type BackgroundSlot,
+  loadBackgroundOverrides,
+  resetBackgroundOverride,
+  saveBackgroundOverride,
+} from '../features/reference/background-preferences';
+import { type AppPage } from './navigation';
 import styles from './AppShell.module.css';
-import { navigationItems, type RegularTabId } from './navigation';
 
 export type AppShellProps = {
   viewModel: LedgerViewModel;
-  syncState: HomeSyncState;
-  pendingCount?: number;
   displayName?: string;
-  ledgerName?: string;
-  onRetrySync(): void;
+  onSignOut?: () => Promise<void>;
 };
 
-type EntryIntent = {
-  categoryId: string | null;
+type ViewTransitionDocument = Document & {
+  startViewTransition?: (update: () => void) => void;
 };
 
-type EntryLayerState =
-  | { status: 'loading' }
-  | { status: 'error' }
-  | {
-      status: 'ready';
-      controller: EntryDraftController;
-      options: EntryOptions;
-    };
-
-const regularTabIds = navigationItems
-  .filter((item) => item.kind === 'tab')
-  .map((item) => item.id);
-
-function lastAccountPreferences(ledgerId: string): EntryPreferencePort {
-  const key = `seabreeze:last-entry-account:${ledgerId}`;
-  return {
-    loadLastAccountId() {
-      try {
-        return localStorage.getItem(key);
-      } catch {
-        return null;
-      }
-    },
-    saveLastAccountId(accountId) {
-      try {
-        localStorage.setItem(key, accountId);
-      } catch {
-        // Remembering this convenience choice must never block a saved transaction.
-      }
-    },
-  };
+function shouldShowSplash(): boolean {
+  const forced = new URLSearchParams(window.location.search).get('splash') === '1';
+  const staticTestMode = import.meta.env.MODE === 'test'
+    || document.documentElement.dataset.visualTest === 'true';
+  if (staticTestMode && !forced) return false;
+  return forced || sessionStorage.getItem('seabreeze-splash-seen') !== 'true';
 }
 
-export function AppShell({
-  viewModel,
-  syncState,
-  pendingCount = 0,
-  displayName = '记账人',
-  ledgerName = '个人生活账本',
-  onRetrySync,
-}: AppShellProps) {
-  const [activeTab, setActiveTab] = useState<RegularTabId>('home');
-  const [entryLayer, setEntryLayer] = useState<EntryLayerState | null>(null);
-  const [detailTransactionId, setDetailTransactionId] = useState<string | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
-  const scrollOffsets = useRef<Record<RegularTabId, number>>({
-    home: 0,
-    transactions: 0,
-    statistics: 0,
-    settings: 0,
-  });
-  const mainRef = useRef<HTMLDivElement>(null);
-  const entryButtonRef = useRef<HTMLButtonElement>(null);
-  const entrySourceRef = useRef<HTMLElement | null>(null);
-  const entryWasOpenRef = useRef(false);
-  const entryRequestId = useRef(0);
-  const entryPreferences = useMemo(
-    () => lastAccountPreferences(viewModel.ledgerId),
-    [viewModel.ledgerId],
-  );
-
-  useLayoutEffect(() => {
-    if (mainRef.current) {
-      mainRef.current.scrollTop = scrollOffsets.current[activeTab];
-    }
-  }, [activeTab]);
-
-  useLayoutEffect(() => {
-    if (entryLayer) {
-      entryWasOpenRef.current = true;
-      return;
-    }
-    if (!entryWasOpenRef.current) return;
-
-    entryWasOpenRef.current = false;
-    const source = entrySourceRef.current;
-    entrySourceRef.current = null;
-    queueMicrotask(() => source?.focus());
-  }, [entryLayer]);
+export function AppShell({ viewModel, displayName = '海风', onSignOut = async () => undefined }: AppShellProps) {
+  const [page, setPage] = useState<AppPage>('home');
+  const [returnPage, setReturnPage] = useState<Exclude<AppPage, 'entry'>>('home');
+  const [entryCategory, setEntryCategory] = useState<string | undefined>();
+  const [feedback, setFeedback] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
+  const [backgrounds, setBackgrounds] = useState<BackgroundOverrides>({});
+  const [splashVisible, setSplashVisible] = useState(shouldShowSplash);
+  const feedbackTimer = useRef<number | null>(null);
+  const fallbackTransitionTimer = useRef<number | null>(null);
+  const backgroundRevision = useRef(0);
+  const phoneRef = useRef<HTMLDivElement>(null);
+  const pageStageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (entryLayer?.status !== 'ready') return;
-    const { controller } = entryLayer;
     let active = true;
-    const refreshOptions = () => {
-      void viewModel.getEntryOptions().then((options) => {
-        if (!active) return;
-        controller.setOptions(options);
-        setEntryLayer((current) => (
-          current?.status === 'ready' && current.controller === controller
-            ? { ...current, options }
-            : current
-        ));
-      });
-    };
-    const unsubscribe = viewModel.subscribe(refreshOptions);
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, [entryLayer, viewModel]);
-
-  const closeEntry = useCallback(() => {
-    entryRequestId.current += 1;
-    setEntryLayer(null);
+    const revision = backgroundRevision.current;
+    void loadBackgroundOverrides().then((storedBackgrounds) => {
+      if (active && backgroundRevision.current === revision) setBackgrounds(storedBackgrounds);
+    }).catch(() => undefined);
+    return () => { active = false; };
   }, []);
 
-  const openEntry = useCallback((intent: EntryIntent | null) => {
-    entrySourceRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : entryButtonRef.current;
-    const requestId = ++entryRequestId.current;
-    setEntryLayer({ status: 'loading' });
-    void viewModel.getEntryOptions().then(
-      (options) => {
-        if (requestId !== entryRequestId.current) return;
-        const controller = createEntryDraftController({
-          options,
-          quickCategoryId: intent?.categoryId ?? null,
-          preferences: entryPreferences,
-          createTransaction: (input) => viewModel.createTransaction(input),
-          now: () => new Date(),
-        });
-        setEntryLayer({ status: 'ready', controller, options });
-      },
-      () => {
-        if (requestId === entryRequestId.current) setEntryLayer({ status: 'error' });
-      },
-    );
-  }, [entryPreferences, viewModel]);
+  useEffect(() => {
+    if (!splashVisible) return undefined;
+    sessionStorage.setItem('seabreeze-splash-seen', 'true');
+    const timer = window.setTimeout(() => setSplashVisible(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [splashVisible]);
 
-  function activateRegularTab(nextTab: RegularTabId) {
-    if (nextTab === activeTab) return;
-    if (mainRef.current) {
-      scrollOffsets.current[activeTab] = mainRef.current.scrollTop;
+  const showFeedback = useCallback((message: string, tone: 'info' | 'success' | 'error' = 'info') => {
+    if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current);
+    setFeedback({ message, tone });
+    feedbackTimer.current = window.setTimeout(() => {
+      setFeedback(null);
+      feedbackTimer.current = null;
+    }, 2200);
+  }, []);
+
+  useEffect(() => () => {
+    if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current);
+    if (fallbackTransitionTimer.current !== null) window.clearTimeout(fallbackTransitionTimer.current);
+  }, []);
+
+  function clearFallbackTransition() {
+    if (fallbackTransitionTimer.current !== null) {
+      window.clearTimeout(fallbackTransitionTimer.current);
+      fallbackTransitionTimer.current = null;
     }
-    setActiveTab(nextTab);
+    phoneRef.current?.querySelectorAll(`.${styles.outgoingPageStage}`).forEach((element) => element.remove());
+    pageStageRef.current?.classList.remove(styles.incomingPageStage);
   }
 
-  const bottomNavigationItems: NavigationItem[] = navigationItems.map((item) => {
-    if (item.kind === 'entry') {
-      return {
-        ...item,
-        active: false,
-        central: true,
-        buttonRef: entryButtonRef,
-        onActivate: () => openEntry(null),
-      };
+  function runFallbackTransition(update: () => void) {
+    const phone = phoneRef.current;
+    const pageStage = pageStageRef.current;
+    if (!phone || !pageStage) {
+      flushSync(update);
+      return;
     }
-    return {
-      ...item,
-      active: item.id === activeTab,
-      onActivate: () => activateRegularTab(item.id),
-    };
-  });
 
-  const modalOpen = entryLayer !== null || detailOpen;
+    clearFallbackTransition();
+    const outgoingStage = pageStage.cloneNode(true) as HTMLDivElement;
+    outgoingStage.classList.add(styles.outgoingPageStage);
+    outgoingStage.setAttribute('aria-hidden', 'true');
+    outgoingStage.setAttribute('inert', '');
+    outgoingStage.style.viewTransitionName = 'none';
+    phone.append(outgoingStage);
+
+    flushSync(update);
+    pageStage.classList.add(styles.incomingPageStage);
+    fallbackTransitionTimer.current = window.setTimeout(clearFallbackTransition, 280);
+  }
+
+  function switchPage(next: AppPage, prepare?: () => void) {
+    if (next === page) return;
+    const update = () => {
+      prepare?.();
+      setPage(next);
+    };
+    const transitionDocument = document as ViewTransitionDocument;
+    const reducedMotion = typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const staticTestMode = import.meta.env.MODE === 'test'
+      || document.documentElement.dataset.visualTest === 'true';
+
+    if (reducedMotion || staticTestMode) {
+      flushSync(update);
+      return;
+    }
+    if (typeof transitionDocument.startViewTransition === 'function') {
+      transitionDocument.startViewTransition(() => flushSync(update));
+      return;
+    }
+    runFallbackTransition(update);
+  }
+
+  function openEntry(initialCategory?: string) {
+    const previousPage = page;
+    switchPage('entry', () => {
+      if (previousPage !== 'entry') setReturnPage(previousPage);
+      setEntryCategory(initialCategory);
+    });
+  }
+
+  function navigate(next: AppPage) {
+    if (next === 'entry') {
+      openEntry();
+      return;
+    }
+    switchPage(next);
+  }
+
+  async function replaceBackground(slot: BackgroundSlot, file: File) {
+    const image = await saveBackgroundOverride(slot, file);
+    backgroundRevision.current += 1;
+    setBackgrounds((current) => ({ ...current, [slot]: image }));
+  }
+
+  async function restoreBackground(slot: BackgroundSlot) {
+    await resetBackgroundOverride(slot);
+    backgroundRevision.current += 1;
+    setBackgrounds((current) => {
+      const next = { ...current };
+      delete next[slot];
+      return next;
+    });
+  }
 
   return (
-    <div className={styles.shell}>
-      <div
-        className={styles.background}
-        data-shell-background
-        inert={modalOpen ? true : undefined}
-        aria-hidden={modalOpen ? 'true' : undefined}
-      >
-        <div ref={mainRef} className={styles.main} data-shell-scroll>
-          {regularTabIds.map((tabId) => {
-            const active = tabId === activeTab;
-            return (
-              <div
-                key={tabId}
-                id={`panel-${tabId}`}
-                hidden={!active}
-                aria-hidden={active ? 'false' : 'true'}
-              >
-                {tabId === 'home' ? (
-                  <HomePage
-                    viewModel={viewModel}
-                    syncState={syncState}
-                    onRetrySync={onRetrySync}
-                    onOpenTransaction={setDetailTransactionId}
-                    onStartEntry={openEntry}
-                  />
-                ) : null}
-                {tabId === 'transactions' ? (
-                  <TransactionsPage
-                    viewModel={viewModel}
-                    onOpenTransaction={setDetailTransactionId}
-                  />
-                ) : null}
-                {tabId === 'statistics' ? <StatisticsPage viewModel={viewModel} /> : null}
-                {tabId === 'settings' ? (
-                  <ProfilePage
-                    viewModel={viewModel}
-                    displayName={displayName}
-                    ledgerName={ledgerName}
-                    syncState={syncState}
-                    pendingCount={pendingCount}
-                    onRetrySync={onRetrySync}
-                  />
-                ) : null}
-              </div>
-            );
-          })}
+    <div className={styles.viewport}>
+      <div ref={phoneRef} className={styles.phone} data-page={page}>
+        <div ref={pageStageRef} className={styles.pageStage}>
+          {page === 'home' ? (
+            <HomePage
+              viewModel={viewModel}
+              backgrounds={backgrounds}
+              displayName={displayName}
+              onNavigate={navigate}
+              onOpenEntry={openEntry}
+              onFeedback={showFeedback}
+            />
+          ) : null}
+          {page === 'transactions' ? (
+            <TransactionsPage viewModel={viewModel} backgrounds={backgrounds} onNavigate={navigate} onFeedback={showFeedback} />
+          ) : null}
+          {page === 'entry' ? (
+            <EntryPage
+              viewModel={viewModel}
+              backgrounds={backgrounds}
+              initialCategory={entryCategory}
+              onClose={() => switchPage(returnPage)}
+              onFeedback={showFeedback}
+            />
+          ) : null}
+          {page === 'statistics' ? (
+            <StatisticsPage viewModel={viewModel} backgrounds={backgrounds} onNavigate={navigate} onFeedback={showFeedback} />
+          ) : null}
+          {page === 'profile' ? (
+            <ProfilePage
+              viewModel={viewModel}
+              backgrounds={backgrounds}
+              onNavigate={navigate}
+              onFeedback={showFeedback}
+              onSignOut={onSignOut}
+              onReplaceBackground={replaceBackground}
+              onRestoreBackground={restoreBackground}
+            />
+          ) : null}
         </div>
-
-        <div className={styles.navigation}>
-          <BottomNavigation items={bottomNavigationItems} />
+        <div
+          className={styles.feedback}
+          data-visible={feedback ? 'true' : 'false'}
+          data-tone={feedback?.tone ?? 'info'}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {feedback?.message ?? ''}
         </div>
+        {splashVisible ? (
+          <section
+            className={styles.splashScreen}
+            style={{ backgroundImage: `url(${backgrounds.splash ?? splashBackground})` }}
+            aria-label="开屏页"
+          >
+            <button type="button" aria-label="跳过开屏页" title="跳过" onClick={() => setSplashVisible(false)}>
+              <X />
+            </button>
+          </section>
+        ) : null}
       </div>
-
-      {entryLayer?.status === 'loading' ? (
-        <section
-          className={styles.entryFeedback}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="entry-loading-title"
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') closeEntry();
-          }}
-        >
-          <h1 id="entry-loading-title">记账</h1>
-          <p role="status">正在准备记账选项…</p>
-          <button type="button" onClick={closeEntry}>关闭记账</button>
-        </section>
-      ) : null}
-
-      {entryLayer?.status === 'error' ? (
-        <section
-          className={styles.entryFeedback}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="entry-error-title"
-        >
-          <h1 id="entry-error-title">记账</h1>
-          <p role="alert">记账选项暂时无法读取</p>
-          <button type="button" onClick={closeEntry}>关闭记账</button>
-        </section>
-      ) : null}
-
-      {entryLayer?.status === 'ready' ? (
-        <TransactionEntryPage
-          controller={entryLayer.controller}
-          options={entryLayer.options}
-          onClose={closeEntry}
-          onSaved={closeEntry}
-        />
-      ) : null}
-
-      <TransactionOverlays
-        viewModel={viewModel}
-        transactionId={detailTransactionId}
-        onCloseDetail={() => setDetailTransactionId(null)}
-        onDetailOpenChange={setDetailOpen}
-        onReload={() => window.location.reload()}
-      />
     </div>
   );
 }

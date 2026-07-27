@@ -34,19 +34,28 @@ export function parseE2eFixture(value: string | null): E2eFixtureName {
 }
 
 export function createE2eServices(fixture: E2eFixtureName): AppProviderServices {
-  const session = fixture === 'logged-out' ? null : authenticatedSession;
+  let session = fixture === 'logged-out' ? null : authenticatedSession;
   const event: AuthChangeEvent = fixture === 'recovery' ? 'PASSWORD_RECOVERY' : 'INITIAL_SESSION';
   const repository = createMutableLedgerFixture();
+  let sessionListener: ((event: AuthChangeEvent, session: Session | null) => void | Promise<void>) | null = null;
 
   return {
     auth: {
       onSessionChange(listener) {
+        sessionListener = listener;
         void listener(event, session);
-        return () => undefined;
+        return () => {
+          if (sessionListener === listener) sessionListener = null;
+        };
       },
+      async signUp() {},
       async signIn() {},
       async requestPasswordReset() {},
       async updatePassword() {},
+      async signOut() {
+        session = null;
+        await sessionListener?.('SIGNED_OUT', null);
+      },
     },
     api: {
       async bootstrapPersonalLedger() {

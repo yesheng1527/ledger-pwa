@@ -118,7 +118,7 @@ describe('LedgerViewModel home projection', () => {
     });
     expect(snapshot.quickCategories.map((item) => item.name))
       .toEqual(['餐饮', '交通', '购物', '娱乐']);
-    expect(snapshot.recentTransactions).toHaveLength(3);
+    expect(snapshot.recentTransactions).toHaveLength(5);
     expect(read).toHaveBeenCalledTimes(1);
     expect(calculate).toHaveBeenCalledTimes(1);
   });
@@ -126,6 +126,30 @@ describe('LedgerViewModel home projection', () => {
   it('returns no fake progress when the month has no active total budget', async () => {
     const viewModel = createFixtureViewModel({ budgets: [] });
     expect((await viewModel.getHomeSnapshot({ now: fixtureNow })).budget).toBeNull();
+  });
+
+  it('creates and updates the selected month budget through ledger operations', async () => {
+    const existing = createFixtureViewModelHarness();
+
+    await existing.viewModel.saveMonthlyBudget({ month: '2026-07', amountCents: 75000 });
+    expect(existing.saveOperation).toHaveBeenLastCalledWith(expect.objectContaining({
+      kind: 'budget.update',
+      budgetId: '00000000-0000-4000-8000-000000000601',
+      baseVersion: 1,
+      budget: expect.objectContaining({ amountCents: 75000, version: 2 }),
+    }));
+    expect(existing.repository.snapshot.budgets.find((budget) => (
+      budget.id === '00000000-0000-4000-8000-000000000601'
+    ))).toMatchObject({ amountCents: 75000, version: 2 });
+
+    const empty = createFixtureViewModelHarness({ budgets: [] });
+    await empty.viewModel.saveMonthlyBudget({ month: '2026-07', amountCents: 300000 });
+    expect(empty.saveOperation).toHaveBeenLastCalledWith(expect.objectContaining({
+      kind: 'budget.create',
+      budget: expect.objectContaining({ month: '2026-07', amountCents: 300000, version: 1 }),
+    }));
+    await expect(empty.viewModel.saveMonthlyBudget({ month: '2026-07', amountCents: 0 }))
+      .rejects.toThrow('本月预算必须大于0');
   });
 });
 
@@ -146,6 +170,52 @@ describe('LedgerViewModel statistics projection', () => {
       balanceCents: 77000,
     });
     expect(read).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('LedgerViewModel category management', () => {
+  it('creates and edits a synced custom category', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+
+    const created = await viewModel.createCategory({
+      name: ' 宠物 ',
+      kind: 'expense',
+      iconKey: 'custom',
+    });
+    expect(saveOperation).toHaveBeenLastCalledWith(expect.objectContaining({
+      kind: 'category.create',
+      category: expect.objectContaining({
+        id: created.categoryId,
+        name: '宠物',
+        kind: 'expense',
+        iconKey: 'custom',
+      }),
+    }));
+
+    await viewModel.updateCategory({
+      id: created.categoryId,
+      name: '宠物用品',
+      iconKey: 'custom',
+    });
+    expect(saveOperation).toHaveBeenLastCalledWith(expect.objectContaining({
+      kind: 'category.update',
+      categoryId: created.categoryId,
+      baseVersion: 1,
+      category: expect.objectContaining({ name: '宠物用品', version: 2 }),
+    }));
+    expect(repository.snapshot.categories.find((category) => category.id === created.categoryId))
+      .toMatchObject({ name: '宠物用品', iconKey: 'custom', version: 2 });
+  });
+
+  it('rejects duplicate category names within the same type', async () => {
+    const { saveOperation, viewModel } = createFixtureViewModelHarness();
+
+    await expect(viewModel.createCategory({
+      name: '餐饮',
+      kind: 'expense',
+      iconKey: 'custom',
+    })).rejects.toThrow('同类型下的类目名称不能重复');
+    expect(saveOperation).not.toHaveBeenCalled();
   });
 });
 
@@ -348,6 +418,11 @@ describe('LedgerViewModel transaction commands', () => {
       [fixtureIds.cash, 'asset'],
       [fixtureIds.credit, 'liability'],
     ]);
+    expect(options.accounts.map((item) => [item.id, item.balanceCents])).toEqual([
+      [fixtureIds.bank, 392000],
+      [fixtureIds.cash, 26000],
+      [fixtureIds.credit, -68000],
+    ]);
     expect(options.accounts.map((item) => item.id)).not.toContain(fixtureIds.archivedAccount);
     expect(options.expenseCategories.map((item) => item.id))
       .not.toContain(fixtureIds.archivedCategory);
@@ -367,6 +442,34 @@ describe('LedgerViewModel transaction commands', () => {
       }),
     ]);
     expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists account names and signed balances through account operations', async () => {
+    const { viewModel } = createFixtureViewModelHarness();
+
+    expect((await viewModel.getAccounts()).find((item) => item.id === fixtureIds.bank))
+      .toMatchObject({ name: '储蓄卡', balanceCents: 392000 });
+
+    await viewModel.updateAccount({
+      id: fixtureIds.bank,
+      name: '工资卡',
+      balanceCents: -12345,
+    });
+    expect((await viewModel.getAccounts()).find((item) => item.id === fixtureIds.bank))
+      .toMatchObject({ name: '工资卡', balanceCents: -12345, version: 2 });
+
+    const created = await viewModel.createAccount({
+      name: '旅行金',
+      openingBalanceCents: 50000,
+    });
+    expect((await viewModel.getAccounts()).find((item) => item.id === created.accountId))
+      .toMatchObject({ name: '旅行金', balanceCents: 50000 });
+
+    await expect(viewModel.archiveAccount(created.accountId))
+      .rejects.toThrow('请先将账户余额调整为0再移除');
+    await viewModel.updateAccount({ id: created.accountId, name: '旅行金', balanceCents: 0 });
+    await viewModel.archiveAccount(created.accountId);
+    expect((await viewModel.getAccounts()).map((item) => item.id)).not.toContain(created.accountId);
   });
 
   it('creates an expense with a shared transaction and operation id and a trimmed note', async () => {

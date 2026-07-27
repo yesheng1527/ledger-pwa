@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="90" height="100" viewBox="0 0 90 100">
+<defs>
+  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#BDEEFF"/>
+    <stop offset="0.62" stop-color="#EAF8FF"/>
+    <stop offset="1" stop-color="#FFF7E9"/>
+  </linearGradient>
+  <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#73CEF1"/>
+    <stop offset="1" stop-color="#BEEFF4"/>
+  </linearGradient>
+  <linearGradient id="cream" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#FFF8ED"/>
+    <stop offset="1" stop-color="#FFF9F1"/>
+  </linearGradient>
+  <linearGradient id="coral" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#FF866C"/>
+    <stop offset="1" stop-color="#FF6F52"/>
+  </linearGradient>
+  <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+    <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#D6B99A" flood-opacity=".28"/>
+  </filter>
+  <filter id="soft" x="-30%" y="-30%" width="160%" height="180%">
+    <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#D6C2AB" flood-opacity=".22"/>
+  </filter>
+</defs><rect x="20" y="12" width="40" height="60" rx="8" fill="#F7F2DD" stroke="#4E595A" stroke-width="3" opacity="1"/><rect x="26" y="20" width="28" height="38" rx="4" fill="#A9E8F2" stroke="#4E595A" stroke-width="2" opacity="1"/><circle cx="40" cy="65" r="3" fill="#FF986F" stroke="none" stroke-width="1" opacity="1"/><path d="M15 70 Q40 82 68 70" fill="none" stroke="#F0C778" stroke-width="4" opacity="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 68 Q15.75 65.5 13.25 61.0 Q18.875 66.75 22 68 Z" fill="#74B85F" stroke="#4F8B45" stroke-width="0.375" opacity="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 68 Q19.5 63.0 19.5 57.5 Q20.75 65.5 22 68 Z" fill="#74B85F" stroke="#4F8B45" stroke-width="0.375" opacity="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 68 Q23.75 63.5 26.25 58.0 Q22.875 65.75 22 68 Z" fill="#74B85F" stroke="#4F8B45" stroke-width="0.375" opacity="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 68 Q27.5 66.25 32.0 63.0 Q24.75 67.125 22 68 Z" fill="#74B85F" stroke="#4F8B45" stroke-width="0.375" opacity="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 68 Q16.25 70.5 12.5 72.5 Q19.125 69.25 22 68 Z" fill="#74B85F" stroke="#4F8B45" stroke-width="0.375" opacity="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 68 Q20.75 70.0 20.25 76.0 Q21.375 69.0 22 68 Z" fill="#74B85F" stroke="#4F8B45" stroke-width="0.375" opacity="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 68 Q25.75 70.0 28.5 75.25 Q23.875 69.0 22 68 Z" fill="#74B85F" stroke="#4F8B45" stroke-width="0.375" opacity="1" stroke-linecap="round" stroke-linejoin="round"/></svg>

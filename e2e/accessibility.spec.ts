@@ -12,56 +12,29 @@ for (const viewport of viewports) {
       await page.setViewportSize(viewport);
     });
 
-    test('exposes labeled landmarks, state, dialog, and icons', async ({ page }) => {
+    test('exposes labeled authentication landmarks and controls', async ({ page }) => {
       await page.goto('?fixture=logged-out');
       await expect(page.getByRole('main')).toBeVisible();
-      await expect(page.getByRole('img', { name: '海风小账本' })).toHaveCount(1);
+      await expect(page.getByRole('region', { name: '海风小账本' })).toBeVisible();
       await expect(page.getByRole('textbox', { name: '邮箱' })).toBeVisible();
-      await expect(page.getByRole('textbox', { name: '密码', exact: true })).toBeVisible();
-
-      await page.goto('?fixture=logged-in');
-      await expect(page.getByRole('main')).toBeVisible();
-      await expect(page.getByRole('navigation', { name: '主要导航' })).toBeVisible();
-      await expect(page.getByRole('button', { name: '首页' })).toHaveAttribute('aria-current', 'page');
-      await expect(page.getByRole('img')).toHaveCount(0);
-
-      const source = page.getByRole('button', { name: '记账', exact: true });
-      await source.click();
-      const dialog = page.getByRole('dialog', { name: '记账' });
-      await expect(dialog).toBeVisible();
-      await expect(dialog.getByLabel('金额')).toBeFocused();
-      await expect(page.locator('[data-shell-background]')).toHaveAttribute('inert');
-      await expect(page.getByRole('main')).toHaveCount(0);
-      await page.keyboard.press('Escape');
-      await expect(source).toBeFocused();
-      await expect(page.getByRole('main')).toHaveCount(1);
-      await expect(page.locator('[data-shell-background]')).not.toHaveAttribute('inert');
+      await expect(page.getByLabel('密码', { exact: true })).toBeVisible();
     });
 
     test('removes ambient animation and transitions for reduced motion', async ({ page }) => {
       await page.goto('?fixture=logged-out');
 
-      const ambient = page.locator('[data-ambient-motion]');
-      await expect(ambient).not.toHaveCount(0);
+      const animatedField = page.getByRole('textbox', { name: '邮箱' }).locator('..');
+      await expect(animatedField).toBeVisible();
       expect.soft(
         await page.locator('html').getAttribute('data-visual-test'),
         'normal test-e2e routes must not activate the screenshot-only visual freeze',
       ).toBeNull();
-      const normalTransitionDurations = await ambient.evaluateAll((elements) =>
-        elements.map((element) => getComputedStyle(element).transitionDuration),
-      );
-      for (const duration of normalTransitionDurations) {
-        expect.soft(
-          duration,
-          'ambient elements need a non-zero normal transition so reduced motion tests real behavior',
-        ).not.toBe('0s');
-      }
+      expect.soft(await animatedField.evaluate((element) => getComputedStyle(element).transitionDuration))
+        .not.toBe('0s');
 
       await page.emulateMedia({ reducedMotion: 'reduce' });
-      for (const element of await ambient.all()) {
-        await expect(element).toHaveCSS('animation-name', 'none');
-        await expect(element).toHaveCSS('transition-duration', '0s');
-      }
+      await expect(animatedField).toHaveCSS('animation-name', 'none');
+      await expect(animatedField).toHaveCSS('transition-duration', '0s');
     });
   });
 }

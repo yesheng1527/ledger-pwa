@@ -104,9 +104,11 @@ function createAuthHarness() {
         unsubscribers.push(unsubscribe);
         return unsubscribe;
       }),
+      signUp: vi.fn(async () => undefined),
       signIn: vi.fn(async () => undefined),
       requestPasswordReset: vi.fn(async () => undefined),
       updatePassword: vi.fn(async () => undefined),
+      signOut: vi.fn(async () => undefined),
     },
     emit(event: AuthChangeEvent, session: Session | null) {
       for (const listener of [...listeners]) void listener(event, session);
@@ -252,7 +254,7 @@ describe('AppProviders', () => {
     expect(await screen.findByText('重置链接无效或已过期')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '返回登录' }));
-    expect(await screen.findByRole('heading', { name: '欢迎回来' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '登录' })).toBeInTheDocument();
     expect(window.location.pathname).toBe(import.meta.env.BASE_URL);
     expect(window.location.search).toBe('');
   });
@@ -276,10 +278,12 @@ describe('AppProviders', () => {
     await latestRuntime.signIn('person@example.com', 'secret-password');
     await latestRuntime.requestPasswordReset('person@example.com');
     await latestRuntime.updatePassword('new-secret-password');
+    await latestRuntime.signOut();
 
     expect(harness.auth.service.signIn).toHaveBeenCalledWith('person@example.com', 'secret-password');
     expect(harness.auth.service.requestPasswordReset).toHaveBeenCalledWith('person@example.com');
     expect(harness.auth.service.updatePassword).toHaveBeenCalledWith('new-secret-password');
+    expect(harness.auth.service.signOut).toHaveBeenCalledOnce();
     expect(JSON.stringify(latestRuntime)).not.toContain('secret-password');
   });
 

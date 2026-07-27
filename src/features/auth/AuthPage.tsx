@@ -1,17 +1,23 @@
 import { type FormEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { EnvelopeSimple } from '@phosphor-icons/react';
 import type { AppRuntimeValue } from '../../app/providers';
-import { Card } from '../../design-system/components/Card';
-import { HandDrawnIcon } from '../../design-system/components/HandDrawnIcon';
-import { PrimaryButton } from '../../design-system/components/PrimaryButton';
-import { TextField } from '../../design-system/components/TextField';
+import eyeIcon from '../../assets/auth-login/eye.svg';
+import flowerIcon from '../../assets/auth-login/flower.svg';
+import guestIcon from '../../assets/auth-login/guest.svg';
+import homeIslandIcon from '../../assets/auth-login/home_island.svg';
+import leafIcon from '../../assets/auth-login/leaf.svg';
+import lockIcon from '../../assets/auth-login/lock.svg';
+import wechatIcon from '../../assets/auth-login/wechat.svg';
 import { mapAuthError } from './auth-errors';
 import styles from './AuthPage.module.css';
 
 export type AuthPageMode = 'login' | 'forgot-password' | 'reset-password';
 
+type AuthViewMode = AuthPageMode | 'register';
+
 export type AuthPageCommands = Pick<
   AppRuntimeValue,
-  'signIn' | 'requestPasswordReset' | 'updatePassword' | 'finishPasswordRecovery'
+  'signUp' | 'signIn' | 'requestPasswordReset' | 'updatePassword' | 'finishPasswordRecovery'
 >;
 
 type AuthPageProps = {
@@ -23,11 +29,17 @@ type AuthField = 'email' | 'password' | 'confirmation';
 type FieldErrors = Partial<Record<AuthField, string>>;
 
 const AUTH_STATUS_ID = 'auth-status';
+const REMEMBERED_IDENTIFIER_KEY = 'seabreeze-remembered-identifier';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const modeContent: Record<AuthPageMode, { title: string; introduction: string }> = {
+const modeContent: Record<AuthViewMode, { title: string; introduction: string }> = {
   login: {
-    title: '欢迎回来',
-    introduction: '登录后继续记录每一笔日常收支。',
+    title: '登录',
+    introduction: '',
+  },
+  register: {
+    title: '注册账号',
+    introduction: '使用邮箱创建你的海风小账本。',
   },
   'forgot-password': {
     title: '找回密码',
@@ -39,14 +51,22 @@ const modeContent: Record<AuthPageMode, { title: string; introduction: string }>
   },
 };
 
+function rememberedIdentifier() {
+  if (typeof window === 'undefined') return '';
+  const remembered = window.localStorage.getItem(REMEMBERED_IDENTIFIER_KEY) ?? '';
+  return EMAIL_PATTERN.test(remembered) ? remembered : '';
+}
+
 export function AuthPage({ mode, commands }: AuthPageProps) {
-  const [internalMode, setInternalMode] = useState(mode);
+  const [internalMode, setInternalMode] = useState<AuthViewMode>(mode);
   const previousExternalMode = useRef(mode);
   const externalModeChanged = previousExternalMode.current !== mode;
   const currentMode = externalModeChanged ? mode : internalMode;
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(rememberedIdentifier);
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  const [rememberMe, setRememberMe] = useState(() => rememberedIdentifier() !== '');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [status, setStatus] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
@@ -63,6 +83,7 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
       setBusy(false);
       setPassword('');
       setConfirmation('');
+      setPasswordVisible(false);
       setFieldErrors({});
       setStatus(null);
     }
@@ -73,10 +94,11 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
     else emailRef.current?.focus();
   }, [currentMode]);
 
-  const changeMode = (nextMode: AuthPageMode) => {
+  const changeMode = (nextMode: AuthViewMode) => {
     if (busy) return;
     setPassword('');
     setConfirmation('');
+    setPasswordVisible(false);
     setFieldErrors({});
     setStatus(null);
     setInternalMode(nextMode);
@@ -92,6 +114,12 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
     setStatus(null);
   };
 
+  const describedBy = (field: AuthField) => {
+    const ids = [fieldErrors[field] ? `auth-${field}-error` : null, status?.kind === 'error' ? AUTH_STATUS_ID : null]
+      .filter(Boolean);
+    return ids.length > 0 ? ids.join(' ') : undefined;
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy) return;
@@ -101,15 +129,19 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
     const validationErrors: FieldErrors = {};
     if (currentMode !== 'reset-password' && email.trim() === '') {
       validationErrors.email = '请输入邮箱';
+    } else if (currentMode !== 'reset-password' && !EMAIL_PATTERN.test(email.trim())) {
+      validationErrors.email = '请输入有效邮箱';
     }
-    if (currentMode === 'login' && password === '') {
-      validationErrors.password = '请输入密码';
+    if (currentMode !== 'forgot-password' && password === '') {
+      validationErrors.password = currentMode === 'reset-password' ? '请输入新密码' : '请输入密码';
     }
-    if (currentMode === 'reset-password') {
-      if (password === '') validationErrors.password = '请输入新密码';
-      else if (password.length < 8) validationErrors.password = '密码至少需要 8 个字符';
-
-      if (confirmation === '') validationErrors.confirmation = '请再次输入新密码';
+    if ((currentMode === 'register' || currentMode === 'reset-password') && password !== '' && password.length < 8) {
+      validationErrors.password = '密码至少需要 8 个字符';
+    }
+    if (currentMode === 'register' || currentMode === 'reset-password') {
+      if (confirmation === '') {
+        validationErrors.confirmation = currentMode === 'reset-password' ? '请再次输入新密码' : '请再次输入密码';
+      }
       else if (password !== confirmation) validationErrors.confirmation = '两次输入的密码不一致';
     }
 
@@ -125,9 +157,15 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
     setBusy(true);
     try {
       if (currentMode === 'login') {
-        await commands.signIn(email, password);
+        await commands.signIn(email.trim(), password);
+        if (rememberMe) window.localStorage.setItem(REMEMBERED_IDENTIFIER_KEY, email.trim());
+        else window.localStorage.removeItem(REMEMBERED_IDENTIFIER_KEY);
+      } else if (currentMode === 'register') {
+        await commands.signUp(email.trim(), password);
+        if (requestGeneration.current !== generation) return;
+        setStatus({ kind: 'success', message: '注册申请已提交，请按提示完成验证' });
       } else if (currentMode === 'forgot-password') {
-        await commands.requestPasswordReset(email);
+        await commands.requestPasswordReset(email.trim());
         if (requestGeneration.current !== generation) return;
         setStatus({ kind: 'success', message: '重置邮件已发送，请检查邮箱' });
       } else {
@@ -145,121 +183,174 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
   };
 
   const content = modeContent[currentMode];
-  const statusDescriptionId = status?.kind === 'error' ? AUTH_STATUS_ID : undefined;
+  const submitLabel = currentMode === 'login'
+    ? '登录'
+    : currentMode === 'register'
+      ? '注册账号'
+      : currentMode === 'forgot-password'
+        ? '发送重置邮件'
+        : '更新密码';
+
+  const showNotice = (message: string) => {
+    setFieldErrors({});
+    setStatus({ kind: 'success', message });
+  };
 
   return (
-    <main className={styles.page} data-ambient-motion>
-      <section className={styles.introduction} aria-label="海风小账本">
-        <div className={styles.brand}>
-          <HandDrawnIcon asset="brand:shell" label="海风小账本" />
-          <span>海风小账本</span>
-        </div>
-        <p>让收支记录像海风一样轻松、清楚。</p>
-      </section>
+    <main className={styles.page} data-mode={currentMode} data-ambient-motion>
+      <div className={styles.content}>
+        <section className={styles.brand} aria-label="海风小账本">
+          <img className={styles.homeIsland} src={homeIslandIcon} alt="" />
+          <div className={styles.brandTitle}>
+            <img src={flowerIcon} alt="" />
+            <span>海风小账本</span>
+            <img src={leafIcon} alt="" />
+          </div>
+          <p><i />记录生活，遇见美好<i /></p>
+        </section>
 
-      <Card className={styles.card}>
-        <header className={styles.header}>
-          <h1>{content.title}</h1>
-          <p>{content.introduction}</p>
-        </header>
+        <section className={styles.card}>
+          <header className={currentMode === 'login' ? styles.visuallyHidden : styles.modeHeader}>
+            <h1>{content.title}</h1>
+            {content.introduction ? <p>{content.introduction}</p> : null}
+          </header>
 
-        <form className={styles.form} onSubmit={submit} noValidate>
-          {currentMode !== 'reset-password' ? (
-            <TextField
-              ref={emailRef}
-              id="auth-email"
-              label="邮箱"
-              type="email"
-              autoComplete="email"
-              aria-describedby={statusDescriptionId}
-              error={fieldErrors.email}
-              value={email}
-              onChange={(event) => {
-                setEmail(event.target.value);
-                clearFieldFeedback('email');
-              }}
-              required
-            />
-          ) : (
-            <>
-              <TextField
-                ref={passwordRef}
-                id="auth-new-password"
-                label="新密码"
-                type="password"
-                autoComplete="new-password"
-                description="至少 8 个字符"
-                aria-describedby={statusDescriptionId}
-                error={fieldErrors.password}
-                value={password}
-                onChange={(event) => {
-                  setPassword(event.target.value);
-                  clearFieldFeedback('password', 'confirmation');
-                }}
-                required
-              />
-              <TextField
-                ref={confirmationRef}
-                id="auth-password-confirmation"
-                label="确认新密码"
-                type="password"
-                autoComplete="new-password"
-                aria-describedby={statusDescriptionId}
-                error={fieldErrors.confirmation}
-                value={confirmation}
-                onChange={(event) => {
-                  setConfirmation(event.target.value);
-                  clearFieldFeedback('confirmation');
-                }}
-                required
-              />
-            </>
-          )}
+          <form className={styles.form} onSubmit={submit} noValidate>
+            {currentMode !== 'reset-password' ? (
+              <div className={styles.fieldGroup}>
+                <div className={styles.field} data-invalid={fieldErrors.email ? 'true' : 'false'}>
+                  <EnvelopeSimple aria-hidden="true" weight="duotone" />
+                  <label className={styles.visuallyHidden} htmlFor="auth-email">邮箱</label>
+                  <input
+                    ref={emailRef}
+                    id="auth-email"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    aria-describedby={describedBy('email')}
+                    aria-invalid={fieldErrors.email ? 'true' : undefined}
+                    placeholder="邮箱"
+                    value={email}
+                    onChange={(event) => {
+                      setEmail(event.target.value);
+                      clearFieldFeedback('email');
+                    }}
+                    required
+                  />
+                </div>
+                {fieldErrors.email ? <small id="auth-email-error" className={styles.fieldError} role="alert">{fieldErrors.email}</small> : null}
+              </div>
+            ) : null}
 
-          {currentMode === 'login' ? (
-            <TextField
-              ref={passwordRef}
-              id="auth-password"
-              label="密码"
-              type="password"
-              autoComplete="current-password"
-              aria-describedby={statusDescriptionId}
-              error={fieldErrors.password}
-              value={password}
-              onChange={(event) => {
-                setPassword(event.target.value);
-                clearFieldFeedback('password');
-              }}
-              required
-            />
-          ) : null}
+            {currentMode !== 'forgot-password' ? (
+              <div className={styles.fieldGroup}>
+                <div className={styles.field} data-invalid={fieldErrors.password ? 'true' : 'false'}>
+                  <img src={lockIcon} alt="" />
+                  <label className={styles.visuallyHidden} htmlFor="auth-password">
+                    {currentMode === 'reset-password' ? '新密码' : '密码'}
+                  </label>
+                  <input
+                    ref={passwordRef}
+                    id="auth-password"
+                    type={passwordVisible ? 'text' : 'password'}
+                    autoComplete={currentMode === 'login' ? 'current-password' : 'new-password'}
+                    aria-describedby={describedBy('password')}
+                    aria-invalid={fieldErrors.password ? 'true' : undefined}
+                    placeholder={currentMode === 'reset-password' ? '新密码' : '密码'}
+                    value={password}
+                    onChange={(event) => {
+                      setPassword(event.target.value);
+                      clearFieldFeedback('password', 'confirmation');
+                    }}
+                    required
+                  />
+                  <button
+                    className={styles.eyeButton}
+                    type="button"
+                    aria-label={passwordVisible ? '隐藏密码' : '显示密码'}
+                    aria-pressed={passwordVisible}
+                    onClick={() => setPasswordVisible((visible) => !visible)}
+                  >
+                    <img src={eyeIcon} alt="" />
+                  </button>
+                </div>
+                {fieldErrors.password ? <small id="auth-password-error" className={styles.fieldError} role="alert">{fieldErrors.password}</small> : null}
+              </div>
+            ) : null}
 
-          {status ? (
-            <p id={AUTH_STATUS_ID} className={status.kind === 'error' ? styles.error : styles.success} role={status.kind === 'error' ? 'alert' : 'status'}>
-              {status.message}
-            </p>
-          ) : null}
+            {currentMode === 'register' || currentMode === 'reset-password' ? (
+              <div className={styles.fieldGroup}>
+                <div className={styles.field} data-invalid={fieldErrors.confirmation ? 'true' : 'false'}>
+                  <img src={lockIcon} alt="" />
+                  <label className={styles.visuallyHidden} htmlFor="auth-password-confirmation">
+                    {currentMode === 'reset-password' ? '确认新密码' : '确认密码'}
+                  </label>
+                  <input
+                    ref={confirmationRef}
+                    id="auth-password-confirmation"
+                    type={passwordVisible ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    aria-describedby={describedBy('confirmation')}
+                    aria-invalid={fieldErrors.confirmation ? 'true' : undefined}
+                    placeholder={currentMode === 'reset-password' ? '确认新密码' : '确认密码'}
+                    value={confirmation}
+                    onChange={(event) => {
+                      setConfirmation(event.target.value);
+                      clearFieldFeedback('confirmation');
+                    }}
+                    required
+                  />
+                </div>
+                {fieldErrors.confirmation ? <small id="auth-confirmation-error" className={styles.fieldError} role="alert">{fieldErrors.confirmation}</small> : null}
+              </div>
+            ) : null}
 
-          <PrimaryButton className={styles.submit} type="submit" busy={busy}>
-            {currentMode === 'login'
-              ? '登录'
-              : currentMode === 'forgot-password'
-                ? '发送重置邮件'
-                : '更新密码'}
-          </PrimaryButton>
+            {currentMode === 'login' ? (
+              <div className={styles.optionsRow}>
+                <label className={styles.rememberControl}>
+                  <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} />
+                  <span>记住我</span>
+                </label>
+                <button type="button" aria-label="忘记密码" disabled={busy} onClick={() => changeMode('forgot-password')}>忘记密码？</button>
+              </div>
+            ) : null}
 
-          {currentMode === 'login' ? (
-            <button className={styles.textButton} type="button" aria-label="忘记密码" disabled={busy} onClick={() => changeMode('forgot-password')}>
-              忘记密码？
-            </button>
-          ) : null}
-          {currentMode === 'forgot-password' ? (
-            <button className={styles.textButton} type="button" disabled={busy} onClick={() => changeMode('login')}>
-              返回登录
-            </button>
-          ) : null}
-        </form>
-      </Card>
+            {status ? (
+              <p id={AUTH_STATUS_ID} className={status.kind === 'error' ? styles.error : styles.success} role={status.kind === 'error' ? 'alert' : 'status'}>
+                {status.message}
+              </p>
+            ) : null}
+
+            <button className={styles.submit} type="submit" disabled={busy} aria-busy={busy}>{submitLabel}</button>
+
+            {currentMode === 'login' ? (
+              <button className={styles.secondary} type="button" disabled={busy} onClick={() => changeMode('register')}>注册账号</button>
+            ) : null}
+            {currentMode === 'register' || currentMode === 'forgot-password' ? (
+              <button className={styles.secondary} type="button" disabled={busy} onClick={() => changeMode('login')}>返回登录</button>
+            ) : null}
+          </form>
+        </section>
+
+        {currentMode === 'login' ? (
+          <section className={styles.alternativeLogin} aria-label="其他登录方式">
+            <div className={styles.divider}><span>或</span></div>
+            <div className={styles.socialButtons}>
+              <button type="button" onClick={() => showNotice('微信登录暂未配置')}><img src={wechatIcon} alt="" />微信登录</button>
+              <button type="button" onClick={() => showNotice('游客体验将在正式环境开放')}><img src={guestIcon} alt="" />游客体验</button>
+            </div>
+          </section>
+        ) : null}
+
+        {currentMode === 'login' ? (
+          <p className={styles.agreement}>
+            登录即表示同意
+            <button type="button" onClick={() => showNotice('用户协议将在正式发布前补充')}>《用户协议》</button>
+            和
+            <button type="button" onClick={() => showNotice('隐私政策将在正式发布前补充')}>《隐私政策》</button>
+          </p>
+        ) : null}
+      </div>
     </main>
   );
 }

@@ -5,6 +5,17 @@ async function readyForScreenshot(page: Page) {
   await page.evaluate(async () => {
     await document.fonts.ready;
   });
+  await page.getByRole('main').evaluate(async (element) => {
+    const match = getComputedStyle(element).backgroundImage.match(/^url\(["']?(.*?)["']?\)$/);
+    if (!match?.[1]) return;
+    await new Promise<void>((resolve, reject) => {
+      const image = new Image();
+      image.addEventListener('load', () => resolve(), { once: true });
+      image.addEventListener('error', () => reject(new Error('登录背景加载失败')), { once: true });
+      image.src = match[1];
+      if (image.complete && image.naturalWidth > 0) resolve();
+    });
+  });
 }
 
 async function expectScreenshot(page: Page, filename: string) {
@@ -14,12 +25,7 @@ async function expectScreenshot(page: Page, filename: string) {
 
 async function openLogin(page: Page) {
   await page.goto('?fixture=logged-out&visual=1');
-  await expect(page.getByRole('heading', { name: '欢迎回来' })).toBeVisible();
-}
-
-async function openHome(page: Page) {
-  await page.goto('?fixture=logged-in&visual=1');
-  await expect(page.getByRole('navigation', { name: '主要导航' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '海风小账本' })).toBeVisible();
 }
 
 test('390x844 login', async ({ page }) => {
@@ -43,20 +49,6 @@ test('390x844 recovery password', async ({ page }) => {
   await expectScreenshot(page, '390x844-recovery.png');
 });
 
-test('390x844 home', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await openHome(page);
-  await expectScreenshot(page, '390x844-home.png');
-});
-
-test('390x844 entry dialog', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await openHome(page);
-  await page.getByRole('button', { name: '记账', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: '记账功能建设中' })).toBeVisible();
-  await expectScreenshot(page, '390x844-entry-dialog.png');
-});
-
 for (const viewport of [
   { width: 320, height: 568 },
   { width: 430, height: 932 },
@@ -65,11 +57,5 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     await openLogin(page);
     await expectScreenshot(page, `${viewport.width}x${viewport.height}-login.png`);
-  });
-
-  test(`${viewport.width}x${viewport.height} home`, async ({ page }) => {
-    await page.setViewportSize(viewport);
-    await openHome(page);
-    await expectScreenshot(page, `${viewport.width}x${viewport.height}-home.png`);
   });
 }
