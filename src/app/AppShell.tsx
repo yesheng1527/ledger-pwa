@@ -3,6 +3,12 @@ import { flushSync } from 'react-dom';
 import { X } from '@phosphor-icons/react';
 import type { LedgerViewModel } from '../view-model/ledger-view-model';
 import splashBackground from '../assets/reference-ui-v2/splash-background.webp';
+import homeBackground from '../assets/reference-ui-v2/home-background.webp';
+import transactionsBackground from '../assets/reference-ui-v2/transactions-background.webp';
+import entryBackground from '../assets/reference-ui-v2/entry-background.webp';
+import statisticsBackground from '../assets/reference-ui-v2/statistics-background.webp';
+import profileBackground from '../assets/reference-ui-v2/profile-background.webp';
+import profileSubpageBackground from '../assets/reference-ui-v2/profile-subpage-background.webp';
 import {
   EntryPage,
   HomePage,
@@ -27,7 +33,23 @@ export type AppShellProps = {
 };
 
 type ViewTransitionDocument = Document & {
-  startViewTransition?: (update: () => void) => void;
+  startViewTransition?: (update: () => void) => { finished: Promise<void> };
+};
+
+const pageBackgrounds: Record<AppPage, string> = {
+  home: homeBackground,
+  transactions: transactionsBackground,
+  entry: entryBackground,
+  statistics: statisticsBackground,
+  profile: profileBackground,
+};
+
+const pageOrder: Record<AppPage, number> = {
+  home: 0,
+  transactions: 1,
+  entry: 2,
+  statistics: 3,
+  profile: 4,
 };
 
 function shouldShowSplash(): boolean {
@@ -45,8 +67,12 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
   const [feedback, setFeedback] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
   const [backgrounds, setBackgrounds] = useState<BackgroundOverrides>({});
   const [splashVisible, setSplashVisible] = useState(shouldShowSplash);
+  const [splashClosing, setSplashClosing] = useState(false);
   const feedbackTimer = useRef<number | null>(null);
   const fallbackTransitionTimer = useRef<number | null>(null);
+  const splashTimer = useRef<number | null>(null);
+  const navigationRevision = useRef(0);
+  const preloadedBackgrounds = useRef(new Map<string, Promise<void>>());
   const backgroundRevision = useRef(0);
   const phoneRef = useRef<HTMLDivElement>(null);
   const pageStageRef = useRef<HTMLDivElement>(null);
@@ -61,11 +87,61 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
   }, []);
 
   useEffect(() => {
+    const sources = [
+      backgrounds.splash ?? splashBackground,
+      backgrounds.home ?? homeBackground,
+      backgrounds.transactions ?? transactionsBackground,
+      backgrounds.entry ?? entryBackground,
+      backgrounds.statistics ?? statisticsBackground,
+      backgrounds.profile ?? profileBackground,
+      backgrounds.profileSubpage ?? profileSubpageBackground,
+    ];
+    sources.forEach((source) => { void preloadBackground(source); });
+  }, [backgrounds]);
+
+  function preloadBackground(source: string): Promise<void> {
+    const existing = preloadedBackgrounds.current.get(source);
+    if (existing) return existing;
+    const pending = new Promise<void>((resolve) => {
+      const image = new Image();
+      const finish = () => resolve();
+      const decode = () => {
+        if (typeof image.decode === 'function') void image.decode().catch(() => undefined).finally(finish);
+        else finish();
+      };
+      image.onload = decode;
+      image.onerror = finish;
+      image.src = source;
+      if (image.complete) decode();
+    });
+    preloadedBackgrounds.current.set(source, pending);
+    return pending;
+  }
+
+  function dismissSplash() {
+    if (!splashVisible || splashClosing) return;
+    const reducedMotion = typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const staticTestMode = import.meta.env.MODE === 'test'
+      || document.documentElement.dataset.visualTest === 'true';
+    if (reducedMotion || staticTestMode) {
+      setSplashVisible(false);
+      return;
+    }
+    setSplashClosing(true);
+    splashTimer.current = window.setTimeout(() => {
+      setSplashVisible(false);
+      setSplashClosing(false);
+      splashTimer.current = null;
+    }, 280);
+  }
+
+  useEffect(() => {
     if (!splashVisible) return undefined;
     sessionStorage.setItem('seabreeze-splash-seen', 'true');
-    const timer = window.setTimeout(() => setSplashVisible(false), 450);
+    const timer = window.setTimeout(dismissSplash, 450);
     return () => window.clearTimeout(timer);
-  }, [splashVisible]);
+  }, [splashVisible, splashClosing]);
 
   const showFeedback = useCallback((message: string, tone: 'info' | 'success' | 'error' = 'info') => {
     if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current);
@@ -79,7 +155,13 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
   useEffect(() => () => {
     if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current);
     if (fallbackTransitionTimer.current !== null) window.clearTimeout(fallbackTransitionTimer.current);
+    if (splashTimer.current !== null) window.clearTimeout(splashTimer.current);
   }, []);
+
+  function clearNavigationDirection() {
+    delete document.documentElement.dataset.navigationDirection;
+    if (phoneRef.current) delete phoneRef.current.dataset.navigationDirection;
+  }
 
   function clearFallbackTransition() {
     if (fallbackTransitionTimer.current !== null) {
@@ -88,6 +170,7 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
     }
     phoneRef.current?.querySelectorAll(`.${styles.outgoingPageStage}`).forEach((element) => element.remove());
     pageStageRef.current?.classList.remove(styles.incomingPageStage);
+    clearNavigationDirection();
   }
 
   function runFallbackTransition(update: () => void) {
@@ -108,30 +191,47 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
 
     flushSync(update);
     pageStage.classList.add(styles.incomingPageStage);
-    fallbackTransitionTimer.current = window.setTimeout(clearFallbackTransition, 280);
+    fallbackTransitionTimer.current = window.setTimeout(clearFallbackTransition, 420);
   }
 
   function switchPage(next: AppPage, prepare?: () => void) {
     if (next === page) return;
-    const update = () => {
-      prepare?.();
-      setPage(next);
-    };
-    const transitionDocument = document as ViewTransitionDocument;
     const reducedMotion = typeof window.matchMedia === 'function'
       && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const staticTestMode = import.meta.env.MODE === 'test'
       || document.documentElement.dataset.visualTest === 'true';
+    const requestRevision = ++navigationRevision.current;
+
+    const startTransition = () => {
+      if (navigationRevision.current !== requestRevision) return;
+      const update = () => {
+        prepare?.();
+        setPage(next);
+      };
+      const transitionDocument = document as ViewTransitionDocument;
+      const direction = pageOrder[next] >= pageOrder[page] ? 'forward' : 'backward';
+      document.documentElement.dataset.navigationDirection = direction;
+      if (phoneRef.current) phoneRef.current.dataset.navigationDirection = direction;
+
+      if (reducedMotion || staticTestMode) {
+        flushSync(update);
+        clearNavigationDirection();
+        return;
+      }
+      if (typeof transitionDocument.startViewTransition === 'function') {
+        const transition = transitionDocument.startViewTransition(() => flushSync(update));
+        void transition.finished.catch(() => undefined).finally(clearNavigationDirection);
+        return;
+      }
+      runFallbackTransition(update);
+    };
 
     if (reducedMotion || staticTestMode) {
-      flushSync(update);
+      startTransition();
       return;
     }
-    if (typeof transitionDocument.startViewTransition === 'function') {
-      transitionDocument.startViewTransition(() => flushSync(update));
-      return;
-    }
-    runFallbackTransition(update);
+    const targetBackground = backgrounds[next] ?? pageBackgrounds[next];
+    void preloadBackground(targetBackground).then(startTransition);
   }
 
   function openEntry(initialCategory?: string) {
@@ -220,10 +320,11 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
         {splashVisible ? (
           <section
             className={styles.splashScreen}
+            data-closing={splashClosing ? 'true' : 'false'}
             style={{ backgroundImage: `url(${backgrounds.splash ?? splashBackground})` }}
             aria-label="开屏页"
           >
-            <button type="button" aria-label="跳过开屏页" title="跳过" onClick={() => setSplashVisible(false)}>
+            <button type="button" aria-label="跳过开屏页" title="跳过" onClick={dismissSplash}>
               <X />
             </button>
           </section>
