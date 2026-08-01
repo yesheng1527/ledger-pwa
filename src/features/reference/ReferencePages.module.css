@@ -12,7 +12,6 @@
   color: #202220;
   letter-spacing: 0;
   transform: translateZ(0);
-  animation: pageEnter 320ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
 }
 
 .entryPage {
@@ -1081,7 +1080,7 @@
   content: '';
   pointer-events: none;
   transform: translateX(0);
-  transition: transform 420ms cubic-bezier(0.22, 0.8, 0.2, 1);
+  transition: transform 220ms cubic-bezier(0.22, 0.72, 0.2, 1);
   will-change: transform;
 }
 
@@ -1123,12 +1122,12 @@
 
 .navButton[data-active='true'] .navIcon,
 .entryNavButton[data-active='true'] .navIcon {
-  animation: navPop 300ms cubic-bezier(0.2, 0.8, 0.25, 1.25) both;
+  animation: navPop 240ms cubic-bezier(0.2, 0.8, 0.25, 1.18) both;
 }
 
 .navButton[data-active='true'] > span:last-child,
 .entryNavButton[data-active='true'] > span:last-child {
-  animation: navLabelIn 280ms ease-out both;
+  animation: navLabelIn 220ms ease-out both;
 }
 
 .navButton:active,
@@ -2230,7 +2229,7 @@
   z-index: 30;
   inset: 0;
   background: transparent;
-  animation: subpageIn 340ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
+  animation: subpageIn 240ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
 }
 
 .subpageHeader {
@@ -2580,41 +2579,26 @@
 .simpleHeader,
 .centerHeader,
 .entryHeader,
-.profileIdentity {
-  animation: contentEnter 300ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
-}
-
+.profileIdentity,
 .balanceCard,
 .filterRow,
 .statisticsFilters,
-.amountInput {
-  animation: contentEnter 320ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
-}
-
+.amountInput,
 .quickCard,
 .chipRow,
 .metricGrid,
 .entryCategoryGrid,
-.settingsArea > :first-child {
-  animation: contentEnter 340ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
-}
-
+.settingsArea > :first-child,
 .recentCard,
 .ledgerList,
 .donutCard,
 .entryDetails,
-.settingsArea > :nth-child(2) {
-  animation: contentEnter 360ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
-}
-
+.settingsArea > :nth-child(2),
 .trendCard,
 .saveButton,
-.logoutCard {
-  animation: contentEnter 380ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
-}
-
+.logoutCard,
 .compareCard {
-  animation: contentEnter 400ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
+  animation: none;
 }
 
 @keyframes pageEnter {

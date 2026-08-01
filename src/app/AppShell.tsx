@@ -32,10 +32,6 @@ export type AppShellProps = {
   onSignOut?: () => Promise<void>;
 };
 
-type ViewTransitionDocument = Document & {
-  startViewTransition?: (update: () => void) => { finished: Promise<void> };
-};
-
 const pageBackgrounds: Record<AppPage, string> = {
   home: homeBackground,
   transactions: transactionsBackground,
@@ -168,12 +164,11 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
       window.clearTimeout(fallbackTransitionTimer.current);
       fallbackTransitionTimer.current = null;
     }
-    phoneRef.current?.querySelectorAll(`.${styles.outgoingPageStage}`).forEach((element) => element.remove());
     pageStageRef.current?.classList.remove(styles.incomingPageStage);
     clearNavigationDirection();
   }
 
-  function runFallbackTransition(update: () => void) {
+  function runLightweightTransition(update: () => void, targetBackground: string) {
     const phone = phoneRef.current;
     const pageStage = pageStageRef.current;
     if (!phone || !pageStage) {
@@ -182,16 +177,10 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
     }
 
     clearFallbackTransition();
-    const outgoingStage = pageStage.cloneNode(true) as HTMLDivElement;
-    outgoingStage.classList.add(styles.outgoingPageStage);
-    outgoingStage.setAttribute('aria-hidden', 'true');
-    outgoingStage.setAttribute('inert', '');
-    outgoingStage.style.viewTransitionName = 'none';
-    phone.append(outgoingStage);
-
+    phone.style.backgroundImage = `url(${targetBackground})`;
     flushSync(update);
     pageStage.classList.add(styles.incomingPageStage);
-    fallbackTransitionTimer.current = window.setTimeout(clearFallbackTransition, 420);
+    fallbackTransitionTimer.current = window.setTimeout(clearFallbackTransition, 230);
   }
 
   function switchPage(next: AppPage, prepare?: () => void) {
@@ -208,8 +197,8 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
         prepare?.();
         setPage(next);
       };
-      const transitionDocument = document as ViewTransitionDocument;
       const direction = pageOrder[next] >= pageOrder[page] ? 'forward' : 'backward';
+      const targetBackground = backgrounds[next] ?? pageBackgrounds[next];
       document.documentElement.dataset.navigationDirection = direction;
       if (phoneRef.current) phoneRef.current.dataset.navigationDirection = direction;
 
@@ -218,12 +207,7 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
         clearNavigationDirection();
         return;
       }
-      if (typeof transitionDocument.startViewTransition === 'function') {
-        const transition = transitionDocument.startViewTransition(() => flushSync(update));
-        void transition.finished.catch(() => undefined).finally(clearNavigationDirection);
-        return;
-      }
-      runFallbackTransition(update);
+      runLightweightTransition(update, targetBackground);
     };
 
     if (reducedMotion || staticTestMode) {

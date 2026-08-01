@@ -16,6 +16,9 @@
   min-height: 0;
   overflow: hidden;
   background: #fffaf2;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
   color: #1f211f;
   box-shadow: 0 12px 34px rgb(96 69 31 / 14%);
 }
@@ -24,7 +27,7 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: #fffaf2;
+  background: transparent;
   backface-visibility: hidden;
   contain: layout paint;
   isolation: isolate;
@@ -33,33 +36,24 @@
 }
 
 .phone[data-navigation-direction='forward'] {
-  --page-enter-x: 10px;
+  --page-enter-x: 5px;
   --page-exit-x: -7px;
 }
 
 .phone[data-navigation-direction='backward'] {
-  --page-enter-x: -10px;
+  --page-enter-x: -5px;
   --page-exit-x: 7px;
 }
 
-.outgoingPageStage {
-  z-index: 40;
-  pointer-events: none;
-  animation: appPageOut 320ms cubic-bezier(0.4, 0, 0.2, 1) both;
-}
-
 .incomingPageStage {
-  animation: appPageIn 380ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
-}
-
-@keyframes appPageOut {
-  from { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
-  to { opacity: 0; transform: translate3d(var(--page-exit-x, -7px), 0, 0) scale(0.997); }
+  z-index: 1;
+  animation: appPageIn 210ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
+  will-change: opacity, transform;
 }
 
 @keyframes appPageIn {
-  from { opacity: 0.04; transform: translate3d(var(--page-enter-x, 10px), 0, 0) scale(0.998); }
-  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  from { opacity: 0.88; transform: translate3d(var(--page-enter-x, 4px), 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 
 .feedback {
@@ -157,7 +151,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .feedback,
-  .outgoingPageStage,
   .incomingPageStage {
     animation: none;
     transition: none;
