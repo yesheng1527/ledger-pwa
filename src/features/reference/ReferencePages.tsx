@@ -261,9 +261,31 @@ function NavIcon({ page }: { page: AppPage }) {
   return <img src={navigationArt[page]} alt="" />;
 }
 
+let lastNavigationIndex = 0;
+
 function BottomNavigation({ active, onNavigate }: { active: AppPage; onNavigate(page: AppPage): void }) {
+  const activeIndex = navigationItems.findIndex((item) => item.id === active);
+  const [visualIndex, setVisualIndex] = useState(lastNavigationIndex);
+
+  useEffect(() => {
+    if (visualIndex === activeIndex) {
+      lastNavigationIndex = activeIndex;
+      return undefined;
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      setVisualIndex(activeIndex);
+      lastNavigationIndex = activeIndex;
+    });
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [activeIndex, visualIndex]);
+
   return (
-    <nav className={styles.bottomNav} aria-label="主要导航">
+    <nav
+      className={styles.bottomNav}
+      data-active-index={visualIndex}
+      aria-label="主要导航"
+    >
       {navigationItems.map((item) => (
         <button
           key={item.id}
