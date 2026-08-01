@@ -49,13 +49,17 @@ body {
  * continuous seaside scene through the safe area.
  */
 @media (max-width: 560px) {
-  html,
-  body {
+  html {
     background-color: #bde6f4;
     background-image: url('../assets/auth-login/login-background.webp');
     background-position: center top;
     background-repeat: no-repeat;
     background-size: cover;
+  }
+
+  body {
+    background-color: transparent;
+    background-image: none;
   }
 }
 

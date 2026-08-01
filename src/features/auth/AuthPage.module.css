@@ -17,6 +17,13 @@
   isolation: isolate;
 }
 
+@media (max-width: 560px) {
+  .page {
+    background-color: transparent;
+    background-image: none;
+  }
+}
+
 .content {
   display: flex;
   min-height: 100%;
