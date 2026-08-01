@@ -286,18 +286,14 @@ function BottomNavigation({ active, onNavigate }: { active: AppPage; onNavigate(
       data-active-index={visualIndex}
       aria-label="主要导航"
     >
-      {navigationItems.map((item, itemIndex) => (
+      {navigationItems.map((item) => (
         <button
           key={item.id}
           type="button"
           className={item.id === 'entry' ? styles.entryNavButton : styles.navButton}
           data-active={item.id === active ? 'true' : 'false'}
           aria-current={item.id === active ? 'page' : undefined}
-          onClick={() => {
-            setVisualIndex(itemIndex);
-            lastNavigationIndex = itemIndex;
-            onNavigate(item.id);
-          }}
+          onClick={() => onNavigate(item.id)}
         >
           <span className={styles.navIcon}><NavIcon page={item.id} /></span>
           <span>{item.label}</span>

@@ -16,9 +16,6 @@
   min-height: 0;
   overflow: hidden;
   background: #fffaf2;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
   color: #1f211f;
   box-shadow: 0 12px 34px rgb(96 69 31 / 14%);
 }
@@ -27,33 +24,28 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: transparent;
-  backface-visibility: hidden;
   contain: layout paint;
-  isolation: isolate;
-  transform: translateZ(0);
   view-transition-name: ledger-page;
 }
 
-.phone[data-navigation-direction='forward'] {
-  --page-enter-x: 22px;
-  --page-exit-x: -7px;
-}
-
-.phone[data-navigation-direction='backward'] {
-  --page-enter-x: -22px;
-  --page-exit-x: 7px;
+.outgoingPageStage {
+  z-index: 40;
+  pointer-events: none;
+  animation: appPageOut 180ms ease-in both;
 }
 
 .incomingPageStage {
-  z-index: 1;
-  animation: appPageIn 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  will-change: transform;
+  animation: appPageIn 260ms cubic-bezier(0.22, 0.78, 0.24, 1) both;
+}
+
+@keyframes appPageOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 @keyframes appPageIn {
-  from { opacity: 0.97; transform: translate3d(var(--page-enter-x, 22px), 0, 0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .feedback {
@@ -101,13 +93,7 @@
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
-  animation: splashEnter 360ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
-  will-change: opacity, transform;
-}
-
-.splashScreen[data-closing='true'] {
-  pointer-events: none;
-  animation: splashExit 280ms cubic-bezier(0.4, 0, 1, 1) both;
+  animation: splashEnter 320ms ease-out both;
 }
 
 .splashScreen button {
@@ -131,13 +117,8 @@
 }
 
 @keyframes splashEnter {
-  from { opacity: 0.25; transform: scale(1.006); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-@keyframes splashExit {
-  from { opacity: 1; transform: scale(1); }
-  to { opacity: 0; transform: scale(1.006); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @media (max-width: 560px) {
@@ -151,6 +132,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .feedback,
+  .outgoingPageStage,
   .incomingPageStage {
     animation: none;
     transition: none;
