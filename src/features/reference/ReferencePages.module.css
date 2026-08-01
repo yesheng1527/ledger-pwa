@@ -1022,34 +1022,67 @@
 .bottomNav {
   position: absolute;
   z-index: 20;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  right: 12px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  left: 12px;
   display: grid;
-  height: calc(82px + env(safe-area-inset-bottom));
+  height: 74px;
   grid-template-columns: repeat(5, 1fr);
-  align-items: end;
-  padding-bottom: env(safe-area-inset-bottom);
-  border-top: 1px solid rgb(218 193 157 / 32%);
-  background: rgb(255 251 244 / 93%);
-  box-shadow: 0 -2px 12px rgb(117 79 33 / 4%);
-  backdrop-filter: blur(7px);
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 72%);
+  border-radius: 28px;
+  padding: 6px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 66%), rgb(245 249 250 / 42%));
+  box-shadow:
+    0 14px 34px rgb(31 58 65 / 18%),
+    inset 0 1px 0 rgb(255 255 255 / 88%),
+    inset 0 -1px 0 rgb(255 255 255 / 36%);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
   contain: layout paint;
+}
+
+.bottomNav::before {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 0%, rgb(255 255 255 / 56%), transparent 42%),
+    linear-gradient(105deg, rgb(255 255 255 / 16%), transparent 48%);
+  content: '';
+  pointer-events: none;
 }
 
 .navButton,
 .entryNavButton {
+  position: relative;
+  z-index: 1;
   display: grid;
   min-width: 0;
-  height: 72px;
+  height: 62px;
   place-items: center;
   align-content: center;
   gap: 4px;
+  border: 1px solid transparent !important;
+  border-radius: 22px;
   color: #687274 !important;
   font-size: 10px;
+  transition:
+    transform 140ms ease,
+    color 160ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease !important;
 }
 
-.navButton[data-active='true'] {
+.navButton[data-active='true'],
+.entryNavButton[data-active='true'] {
+  border-color: rgb(255 255 255 / 58%) !important;
+  background: rgb(255 255 255 / 38%) !important;
+  box-shadow:
+    0 5px 14px rgb(48 67 73 / 10%),
+    inset 0 1px 0 rgb(255 255 255 / 82%);
   color: #f45d49 !important;
   font-weight: 700;
 }
@@ -1074,29 +1107,28 @@
 }
 
 .entryNavButton {
-  position: relative;
-  height: 80px;
-  color: #fff !important;
-  transform: translateY(-7px);
+  height: 62px;
+  color: #687274 !important;
+  transform: none;
 }
 
 .entryNavButton .navIcon {
-  width: 52px;
-  height: 52px;
-  border: 4px solid #fff8ee;
-  border-radius: 50%;
-  background: #fa5f4b;
-  box-shadow: 0 4px 10px rgb(205 70 43 / 24%);
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .entryNavButton .navIcon svg,
 .entryNavButton .navIcon img {
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
 }
 
 .entryNavButton > span:last-child {
-  color: #f15f4d;
+  color: inherit;
 }
 
 .entryNavButton:active .navIcon {
