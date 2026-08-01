@@ -180,7 +180,7 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
     phone.style.backgroundImage = `url(${targetBackground})`;
     flushSync(update);
     pageStage.classList.add(styles.incomingPageStage);
-    fallbackTransitionTimer.current = window.setTimeout(clearFallbackTransition, 230);
+    fallbackTransitionTimer.current = window.setTimeout(clearFallbackTransition, 360);
   }
 
   function switchPage(next: AppPage, prepare?: () => void) {

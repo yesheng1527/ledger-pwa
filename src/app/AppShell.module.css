@@ -36,23 +36,23 @@
 }
 
 .phone[data-navigation-direction='forward'] {
-  --page-enter-x: 5px;
+  --page-enter-x: 22px;
   --page-exit-x: -7px;
 }
 
 .phone[data-navigation-direction='backward'] {
-  --page-enter-x: -5px;
+  --page-enter-x: -22px;
   --page-exit-x: 7px;
 }
 
 .incomingPageStage {
   z-index: 1;
-  animation: appPageIn 210ms cubic-bezier(0.22, 0.72, 0.2, 1) both;
-  will-change: opacity, transform;
+  animation: appPageIn 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform;
 }
 
 @keyframes appPageIn {
-  from { opacity: 0.88; transform: translate3d(var(--page-enter-x, 4px), 0, 0); }
+  from { opacity: 0.97; transform: translate3d(var(--page-enter-x, 22px), 0, 0); }
   to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 
