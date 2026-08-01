@@ -11,6 +11,26 @@
     <link rel="stylesheet" crossorigin href="/ledger-pwa/assets/index-DFHzgGlu.css">
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"></div>
+    <script>
+      (() => {
+        if (!('serviceWorker' in navigator)) return;
+        const cleanupMessage = 'ledger-pwa-cache-cleared-20260801';
+        const reloadKey = 'ledger-pwa-cache-cleanup-20260801';
+
+        navigator.serviceWorker.addEventListener('message', (event) => {
+          if (event.data !== cleanupMessage || sessionStorage.getItem(reloadKey)) return;
+          sessionStorage.setItem(reloadKey, 'done');
+          location.reload();
+        });
+
+        window.addEventListener('load', () => {
+          navigator.serviceWorker
+            .register('./service-worker.js?v=cleanup-20260801', { updateViaCache: 'none' })
+            .then((registration) => registration.update())
+            .catch(() => undefined);
+        });
+      })();
+    </script>
   </body>
 </html>
