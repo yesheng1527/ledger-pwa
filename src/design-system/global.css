@@ -52,9 +52,6 @@ body {
   html,
   body {
     background-color: #bde6f4;
-  }
-
-  body {
     background-image: url('../assets/auth-login/login-background.webp');
     background-position: center top;
     background-repeat: no-repeat;
