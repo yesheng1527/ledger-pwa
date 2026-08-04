@@ -1,5 +1,5 @@
 const LEDGER_CACHE_PREFIX = 'ledger-pwa';
-const CLEANUP_MESSAGE = 'ledger-pwa-cache-cleared-20260801';
+const CLEANUP_MESSAGE = 'ledger-pwa-cache-cleared-20260804';
 
 self.addEventListener('install', () => {
   self.skipWaiting();

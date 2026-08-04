@@ -1,4 +1,0 @@
-window.LEDGER_SUPABASE_CONFIG = {
-  SUPABASE_URL: "https://your-project-ref.supabase.co",
-  SUPABASE_ANON_KEY: "your-anon-key"
-};
