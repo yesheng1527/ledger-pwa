@@ -1,12 +1,14 @@
-const CACHE_NAME = "ledger-pwa-v53";
+const CACHE_NAME = "ledger-pwa-v54";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css?v=53",
   "./app.js?v=53",
   "./supabase-config.js",
-  "./manifest.webmanifest?v=53",
-  "./app-icon.svg"
+  "./manifest.webmanifest?v=54",
+  "./icons/apple-touch-icon.png?v=54",
+  "./icons/icon-192.png?v=54",
+  "./icons/icon-512.png?v=54"
 ];
 
 self.addEventListener("install", (event) => {
