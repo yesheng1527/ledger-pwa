@@ -1,22 +1,24 @@
-# 轻账本上线说明
+# 海风小账本部署说明
 
-这个项目是纯前端静态 PWA，线上数据使用 Supabase。
+项目使用 Vite 构建，并通过 GitHub Pages 发布。
 
-## 推荐部署方式：Render Static Site
+## 本地验证
 
-1. 把当前项目推到 GitHub、GitLab 或 Bitbucket。
-2. 打开 Render Blueprint：
-   `https://dashboard.render.com/blueprint/new`
-3. 选择这个仓库。
-4. Render 会读取根目录的 `render.yaml`。
-5. 点击 Apply 部署。
+```bash
+npm ci
+npm run test:run
+npm run build
+```
 
-部署成功后会得到类似：
+构建产物位于 `dist/`。发布前应确认：
 
-`https://ledger-pwa.onrender.com`
+- 页面标题为“海风小账本”。
+- `dist/manifest.webmanifest` 存在。
+- `dist/icons/` 包含 180、192、512 像素的海岛图标。
 
-## 需要注意
+## GitHub Pages
 
-- `supabase-config.js` 里现在使用的是 Supabase publishable/anon key，可以放前端。
-- Supabase 必须正确配置 RLS，否则别人可能读写不该读写的数据。
-- 如果换域名，需要在 Supabase Auth 设置里把线上域名加到允许跳转地址。
+仓库的 Pages 发布目录为 `gh-pages` 分支根目录。手动运行
+`Deploy GitHub Pages` 工作流时，它只会构建并发布当前海风版本。
+
+旧版静态站、旧恢复包和旧 Render 部署配置均已移除，禁止重新发布。

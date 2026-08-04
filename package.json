@@ -1,0 +1,44 @@
+{
+  "name": "seabreeze-ledger-pwa",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:connected": "vite --mode integration",
+    "build": "tsc -b && vite build",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:candidate": "playwright test --config playwright.candidate.config.ts",
+    "test:e2e:candidate:phase1": "playwright test --config playwright.seabreeze-phase-1.config.ts",
+    "test:e2e:static": "node scripts/build-static-recovery.mjs && playwright test --config playwright.static.config.ts",
+    "test:e2e:update": "playwright test --update-snapshots",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc -b --pretty false",
+    "verify:visual-gate:phase1": "node scripts/verify-seabreeze-phase-1-visual-gate.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/noto-sans-sc": "5.2.10",
+    "@phosphor-icons/react": "2.1.10",
+    "@supabase/supabase-js": "2.110.7",
+    "dexie": "4.4.4",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "fake-indexeddb": "6.2.5",
+    "jsdom": "29.1.1",
+    "typescript": "7.0.2",
+    "vite": "8.1.5",
+    "vitest": "4.1.10"
+  }
+}

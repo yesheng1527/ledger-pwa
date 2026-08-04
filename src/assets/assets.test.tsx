@@ -1,0 +1,135 @@
+import { describe, expect, it } from 'vitest';
+import { assetRegistry, type AssetKey } from './registry';
+
+const svgSources = import.meta.glob<string>('./**/*.svg', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+});
+
+const required: AssetKey[] = [
+  'brand:shell',
+  'illustration:auth-seaside',
+  'illustration:home-seaside',
+  'illustration:empty-ledger',
+  'illustration:profile-seaside',
+  'nav:home',
+  'nav:ledger',
+  'nav:entry',
+  'nav:statistics',
+  'nav:profile',
+  'category:food',
+  'category:transport',
+  'category:shopping',
+  'category:housing',
+  'category:entertainment',
+  'category:daily',
+  'category:study',
+  'category:medical',
+  'category:travel',
+  'category:income',
+  'category:other',
+  'action:search',
+  'action:calendar',
+  'action:reminder',
+  'action:close',
+  'action:more',
+  'management:budget',
+  'management:account',
+  'management:reminder',
+  'management:backup',
+  'management:theme',
+  'management:preferences',
+  'management:about',
+  'management:sync',
+];
+
+describe('minimal visual asset registry', () => {
+  it('contains every shell asset as an independent file', () => {
+    expect(Object.keys(assetRegistry).sort()).toEqual([...required].sort());
+    for (const key of required) expect(assetRegistry[key]).toMatch(/\.(svg|png|webp)$/);
+  });
+
+  it('does not expose the full reference board to production code', () => {
+    expect(Object.values(assetRegistry).join('\n')).not.toContain('visual-reference');
+  });
+
+  it('uses independent reference-directed raster scenes for the two app heroes', () => {
+    expect(assetRegistry['illustration:home-seaside'])
+      .toMatch(/home-seaside-reference\.webp/);
+    expect(assetRegistry['illustration:profile-seaside'])
+      .toMatch(/profile-seaside-reference\.webp/);
+  });
+
+  it('is immutable at runtime', () => {
+    expect(Object.isFrozen(assetRegistry)).toBe(true);
+  });
+
+  it.each([
+    'illustration:empty-ledger',
+    'category:food',
+    'category:transport',
+    'category:shopping',
+    'category:housing',
+    'category:entertainment',
+    'category:daily',
+    'category:study',
+    'category:medical',
+    'category:travel',
+    'category:income',
+    'category:other',
+  ] as const)('registers %s as an independent SVG asset', (key) => {
+    expect((assetRegistry as Record<string, string>)[key]).toMatch(/\.(svg)(\?|$)/);
+  });
+
+  it('keeps every production SVG text-free and self-contained', () => {
+    expect(Object.keys(svgSources)).toHaveLength(42);
+
+    for (const [path, source] of Object.entries(svgSources)) {
+      const sourceWithoutNamespace = source.replace(
+        /\sxmlns="http:\/\/www\.w3\.org\/2000\/svg"/i,
+        '',
+      );
+
+      expect(source, `${path} has a viewBox`).toMatch(/<svg\b[^>]*\bviewBox="[^"]+"/);
+      expect(source, `${path} has no scripts`).not.toMatch(/<script\b/i);
+      expect(source, `${path} has no foreign objects`).not.toMatch(/<foreignObject\b/i);
+      expect(source, `${path} has no text nodes`).not.toMatch(/<text\b/i);
+      expect(source, `${path} has no event-handler attributes`).not.toMatch(
+        /\son[a-z][a-z0-9:_-]*\s*=/i,
+      );
+      expect(source, `${path} has no executable protocol`).not.toMatch(
+        /(?:javascript|vbscript)\s*:/i,
+      );
+      expect(source, `${path} has no remote or embedded CSS URLs`).not.toMatch(
+        /url\s*\(\s*['"]?\s*(?:https?:|data:)/i,
+      );
+      expect(source, `${path} has no encoded markup characters`).not.toMatch(
+        /&#(?:x[0-9a-f]+|\d+);/i,
+      );
+      expect(sourceWithoutNamespace, `${path} has no remote URLs`).not.toMatch(/https?:/i);
+      expect(source, `${path} has no embedded images`).not.toMatch(/data:image/i);
+      expect(source, `${path} has no image elements`).not.toMatch(/<image\b/i);
+      expect(source, `${path} has no emoji glyphs`).not.toMatch(/\p{Emoji_Presentation}/u);
+      expect(source, `${path} uses rounded strokes`).toContain('stroke-linecap="round"');
+    }
+  });
+
+  it('uses the locked artboards for icons and the auth illustration', () => {
+    for (const [path, source] of Object.entries(svgSources)) {
+      if (
+        path.includes('/categories/')
+        || path.includes('/actions/')
+        || path.includes('/management/')
+      ) {
+        expect(source, path).toContain('viewBox="0 0 48 48"');
+      } else if (path.endsWith('auth-seaside.svg')) {
+        expect(source, path).toContain('viewBox="0 0 390 240"');
+      } else if (path.endsWith('profile-seaside.svg')) {
+        expect(source, path).toContain('viewBox="0 0 390 160"');
+      } else if (path.includes('/icons/')) {
+        expect(source, path).toContain('viewBox="0 0 64 64"');
+      }
+    }
+  });
+});
