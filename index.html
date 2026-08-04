@@ -19,8 +19,8 @@
     <script>
       (() => {
         if (!('serviceWorker' in navigator)) return;
-        const cleanupMessage = 'ledger-pwa-cache-cleared-20260801';
-        const reloadKey = 'ledger-pwa-cache-cleanup-20260801';
+        const cleanupMessage = 'ledger-pwa-cache-cleared-20260804';
+        const reloadKey = 'ledger-pwa-cache-cleanup-20260804';
 
         navigator.serviceWorker.addEventListener('message', (event) => {
           if (event.data !== cleanupMessage || sessionStorage.getItem(reloadKey)) return;
@@ -30,7 +30,7 @@
 
         window.addEventListener('load', () => {
           navigator.serviceWorker
-            .register('./service-worker.js?v=cleanup-20260801', { updateViaCache: 'none' })
+            .register('./service-worker.js?v=cleanup-20260804', { updateViaCache: 'none' })
             .then((registration) => registration.update())
             .catch(() => undefined);
         });
