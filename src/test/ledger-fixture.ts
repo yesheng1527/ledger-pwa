@@ -611,6 +611,14 @@ export function createMutableLedgerFixture(
             ? structuredClone(operation.budget)
             : item
         ));
+      } else if (operation.kind === 'category-budget.create') {
+        fixture.snapshot.categoryBudgets.push(structuredClone(operation.categoryBudget));
+      } else if (operation.kind === 'category-budget.update') {
+        fixture.snapshot.categoryBudgets = fixture.snapshot.categoryBudgets.map((item) => (
+          item.id === operation.categoryBudgetId && item.ledgerId === operation.ledgerId
+            ? structuredClone(operation.categoryBudget)
+            : item
+        ));
       } else if (operation.kind === 'reminder.create') {
         fixture.snapshot.reminders.push(structuredClone(operation.reminder));
       } else if (operation.kind === 'reminder.update') {

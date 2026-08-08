@@ -325,6 +325,68 @@ describe('LocalLedgerRepository', () => {
     });
   });
 
+  it('can choose the server side of a conflict and clears the blocked local operation', async () => {
+    const operation = expenseOperation(18);
+    await repo.saveOperation(operation);
+    await repo.markOperationConflict(operation.operationId, { version: 2 });
+    await repo.resolveConflict(operation.operationId, 'server');
+    expect(await db.conflicts.get(operation.operationId)).toBeUndefined();
+    expect(await db.outbox.get(operation.operationId)).toBeUndefined();
+  });
+
+  it('rebases a local update onto the server version when keeping the local conflict choice', async () => {
+    const create = expenseOperation(21);
+    await repo.saveOperation(create);
+    await repo.markOperationSynced(create.operationId);
+    const updateOperationId = '00000000-0000-4000-8001-000000000221';
+    const update: LedgerOperation = {
+      ...create,
+      operationId: updateOperationId,
+      kind: 'transaction.update',
+      transactionId: create.transaction.id,
+      baseVersion: 1,
+      transaction: { ...create.transaction, operationId: updateOperationId, amountCents: 7000, version: 2 },
+      entries: [{ accountId: bankId, deltaCents: -7000 }],
+    };
+    await repo.saveOperation(update);
+    await repo.markOperationConflict(update.operationId, { id: create.transaction.id, version: 3 });
+    await repo.resolveConflict(update.operationId, 'local');
+    expect(await db.outbox.get(update.operationId)).toMatchObject({
+      status: 'pending',
+      payload: { baseVersion: 3, transaction: { version: 4, amountCents: 7000 } },
+    });
+    expect(await db.conflicts.get(update.operationId)).toBeUndefined();
+  });
+
+  it('restores only the selected ledger from a full local snapshot', async () => {
+    const userId = '00000000-0000-4000-8000-000000000203';
+    await db.ledgers.put({ id: ledgerId, ownerUserId: userId, name: '个人账本', currency: 'CNY', version: 1 });
+    await db.accounts.put(bank());
+    const snapshot = await repo.exportSnapshot();
+    await db.accounts.update(bankId, { name: '已修改名称' });
+    await repo.restoreLedgerSnapshot(snapshot, ledgerId);
+    expect(await db.accounts.get(bankId)).toMatchObject({ name: '储蓄卡' });
+    expect(await db.restoreReceipts.where('ledgerId').equals(ledgerId).count()).toBe(1);
+  });
+
+  it('captures bounded automatic history before writes and can restore a previous version', async () => {
+    await db.accounts.put(bank());
+    await repo.saveOperation(expenseOperation(19));
+    await repo.saveOperation(expenseOperation(20));
+    const history = await repo.listHistory(ledgerId);
+    expect(history[0]).toMatchObject({ transactions: 1 });
+    expect(history[1]).toMatchObject({ transactions: 0 });
+    await repo.restoreHistory(ledgerId, history[0].id);
+    expect(await db.transactions.where('ledgerId').equals(ledgerId).count()).toBe(1);
+    expect((await repo.listHistory(ledgerId)).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('retains at most twelve automatic history versions', async () => {
+    await db.accounts.put(bank());
+    for (let index = 30; index < 45; index += 1) await repo.saveOperation(expenseOperation(index));
+    expect(await repo.listHistory(ledgerId)).toHaveLength(12);
+  });
+
   it('reports unresolved outbox conflicts only for the requested ledger', async () => {
     const otherLedgerId = '00000000-0000-4000-8000-000000000002';
     expect(await repo.hasUnresolvedConflicts(ledgerId)).toBe(false);

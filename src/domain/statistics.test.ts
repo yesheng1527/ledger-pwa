@@ -103,6 +103,28 @@ describe('selectStatistics ranges, budgets and trends', () => {
     ]);
   });
 
+  it('carries unused category budget across the month boundary and reports overspending', () => {
+    const snapshot = fullFixtureSnapshot();
+    snapshot.categoryBudgets.push(
+      { id: '00000000-0000-4000-8000-000000000702', ledgerId: fixtureIds.ledger, categoryId: fixtureIds.foodCategory, month: '2026-06', amountCents: 10000, version: 1, archivedAt: null },
+      { id: '00000000-0000-4000-8000-000000000703', ledgerId: fixtureIds.ledger, categoryId: fixtureIds.foodCategory, month: '2026-07', amountCents: 4000, version: 1, archivedAt: null },
+    );
+    const result = selectStatistics(snapshot, { kind: 'month', month: '2026-07' });
+    expect(result.categoryBudgets).toEqual([
+      expect.objectContaining({
+        categoryId: fixtureIds.foodCategory,
+        amountCents: 14000,
+        carriedCents: 10000,
+        usedCents: 5000,
+        overCents: 0,
+      }),
+    ]);
+
+    snapshot.categoryBudgets = snapshot.categoryBudgets.filter((item) => item.month !== '2026-06');
+    expect(selectStatistics(snapshot, { kind: 'month', month: '2026-07' }).categoryBudgets[0])
+      .toMatchObject({ amountCents: 4000, carriedCents: 0, usedCents: 5000, overCents: 1000 });
+  });
+
   it('handles leap-year year ranges and stable empty buckets', () => {
     const snapshot: LedgerReadSnapshot = {
       ledgerId: fixtureIds.ledger,

@@ -16,10 +16,19 @@ import {
 import type { AppPage } from '../../app/navigation';
 import { navigationItems } from '../../app/navigation';
 import { formatYuan, parsePositiveYuan, parseYuan } from '../../domain/money';
+import {
+  applyBatchCategory,
+  exportLedgerCsv,
+  exportLedgerWorkbook,
+  parseLedgerCsv,
+  parseLedgerWorkbook,
+  type LedgerImportPreview,
+} from '../data-transfer/ledger-files';
 import type { LedgerViewModel } from '../../view-model/ledger-view-model';
 import { useLedgerQuery } from '../../view-model/use-ledger-query';
 import type {
   CreditCardProfile,
+  EntryShortcuts,
   EntryOptions,
   HomeSnapshot,
   ManagedAccount,
@@ -1051,6 +1060,10 @@ export function TransactionsPage({ viewModel, backgrounds, onNavigate, onFeedbac
   const [transactionOverrides, setTransactionOverrides] = useState<Record<string, TransactionPresentation>>({});
   const [deletedTransactionIds, setDeletedTransactionIds] = useState<Set<string>>(() => new Set());
   const [undoTransaction, setUndoTransaction] = useState<{ row: TransactionPresentation; date: string } | null>(null);
+  const [filePanelOpen, setFilePanelOpen] = useState(false);
+  const [importPreview, setImportPreview] = useState<LedgerImportPreview | null>(null);
+  const [fileBusy, setFileBusy] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const undoTimerRef = useRef<number | null>(null);
   const activeMonthKey = monthKeyFromLabel(month) ?? initialMonth;
   const transactionsQuery = useLedgerQuery<TransactionListSnapshot>(
@@ -1245,6 +1258,81 @@ export function TransactionsPage({ viewModel, backgrounds, onNavigate, onFeedbac
     }
   }
 
+  function downloadFile(data: BlobPart, type: string, filename: string) {
+    if (typeof URL.createObjectURL !== 'function') return;
+    const url = URL.createObjectURL(new Blob([data], { type }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function exportTransactions(format: 'csv' | 'xlsx') {
+    if (typeof viewModel.getFileRows !== 'function') {
+      setFileError('当前账本暂不支持文件导出');
+      return;
+    }
+    setFileBusy(true);
+    setFileError(null);
+    try {
+      let rows = await viewModel.getFileRows({
+        month: activeMonthKey,
+        date: selectedDate,
+        accountId: account === '全部账户' ? null : transactionData?.accounts.find((item) => item.name === account)?.id ?? null,
+        categoryId: category === '全部' || category === '收入' ? null : transactionData?.categories.find((item) => item.name === category)?.id ?? null,
+        query,
+      });
+      if (transactionType === '支出') rows = rows.filter((item) => item.type === 'expense');
+      if (transactionType === '收入') rows = rows.filter((item) => item.type === 'income');
+      if (format === 'csv') downloadFile(exportLedgerCsv(rows), 'text/csv;charset=utf-8', `海风流水-${activeMonthKey}.csv`);
+      else {
+        const workbook = await exportLedgerWorkbook(rows);
+        const buffer = workbook.buffer.slice(workbook.byteOffset, workbook.byteOffset + workbook.byteLength) as ArrayBuffer;
+        downloadFile(buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', `海风流水-${activeMonthKey}.xlsx`);
+      }
+      onFeedback(`已按当前日期、账户和类目筛选导出 ${rows.length} 笔流水`, 'success');
+    } catch (caught) {
+      setFileError(caught instanceof Error ? caught.message : '导出失败');
+    } finally {
+      setFileBusy(false);
+    }
+  }
+
+  async function previewImportFile(file: File) {
+    setFileBusy(true);
+    setFileError(null);
+    setImportPreview(null);
+    try {
+      const existing = typeof viewModel.getExistingImportOperationIds === 'function'
+        ? await viewModel.getExistingImportOperationIds()
+        : new Set<string>();
+      const preview = file.name.toLocaleLowerCase().endsWith('.xlsx')
+        ? await parseLedgerWorkbook(await file.arrayBuffer(), existing)
+        : parseLedgerCsv(await file.text(), existing);
+      setImportPreview(preview);
+    } catch (caught) {
+      setFileError(caught instanceof Error ? caught.message : '文件解析失败');
+    } finally {
+      setFileBusy(false);
+    }
+  }
+
+  async function confirmImport() {
+    if (!importPreview || typeof viewModel.importFileRows !== 'function') return;
+    setFileBusy(true);
+    setFileError(null);
+    try {
+      const result = await viewModel.importFileRows(importPreview.rows);
+      setImportPreview((current) => current ? { ...current, errors: [...current.errors, ...result.errors] } : current);
+      onFeedback(`成功导入 ${result.imported} 笔，跳过重复 ${result.duplicates} 笔`, result.errors.length ? 'info' : 'success');
+    } catch (caught) {
+      setFileError(caught instanceof Error ? caught.message : '导入失败');
+    } finally {
+      setFileBusy(false);
+    }
+  }
+
   return (
     <PageFrame background={backgrounds.transactions ?? transactionsBackground} className={styles.transactionsPage}>
       <header className={styles.simpleHeader} data-search={searchOpen ? 'true' : 'false'}>
@@ -1268,6 +1356,7 @@ export function TransactionsPage({ viewModel, backgrounds, onNavigate, onFeedbac
         <button type="button" aria-haspopup="dialog" aria-expanded={monthPickerOpen} onClick={() => setMonthPickerOpen(true)}><img className={styles.actionArt} src={calendarArt} alt="" /> {selectedDate ? monthDateLabel(selectedDate) : month} <CaretDown /></button>
         <button type="button" aria-haspopup="listbox" aria-expanded={filterSheet === 'type'} onClick={() => setFilterSheet((current) => current === 'type' ? null : 'type')}>{transactionType} <CaretDown /></button>
         <button type="button" aria-haspopup="listbox" aria-expanded={filterSheet === 'account'} onClick={() => setFilterSheet((current) => current === 'account' ? null : 'account')}>{account} <CaretDown /></button>
+        <button type="button" aria-label="导入导出流水" onClick={() => setFilePanelOpen(true)}><UploadSimple /> 文件</button>
       </div>
       <div className={styles.chipRow} role="group" aria-label="类目筛选">
         {categoryFilters.map((item) => (
@@ -1327,6 +1416,40 @@ export function TransactionsPage({ viewModel, backgrounds, onNavigate, onFeedbac
           onSelect={setAccount}
           onClose={() => setFilterSheet(null)}
         />
+      ) : null}
+      {filePanelOpen ? (
+        <ReferenceSheet title="导入 / 导出流水" onClose={() => { setFilePanelOpen(false); setImportPreview(null); setFileError(null); }}>
+          <div className={styles.backupActions}>
+            <button type="button" disabled={fileBusy} onClick={() => void exportTransactions('csv')}>按当前筛选导出 CSV</button>
+            <button type="button" disabled={fileBusy} onClick={() => void exportTransactions('xlsx')}>按当前筛选导出 Excel</button>
+            <label>
+              <span>{fileBusy ? '正在解析...' : '选择 CSV / XLSX 预览'}</span>
+              <input type="file" aria-label="选择账单文件" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={fileBusy} onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (file) void previewImportFile(file);
+              }} />
+            </label>
+          </div>
+          {fileError ? <p role="alert" className={styles.sheetFormError}>{fileError}</p> : null}
+          {importPreview ? (
+            <div aria-label="导入预览">
+              <p>预览 {importPreview.rows.length} 行，其中重复 {importPreview.rows.filter((item) => item.duplicate).length} 行；尚未写入账本。</p>
+              <label className={styles.sheetInputField}>
+                <span>批量分类</span>
+                <select aria-label="批量分类" defaultValue="" onChange={(event) => {
+                  if (event.target.value) setImportPreview((current) => current ? applyBatchCategory(current, event.target.value) : current);
+                }}>
+                  <option value="">保持文件分类</option>
+                  {transactionData?.categories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+                </select>
+              </label>
+              <ul>{importPreview.rows.slice(0, 20).map((item) => <li key={`${item.line}-${item.fingerprint}`}>第{item.line}行 · {item.name} · ¥{item.amountYuan}{item.duplicate ? ' · 重复，将跳过' : ''}</li>)}</ul>
+              {importPreview.errors.length ? <div role="alert"><strong>错误报告</strong><ul>{importPreview.errors.map((item) => <li key={`${item.line}-${item.message}`}>第{item.line}行：{item.message}</li>)}</ul></div> : null}
+              <button type="button" className={styles.sheetPrimaryButton} disabled={fileBusy || importPreview.rows.every((item) => item.duplicate)} onClick={() => void confirmImport()}>确认导入非重复流水</button>
+            </div>
+          ) : null}
+        </ReferenceSheet>
       ) : null}
       {selectedTransaction ? (
         <ReferenceSheet title={detailMode === 'detail' ? '流水详情' : detailMode === 'edit' ? '编辑流水' : '确认删除'} onClose={closeTransactionSheet}>
@@ -1589,6 +1712,7 @@ export function EntryPage({
   const [selected, setSelected] = useState(initialCategory ?? '餐饮');
   const [note, setNote] = useState('');
   const [options, setOptions] = useState<ReferenceEntryOptions | null>(null);
+  const [shortcuts, setShortcuts] = useState<EntryShortcuts>({ last: null, templates: [], recentCategoryIds: [] });
   const [accountId, setAccountId] = useState<string | null>(null);
   const [toAccountId, setToAccountId] = useState<string | null>(null);
   const [occurredDate, setOccurredDate] = useState(() => localDateInput(entryNow));
@@ -1610,8 +1734,16 @@ export function EntryPage({
     const getEntryOptions = (viewModel as Partial<LedgerViewModel>).getEntryOptions;
     if (typeof getEntryOptions !== 'function') return;
     let cancelled = false;
-    void getEntryOptions.call(viewModel).then((nextOptions) => {
-      if (!cancelled) setOptions(nextOptions);
+    void Promise.all([
+      getEntryOptions.call(viewModel),
+      typeof viewModel.getEntryShortcuts === 'function'
+        ? viewModel.getEntryShortcuts()
+        : Promise.resolve({ last: null, templates: [], recentCategoryIds: [] }),
+    ]).then(([nextOptions, nextShortcuts]) => {
+      if (!cancelled) {
+        setOptions(nextOptions);
+        setShortcuts(nextShortcuts);
+      }
     }).catch(() => {
       if (!cancelled) setOptions(null);
     });
@@ -1633,7 +1765,11 @@ export function EntryPage({
     const categoryKind = type === '收入' ? 'income' : 'expense';
     const loadedCategories = categoryKind === 'expense' ? options?.expenseCategories : options?.incomeCategories;
     if (loadedCategories) {
-      return loadedCategories.map((category) => ({
+      return [...loadedCategories].sort((left, right) => {
+        const leftIndex = shortcuts.recentCategoryIds.indexOf(left.id);
+        const rightIndex = shortcuts.recentCategoryIds.indexOf(right.id);
+        return (leftIndex === -1 ? 999 : leftIndex) - (rightIndex === -1 ? 999 : rightIndex);
+      }).map((category) => ({
         id: category.id,
         label: category.name,
         iconKey: category.iconKey,
@@ -1648,7 +1784,7 @@ export function EntryPage({
       iconKey: category.key,
       categoryKey: category.key,
     }));
-  }, [customCategoryIcons, options, type]);
+  }, [customCategoryIcons, options, shortcuts.recentCategoryIds, type]);
   const managedCategoryOptions = useMemo(() => {
     const categories = categoryManagerKind === 'expense' ? options?.expenseCategories : options?.incomeCategories;
     return categories?.map((category) => ({
@@ -1807,6 +1943,39 @@ export function EntryPage({
     }
   }
 
+  function applyShortcut(prefill: NonNullable<EntryShortcuts['last']>) {
+    setType(prefill.type === 'expense' ? '支出' : '收入');
+    setAmount((prefill.amountCents / 100).toFixed(2));
+    setAccountId(prefill.accountId);
+    const categories = prefill.type === 'expense' ? options?.expenseCategories : options?.incomeCategories;
+    setSelected(categories?.find((item) => item.id === prefill.categoryId)?.name ?? categories?.[0]?.name ?? '其他');
+    setName(prefill.name);
+    setNote(prefill.note);
+    setError(null);
+    onFeedback('已预填到记账表单，可继续编辑后保存', 'info');
+  }
+
+  async function saveCurrentTemplate() {
+    try {
+      if (!options || typeof viewModel.saveEntryTemplate !== 'function' || type === '转账') throw new Error('当前内容不能保存为模板');
+      const amountCents = parsePositiveYuan(amount);
+      const categories = type === '支出' ? options.expenseCategories : options.incomeCategories;
+      const category = categories.find((item) => item.name === selected) ?? categories[0];
+      const account = options.accounts.find((item) => item.id === accountId) ?? options.accounts[0];
+      if (!category || !account) throw new Error('请选择账户和分类');
+      await viewModel.saveEntryTemplate({
+        label: name.trim() || `${selected}模板`, type: type === '支出' ? 'expense' : 'income',
+        amountCents, accountId: account.id, categoryId: category.id,
+      });
+      setShortcuts(await viewModel.getEntryShortcuts());
+      onFeedback('常用记账模板已保存', 'success');
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : '模板保存失败';
+      setError(message);
+      onFeedback(message, 'error');
+    }
+  }
+
   return (
     <PageFrame background={backgrounds.entry ?? entryBackground} className={styles.entryPage}>
       <header className={styles.entryHeader}>
@@ -1833,6 +2002,13 @@ export function EntryPage({
           }}
         />
       </label>
+      {(shortcuts.last || shortcuts.templates.length) ? (
+        <div className={styles.chipRow} aria-label="快捷记账">
+          {shortcuts.last ? <button type="button" onClick={() => applyShortcut(shortcuts.last!)}>重复上一笔</button> : null}
+          {shortcuts.templates.map((template) => <button key={template.id} type="button" onClick={() => applyShortcut(template)}>{template.label}</button>)}
+        </div>
+      ) : null}
+      {type !== '转账' && typeof viewModel.saveEntryTemplate === 'function' ? <button type="button" onClick={() => void saveCurrentTemplate()}>保存为模板</button> : null}
       <button
         type="button"
         className={styles.categoryManageButton}
@@ -2546,6 +2722,15 @@ function ProfileSubpage({
   const [recurringCategoryId, setRecurringCategoryId] = useState('');
   const [reminderError, setReminderError] = useState<string | null>(null);
   const [reminderSaving, setReminderSaving] = useState(false);
+  const [categoryBudgetStatus, setCategoryBudgetStatus] = useState<StatisticsSnapshot['categoryBudgets']>([]);
+  const [categoryBudgetOptions, setCategoryBudgetOptions] = useState<EntryOptions['expenseCategories']>([]);
+  const [categoryBudgetDrafts, setCategoryBudgetDrafts] = useState<Record<string, string>>({});
+  const [backupPayload, setBackupPayload] = useState<string | null>(null);
+  const [backupPreview, setBackupPreview] = useState<{ exportedAt: string; accounts: number; transactions: number; conflicts: number; summary: string } | null>(null);
+  const [backupConflicts, setBackupConflicts] = useState<Array<{ id: string; entityId: string; createdAt: string }>>([]);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [versionHistory, setVersionHistory] = useState<Array<{ id: string; createdAt: string; transactions: number }>>([]);
 
   useEffect(() => {
     let active = true;
@@ -2565,6 +2750,30 @@ function ProfileSubpage({
           setRecurringOptions(options);
           setRecurringAccountId((value) => value || options.accounts[0]?.id || '');
           setRecurringCategoryId((value) => value || options.expenseCategories[0]?.id || '');
+        }
+        if (section === '预算管理' && typeof viewModel.getCategoryBudgetStatus === 'function') {
+          const [status, options] = await Promise.all([
+            viewModel.getCategoryBudgetStatus(monthKey(referenceNow())),
+            viewModel.getEntryOptions(),
+          ]);
+          if (!active) return;
+          setCategoryBudgetStatus(status);
+          setCategoryBudgetOptions(options.expenseCategories);
+          setCategoryBudgetDrafts(Object.fromEntries(options.expenseCategories.map((item) => {
+            const current = status.find((budget) => budget.categoryId === item.id);
+            const baseAmount = current ? current.amountCents - current.carriedCents : 0;
+            return [item.id, baseAmount ? (baseAmount / 100).toFixed(2) : ''];
+          })));
+        }
+        if (section === '备份与恢复' && typeof viewModel.getConflictSummaries === 'function') {
+          const [conflicts, history] = await Promise.all([
+            viewModel.getConflictSummaries(),
+            typeof viewModel.getVersionHistory === 'function' ? viewModel.getVersionHistory() : [],
+          ]);
+          if (active) {
+            setBackupConflicts(conflicts);
+            setVersionHistory(history);
+          }
         }
       } catch (caught) {
         if (active) setReminderError(caught instanceof Error ? caught.message : '提醒资料加载失败');
@@ -2824,17 +3033,104 @@ function ProfileSubpage({
     }
   }
 
-  function exportBackup() {
-    const payload = JSON.stringify({ ledgerName, budgetAmount, accounts, reminderEnabled, reminderTime, theme }, null, 2);
-    if (typeof URL.createObjectURL === 'function') {
-      const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = '海风账本备份.json';
-      link.click();
-      URL.revokeObjectURL(url);
+  async function saveCategoryBudget(categoryId: string) {
+    setBudgetSaving(true);
+    setBudgetSaveError(null);
+    try {
+      await viewModel.saveCategoryBudget({
+        month: monthKey(referenceNow()),
+        categoryId,
+        amountCents: parsePositiveYuan(categoryBudgetDrafts[categoryId] ?? ''),
+      });
+      setCategoryBudgetStatus(await viewModel.getCategoryBudgetStatus(monthKey(referenceNow())));
+      onFeedback('分类预算已保存，未用余额将结转到下月', 'success');
+    } catch (caught) {
+      setBudgetSaveError(caught instanceof Error ? caught.message : '分类预算保存失败');
+    } finally {
+      setBudgetSaving(false);
     }
-    onFeedback('账本备份已导出', 'success');
+  }
+
+  async function exportBackup() {
+    setBackupBusy(true);
+    setBackupError(null);
+    try {
+      if (typeof viewModel.exportPortableBackup !== 'function') throw new Error('当前账本暂不支持完整备份');
+      const payload = await viewModel.exportPortableBackup();
+      if (typeof URL.createObjectURL === 'function') {
+        const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `海风账本备份-${new Date().toISOString().slice(0, 10)}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+      onFeedback('完整账本备份已导出', 'success');
+    } catch (caught) {
+      setBackupError(caught instanceof Error ? caught.message : '备份导出失败');
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function previewBackupFile(file: File) {
+    setBackupBusy(true);
+    setBackupError(null);
+    setBackupPreview(null);
+    try {
+      const payload = await file.text();
+      if (typeof viewModel.previewPortableBackup !== 'function') throw new Error('当前账本暂不支持恢复预览');
+      setBackupPreview(await viewModel.previewPortableBackup(payload));
+      setBackupPayload(payload);
+    } catch (caught) {
+      setBackupError(caught instanceof Error ? caught.message : '备份读取失败');
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function restoreBackup() {
+    if (!backupPayload) return;
+    setBackupBusy(true);
+    setBackupError(null);
+    try {
+      await viewModel.restorePortableBackup(backupPayload);
+      setBackupPayload(null);
+      setBackupPreview(null);
+      onFeedback('账本已从备份恢复，请检查同步状态', 'success');
+    } catch (caught) {
+      setBackupError(caught instanceof Error ? caught.message : '恢复失败');
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function resolveBackupConflict(id: string, resolution: 'local' | 'server') {
+    setBackupBusy(true);
+    setBackupError(null);
+    try {
+      await viewModel.resolveConflict(id, resolution);
+      setBackupConflicts(await viewModel.getConflictSummaries());
+      onFeedback(resolution === 'local' ? '已保留本机修改并重新同步' : '已放弃本机冲突修改并拉取服务器版本', 'success');
+    } catch (caught) {
+      setBackupError(caught instanceof Error ? caught.message : '冲突处理失败');
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function restoreVersion(id: string) {
+    setBackupBusy(true);
+    setBackupError(null);
+    try {
+      await viewModel.restoreVersion(id);
+      setVersionHistory(await viewModel.getVersionHistory());
+      onFeedback('已恢复历史版本，恢复前状态也已自动保留', 'success');
+    } catch (caught) {
+      setBackupError(caught instanceof Error ? caught.message : '历史版本恢复失败');
+    } finally {
+      setBackupBusy(false);
+    }
   }
 
   async function replaceBackground(slot: BackgroundSlot, label: string, file: File) {
@@ -2909,6 +3205,17 @@ function ProfileSubpage({
           <section className={`${styles.card} ${styles.formCard}`}>
             <label><span>本月预算</span><input aria-label="本月预算" inputMode="decimal" value={budgetAmount} onChange={(event) => { setBudgetAmount(event.target.value); setBudgetSaveError(null); }} /></label>
             <div className={styles.budgetPreview}><span>已用 {formatReferenceYuan(budgetUsedCents)}</span><strong>剩余 {formatReferenceYuan(budgetDraftCents - budgetUsedCents)}</strong></div>
+            <h2>分类预算</h2>
+            {categoryBudgetOptions.map((category) => {
+              const status = categoryBudgetStatus.find((item) => item.categoryId === category.id);
+              return (
+                <div key={category.id} className={styles.accountRow}>
+                  <span><strong>{category.name}</strong><small>已用 {formatReferenceYuan(status?.usedCents ?? 0)}{status?.carriedCents ? ` · 结转 ${formatReferenceYuan(status.carriedCents)}` : ''}{status?.overCents ? ` · 超支 ${formatReferenceYuan(status.overCents)}` : ''}</small></span>
+                  <input aria-label={`${category.name}分类预算`} inputMode="decimal" value={categoryBudgetDrafts[category.id] ?? ''} onChange={(event) => setCategoryBudgetDrafts((current) => ({ ...current, [category.id]: event.target.value }))} />
+                  <button type="button" disabled={budgetSaving} onClick={() => void saveCategoryBudget(category.id)}>保存</button>
+                </div>
+              );
+            })}
             {budgetSaveError ? <p className={styles.budgetSaveError} role="alert">{budgetSaveError}</p> : null}
           </section>
         ) : null}
@@ -2977,17 +3284,33 @@ function ProfileSubpage({
         ) : null}
         {section === '备份与恢复' ? (
           <section className={`${styles.card} ${styles.backupActions}`}>
-            <button type="button" onClick={exportBackup}>导出账本备份</button>
+            <button type="button" disabled={backupBusy} onClick={() => void exportBackup()}>导出完整账本备份</button>
             <label>
-              <span>从文件恢复</span>
+              <span>{backupBusy ? '正在读取...' : '选择备份并预览'}</span>
               <input
                 type="file"
                 accept="application/json"
+                aria-label="选择账本备份"
+                disabled={backupBusy}
                 onChange={(event) => {
-                  if (event.target.files?.[0]) onFeedback('已读取备份文件', 'success');
+                  const file = event.target.files?.[0];
+                  event.target.value = '';
+                  if (file) void previewBackupFile(file);
                 }}
               />
             </label>
+            {backupPreview ? (
+              <div aria-label="恢复预览">
+                <p>备份时间：{new Date(backupPreview.exportedAt).toLocaleString('zh-CN')}</p>
+                <p>{backupPreview.accounts} 个账户 · {backupPreview.transactions} 笔流水 · {backupPreview.conflicts} 项版本差异</p>
+                <p>变化摘要：{backupPreview.summary}</p>
+                <p>仅覆盖当前账本；账户、类目、流水、预算和周期规则一起恢复。恢复前状态会自动保留，当前账本旧待同步队列会清空。</p>
+                <button type="button" disabled={backupBusy} onClick={() => void restoreBackup()}>确认恢复此备份</button>
+              </div>
+            ) : null}
+            <div aria-label="自动版本历史"><strong>自动版本历史（最近 12 版）</strong>{versionHistory.length ? versionHistory.slice(0, 12).map((version) => <div key={version.id}><span>{new Date(version.createdAt).toLocaleString('zh-CN')} · {version.transactions} 笔流水</span><button type="button" disabled={backupBusy} onClick={() => void restoreVersion(version.id)}>恢复此版本</button></div>) : <p>完成第一次修改后会自动保留版本。</p>}</div>
+            {backupConflicts.length ? <div role="alert"><strong>待处理同步冲突 {backupConflicts.length} 项</strong>{backupConflicts.map((conflict) => <div key={conflict.id}><span>{conflict.entityId} · {new Date(conflict.createdAt).toLocaleString('zh-CN')}</span><button type="button" disabled={backupBusy} onClick={() => void resolveBackupConflict(conflict.id, 'local')}>保留本机</button><button type="button" disabled={backupBusy} onClick={() => void resolveBackupConflict(conflict.id, 'server')}>使用服务器</button></div>)}</div> : <p>当前没有待处理同步冲突；最后同步时间显示在页面顶部状态栏。</p>}
+            {backupError ? <p role="alert" className={styles.sheetFormError}>{backupError}</p> : null}
           </section>
         ) : null}
         {section === '背景设置' ? (

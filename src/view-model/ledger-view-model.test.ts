@@ -221,6 +221,49 @@ describe('LedgerViewModel category management', () => {
 });
 
 describe('LedgerViewModel transaction projections', () => {
+  it('exports by date, account, and category and imports the decoded row idempotently after reload', async () => {
+    const { repository, viewModel } = createFixtureViewModelHarness();
+    const filtered = await viewModel.getFileRows({
+      month: '2026-07', date: '2026-07-18', accountId: fixtureIds.cash,
+      categoryId: fixtureIds.foodCategory, query: '',
+    });
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]).toMatchObject({ type: 'expense', amountYuan: '50.00', account: '现金', category: '餐饮' });
+
+    const importedRow = {
+      occurredAt: '2026-07-18T08:30:00.000Z', type: 'expense' as const, amountYuan: '12.34',
+      name: '导入“早餐”🥐', note: '中文\n第二行,含逗号', account: '现金', toAccount: '',
+      category: '餐饮', source: '微信', externalId: 'wx-import-1', line: 2,
+      fingerprint: '微信:id:wx-import-1', duplicate: false,
+    };
+    expect(await viewModel.importFileRows([importedRow])).toEqual({ imported: 1, duplicates: 0, errors: [] });
+    const imported = repository.snapshot.transactions.find((item) => decodeTransactionText(item.id, item.note).name === importedRow.name)!;
+    expect(await viewModel.getTransactionDetail(imported.id)).toMatchObject({
+      amountCents: 1234, occurredAt: importedRow.occurredAt, title: importedRow.name, note: importedRow.note,
+    });
+
+    const reloaded = new LedgerViewModel({
+      ledgerId: fixtureIds.ledger, repository,
+      saveOperation: (operation) => repository.saveOperation(operation), syncNow: async () => undefined,
+      now: () => new Date(fixtureNow), makeUuid: sequentialUuidFactory(),
+    });
+    expect(await reloaded.importFileRows([importedRow])).toEqual({ imported: 0, duplicates: 1, errors: [] });
+    expect(repository.snapshot.transactions.filter((item) => decodeTransactionText(item.id, item.note).name === importedRow.name)).toHaveLength(1);
+  });
+
+  it('creates and updates a synced monthly category budget', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+    await viewModel.saveCategoryBudget({ month: '2026-07', categoryId: fixtureIds.foodCategory, amountCents: 12000 });
+    expect(saveOperation).toHaveBeenLastCalledWith(expect.objectContaining({
+      kind: 'category-budget.create',
+      categoryBudget: expect.objectContaining({ month: '2026-07', categoryId: fixtureIds.foodCategory, amountCents: 12000 }),
+    }));
+    await viewModel.saveCategoryBudget({ month: '2026-07', categoryId: fixtureIds.foodCategory, amountCents: 15000 });
+    expect(saveOperation).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'category-budget.update' }));
+    expect(repository.snapshot.categoryBudgets.find((item) => item.ledgerId === fixtureIds.ledger))
+      .toMatchObject({ amountCents: 15000, version: 2 });
+  });
+
   it('combines month account date category and trimmed search filters', async () => {
     const result = await createFixtureViewModel().getTransactions({
       month: '2026-07',
@@ -408,6 +451,46 @@ describe('LedgerViewModel transaction projections', () => {
 });
 
 describe('LedgerViewModel reminders and credit cards', () => {
+  it('exports decoded portable backups and previews version conflicts without leaking envelopes', async () => {
+    const { viewModel } = createFixtureViewModelHarness();
+    await viewModel.createTransaction({
+      type: 'expense', amountCents: 1234, accountId: fixtureIds.cash,
+      categoryId: fixtureIds.foodCategory, occurredAt: fixtureTimes.todayExpense,
+      name: '备份“早餐”🌊', note: '中文\n备注',
+    });
+    const backupText = await viewModel.exportPortableBackup();
+    expect(backupText).not.toContain('@seabreeze-transaction-text:');
+    const backup = JSON.parse(backupText);
+    const transaction = backup.transactions.find((item: { name: string }) => item.name === '备份“早餐”🌊');
+    expect(transaction).toMatchObject({ note: '中文\n备注', amountCents: 1234 });
+    transaction.note = '备份中的旧备注';
+    expect(await viewModel.previewPortableBackup(JSON.stringify(backup))).toMatchObject({
+      accounts: 4,
+      transactions: expect.any(Number),
+      conflicts: 1,
+    });
+  });
+
+  it('builds repeat/template prefills and orders recent categories from real transactions', async () => {
+    const { repository, viewModel } = createFixtureViewModelHarness();
+    const first = await viewModel.getEntryShortcuts();
+    expect(first.last).toMatchObject({ type: 'expense', amountCents: 5000, accountId: fixtureIds.cash, categoryId: fixtureIds.foodCategory });
+    expect(first.recentCategoryIds[0]).toBe(fixtureIds.foodCategory);
+
+    await viewModel.saveEntryTemplate({
+      label: '工作日午餐', type: 'expense', amountCents: 2500,
+      accountId: fixtureIds.cash, categoryId: fixtureIds.foodCategory,
+    });
+    const reloaded = new LedgerViewModel({
+      ledgerId: fixtureIds.ledger, repository,
+      saveOperation: (operation) => repository.saveOperation(operation), syncNow: async () => undefined,
+      now: () => new Date(fixtureNow), makeUuid: sequentialUuidFactory(),
+    });
+    expect((await reloaded.getEntryShortcuts()).templates).toEqual([
+      expect.objectContaining({ label: '工作日午餐', amountCents: 2500, categoryId: fixtureIds.foodCategory }),
+    ]);
+  });
+
   it('stores credit limit and statement days in a synced reminder and derives the outstanding amount', async () => {
     const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
 

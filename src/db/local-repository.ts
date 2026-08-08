@@ -2,7 +2,7 @@ import { liveQuery } from 'dexie';
 import { buildPosting } from '../domain/posting';
 import { validateOperation, type LedgerOperation } from '../domain/operations';
 import type { LedgerEntry, LedgerEntryRecord, Transaction } from '../domain/types';
-import type { LedgerReadSnapshot, LocalLedgerSnapshot, OutboxRecord, ServerChange } from './records';
+import type { ConflictRecord, LedgerReadSnapshot, LocalLedgerSnapshot, OutboxRecord, ServerChange } from './records';
 import { LedgerDatabase } from './local-db';
 
 type TransactionWriteOperation = Extract<
@@ -39,6 +39,15 @@ function operationEntityId(operation: LedgerOperation): string {
 
 export class LocalLedgerRepository {
   constructor(private readonly db: LedgerDatabase) {}
+
+  private async captureHistory(ledgerId: string, createdAt: string): Promise<void> {
+    const key = `${ledgerId}:history-v1`;
+    const stored = await this.db.syncMeta.get(key);
+    const history = stored ? JSON.parse(stored.value) as Array<{ id: string; createdAt: string; snapshot: LedgerReadSnapshot }> : [];
+    const snapshot = await this.readLedgerSnapshot(ledgerId);
+    history.unshift({ id: crypto.randomUUID(), createdAt, snapshot });
+    await this.db.syncMeta.put({ key, ledgerId, value: JSON.stringify(history.slice(0, 12)) });
+  }
 
   async readLedgerSnapshot(ledgerId: string): Promise<LedgerReadSnapshot> {
     const tables = [
@@ -294,6 +303,7 @@ export class LocalLedgerRepository {
     const operation = validateOperation(input);
     await this.db.transaction('rw', this.db.tables, async () => {
       if (await this.db.outbox.get(operation.operationId)) return;
+      await this.captureHistory(operation.ledgerId, operation.createdAt);
       await this.applyLocally(operation);
       const notBefore = operation.kind === 'transaction.delete'
         ? new Date(Date.parse(operation.deletedAt) + 8_000).toISOString()
@@ -458,6 +468,99 @@ export class LocalLedgerRepository {
       restoreReceipts: await this.db.restoreReceipts.toArray(),
       syncMeta: await this.db.syncMeta.toArray(),
     }));
+  }
+
+  async restoreLedgerSnapshot(snapshot: LocalLedgerSnapshot, ledgerId: string): Promise<void> {
+    if (snapshot.schemaVersion !== 1 || !snapshot.ledgers.some((item) => item.id === ledgerId)) {
+      throw new Error('备份格式或账本不匹配');
+    }
+    await this.db.transaction('rw', this.db.tables, async () => {
+      await this.captureHistory(ledgerId, new Date().toISOString());
+      await Promise.all([
+        this.db.accounts.where('ledgerId').equals(ledgerId).delete(),
+        this.db.categories.where('ledgerId').equals(ledgerId).delete(),
+        this.db.transactions.where('ledgerId').equals(ledgerId).delete(),
+        this.db.entries.where('ledgerId').equals(ledgerId).delete(),
+        this.db.budgets.where('ledgerId').equals(ledgerId).delete(),
+        this.db.categoryBudgets.where('ledgerId').equals(ledgerId).delete(),
+        this.db.reminders.where('ledgerId').equals(ledgerId).delete(),
+        this.db.outbox.where('ledgerId').equals(ledgerId).delete(),
+        this.db.conflicts.where('ledgerId').equals(ledgerId).delete(),
+      ]);
+      await this.db.accounts.bulkPut(snapshot.accounts.filter((item) => item.ledgerId === ledgerId));
+      await this.db.categories.bulkPut(snapshot.categories.filter((item) => item.ledgerId === ledgerId));
+      await this.db.transactions.bulkPut(snapshot.transactions.filter((item) => item.ledgerId === ledgerId));
+      await this.db.entries.bulkPut(snapshot.entries.filter((item) => item.ledgerId === ledgerId));
+      await this.db.budgets.bulkPut(snapshot.budgets.filter((item) => item.ledgerId === ledgerId));
+      await this.db.categoryBudgets.bulkPut(snapshot.categoryBudgets.filter((item) => item.ledgerId === ledgerId));
+      await this.db.reminders.bulkPut(snapshot.reminders.filter((item) => item.ledgerId === ledgerId));
+      await this.db.outbox.bulkPut(snapshot.outbox.filter((item) => item.ledgerId === ledgerId));
+      await this.db.conflicts.bulkPut(snapshot.conflicts.filter((item) => item.ledgerId === ledgerId));
+      await this.db.restoreReceipts.put({ restoreId: crypto.randomUUID(), ledgerId, completedAt: new Date().toISOString() });
+    });
+  }
+
+  async listConflicts(ledgerId: string): Promise<ConflictRecord[]> {
+    return this.db.conflicts.where('ledgerId').equals(ledgerId).sortBy('createdAt');
+  }
+
+  async listHistory(ledgerId: string): Promise<Array<{ id: string; createdAt: string; transactions: number }>> {
+    const stored = await this.db.syncMeta.get(`${ledgerId}:history-v1`);
+    if (!stored) return [];
+    const history = JSON.parse(stored.value) as Array<{ id: string; createdAt: string; snapshot: LedgerReadSnapshot }>;
+    return history.map((item) => ({ id: item.id, createdAt: item.createdAt, transactions: item.snapshot.transactions.length }));
+  }
+
+  async restoreHistory(ledgerId: string, id: string): Promise<void> {
+    const stored = await this.db.syncMeta.get(`${ledgerId}:history-v1`);
+    const history = stored ? JSON.parse(stored.value) as Array<{ id: string; createdAt: string; snapshot: LedgerReadSnapshot }> : [];
+    const version = history.find((item) => item.id === id);
+    if (!version) throw new Error('历史版本不存在');
+    await this.db.transaction('rw', this.db.tables, async () => {
+      await this.captureHistory(ledgerId, new Date().toISOString());
+      await this.db.accounts.where('ledgerId').equals(ledgerId).delete();
+      await this.db.categories.where('ledgerId').equals(ledgerId).delete();
+      await this.db.transactions.where('ledgerId').equals(ledgerId).delete();
+      await this.db.entries.where('ledgerId').equals(ledgerId).delete();
+      await this.db.budgets.where('ledgerId').equals(ledgerId).delete();
+      await this.db.categoryBudgets.where('ledgerId').equals(ledgerId).delete();
+      await this.db.reminders.where('ledgerId').equals(ledgerId).delete();
+      await this.db.accounts.bulkPut(version.snapshot.accounts);
+      await this.db.categories.bulkPut(version.snapshot.categories);
+      await this.db.transactions.bulkPut(version.snapshot.transactions);
+      await this.db.entries.bulkPut(version.snapshot.entries);
+      await this.db.budgets.bulkPut(version.snapshot.budgets);
+      await this.db.categoryBudgets.bulkPut(version.snapshot.categoryBudgets);
+      await this.db.reminders.bulkPut(version.snapshot.reminders);
+    });
+  }
+
+  async resolveConflict(id: string, resolution: 'local' | 'server'): Promise<void> {
+    await this.db.transaction('rw', [this.db.conflicts, this.db.outbox], async () => {
+      const conflict = await this.db.conflicts.get(id);
+      if (!conflict) throw new Error('同步冲突不存在');
+      const outbox = await this.db.outbox.get(conflict.operation.operationId);
+      if (resolution === 'local') {
+        if (!outbox) throw new Error('本机冲突操作不存在');
+        const payload = structuredClone(outbox.payload) as LedgerOperation & { baseVersion?: number };
+        const serverVersion = typeof conflict.serverRecord === 'object' && conflict.serverRecord
+          && 'version' in conflict.serverRecord && typeof conflict.serverRecord.version === 'number'
+          ? conflict.serverRecord.version
+          : null;
+        if (serverVersion === null || !('baseVersion' in payload)) throw new Error('服务器版本不足，不能安全保留本机修改');
+        payload.baseVersion = serverVersion;
+        const mutablePayload = payload as unknown as Record<string, unknown>;
+        for (const key of ['transaction', 'account', 'category', 'budget', 'categoryBudget', 'reminder'] as const) {
+          if (typeof mutablePayload[key] === 'object' && mutablePayload[key]) {
+            (mutablePayload[key] as { version: number }).version = serverVersion + 1;
+          }
+        }
+        await this.db.outbox.put({ ...outbox, payload: validateOperation(payload), status: 'pending', lastError: null });
+      } else if (outbox) {
+        await this.db.outbox.delete(outbox.operationId);
+      }
+      await this.db.conflicts.delete(id);
+    });
   }
 
   async clearUserData(userId: string): Promise<void> {

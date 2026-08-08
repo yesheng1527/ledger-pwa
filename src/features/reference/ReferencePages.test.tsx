@@ -275,6 +275,28 @@ describe('reference five-page application', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: '早上好，海风~' })).toBeInTheDocument());
   });
 
+  it('previews CSV rows and errors without writing until explicit import confirmation', async () => {
+    const user = userEvent.setup();
+    const importFileRows = vi.fn().mockResolvedValue({ imported: 1, duplicates: 0, errors: [] });
+    const fileViewModel = {
+      getExistingImportOperationIds: vi.fn().mockResolvedValue(new Set<string>()),
+      importFileRows,
+    } as unknown as LedgerViewModel;
+    render(<AppShell viewModel={fileViewModel} />);
+
+    await user.click(screen.getByRole('button', { name: /^流水$/ }));
+    await user.click(screen.getByRole('button', { name: '导入导出流水' }));
+    const csv = '\uFEFF日期,类型,金额,名称,备注,账户,转入账户,类目,来源,交易单号\n2026-08-08 08:30:00,支出,12.50,"早餐,面包","第一行\n第二行",现金,,餐饮,微信,wx-1\n坏日期,支出,1.00,错误,,现金,,餐饮,微信,wx-2';
+    await user.upload(screen.getByLabelText('选择账单文件'), new File([csv], 'wechat.csv', { type: 'text/csv' }));
+
+    expect(await screen.findByText(/预览 1 行/)).toHaveTextContent('尚未写入账本');
+    expect(screen.getByText('第3行：日期格式无效')).toBeInTheDocument();
+    expect(importFileRows).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: '确认导入非重复流水' }));
+    await waitFor(() => expect(importFileRows).toHaveBeenCalledOnce());
+    expect(importFileRows.mock.calls[0][0][0]).toMatchObject({ name: '早餐,面包', note: '第一行\n第二行', amountYuan: '12.50', line: 2 });
+  });
+
   it('creates an account transfer with explicit source and destination accounts', async () => {
     const user = userEvent.setup();
     const getEntryOptions = vi.fn().mockResolvedValue({
@@ -323,6 +345,33 @@ describe('reference five-page application', () => {
       toAccountId: 'account-card',
     })));
     expect(screen.getByText('转账已保存，不计入收支统计')).toBeInTheDocument();
+  });
+
+  it('opens repeat and template shortcuts as editable entry prefills', async () => {
+    const user = userEvent.setup();
+    const getEntryOptions = vi.fn().mockResolvedValue({
+      accounts: [{ id: 'account-1', name: '现金', accountClass: 'asset', balanceCents: 100000 }],
+      expenseCategories: [{ id: 'category-food', name: '餐饮', iconKey: 'food' }],
+      incomeCategories: [], refundableExpenses: [],
+    });
+    const getEntryShortcuts = vi.fn().mockResolvedValue({
+      last: { id: 'last-1', label: '重复上一笔', type: 'expense', amountCents: 2500, accountId: 'account-1', categoryId: 'category-food', name: '工作餐', note: '上次备注' },
+      templates: [], recentCategoryIds: ['category-food'],
+    });
+    const createTransaction = vi.fn().mockResolvedValue({ transactionId: 'new-1' });
+    const saveEntryTemplate = vi.fn().mockResolvedValue({ templateId: 'template-1' });
+    render(<AppShell viewModel={{ getEntryOptions, getEntryShortcuts, createTransaction, saveEntryTemplate } as unknown as LedgerViewModel} />);
+
+    await user.click(screen.getByRole('button', { name: /^记账$/ }));
+    await user.click(await screen.findByRole('button', { name: '重复上一笔' }));
+    expect(screen.getByLabelText('金额')).toHaveValue('25.00');
+    expect(screen.getByLabelText('名称')).toHaveValue('工作餐');
+    expect(screen.getByLabelText('备注')).toHaveValue('上次备注');
+    expect(createTransaction).not.toHaveBeenCalled();
+    await user.clear(screen.getByLabelText('金额'));
+    await user.type(screen.getByLabelText('金额'), '26.00');
+    await user.click(screen.getByRole('button', { name: '保存为模板' }));
+    await waitFor(() => expect(saveEntryTemplate).toHaveBeenCalledWith(expect.objectContaining({ amountCents: 2600, label: '工作餐' })));
   });
 
   it('uses a manually edited account balance in the entry account picker', async () => {
@@ -665,6 +714,59 @@ describe('reference five-page application', () => {
       name: '固定早餐', type: 'expense', amountCents: 1200,
       accountId: 'account-1', categoryId: 'category-1', dayOfMonth: 31,
     }));
+  });
+
+  it('edits category budgets and exposes carryover and overspend status in budget UI', async () => {
+    const user = userEvent.setup();
+    const saveCategoryBudget = vi.fn().mockResolvedValue(undefined);
+    const budgetViewModel = {
+      subscribe: () => () => undefined,
+      getHomeSnapshot: vi.fn().mockResolvedValue({
+        totalAssetsCents: 100000, todayExpenseCents: 0, monthIncomeCents: 0, monthExpenseCents: 5000,
+        monthBalanceCents: -5000, budget: { amountCents: 100000, usedCents: 5000, remainingCents: 95000 },
+        quickCategories: [], recentTransactions: [],
+      }),
+      getCategoryBudgetStatus: vi.fn().mockResolvedValue([{ categoryId: 'food', name: '餐饮', amountCents: 14000, usedCents: 15000, carriedCents: 10000, overCents: 1000 }]),
+      getEntryOptions: vi.fn().mockResolvedValue({
+        accounts: [], expenseCategories: [{ id: 'food', name: '餐饮', iconKey: 'food' }], incomeCategories: [], refundableExpenses: [],
+      }),
+      saveMonthlyBudget: vi.fn(), saveCategoryBudget,
+    } as unknown as LedgerViewModel;
+    render(<AppShell viewModel={budgetViewModel} />);
+
+    await user.click(screen.getByRole('button', { name: /^我的$/ }));
+    await user.click(screen.getByRole('button', { name: /预算管理/ }));
+    expect(await screen.findByText(/结转 ¥100\.00/)).toHaveTextContent('超支 ¥10.00');
+    await user.clear(screen.getByLabelText('餐饮分类预算'));
+    await user.type(screen.getByLabelText('餐饮分类预算'), '80.00');
+    await user.click(within(screen.getByLabelText('餐饮分类预算').closest('div')!).getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(saveCategoryBudget).toHaveBeenCalledWith(expect.objectContaining({ categoryId: 'food', amountCents: 8000 })));
+  });
+
+  it('previews a portable backup before restore and exposes history and conflict choices', async () => {
+    const user = userEvent.setup();
+    const restorePortableBackup = vi.fn().mockResolvedValue(undefined);
+    const backupViewModel = {
+      exportPortableBackup: vi.fn().mockResolvedValue('{"schemaVersion":2}'),
+      previewPortableBackup: vi.fn().mockResolvedValue({ exportedAt: '2026-08-08T08:00:00.000Z', accounts: 2, transactions: 5, conflicts: 1, summary: '账户 +1 · 流水 +2' }),
+      restorePortableBackup,
+      getConflictSummaries: vi.fn().mockResolvedValue([{ id: 'conflict-1', entityId: '流水-1', createdAt: '2026-08-08T08:00:00.000Z' }]),
+      getVersionHistory: vi.fn().mockResolvedValue([{ id: 'version-1', createdAt: '2026-08-08T07:00:00.000Z', transactions: 4 }]),
+      resolveConflict: vi.fn(), restoreVersion: vi.fn(),
+    } as unknown as LedgerViewModel;
+    render(<AppShell viewModel={backupViewModel} />);
+
+    await user.click(screen.getByRole('button', { name: /^我的$/ }));
+    await user.click(screen.getByRole('button', { name: /备份与恢复/ }));
+    expect(await screen.findByText(/待处理同步冲突 1 项/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '保留本机' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '恢复此版本' })).toBeInTheDocument();
+    await user.upload(screen.getByLabelText('选择账本备份'), new File(['{"schemaVersion":2}'], 'backup.json', { type: 'application/json' }));
+    expect(await screen.findByLabelText('恢复预览')).toHaveTextContent('2 个账户 · 5 笔流水 · 1 项版本差异');
+    expect(screen.getByLabelText('恢复预览')).toHaveTextContent('变化摘要：账户 +1 · 流水 +2');
+    expect(restorePortableBackup).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: '确认恢复此备份' }));
+    await waitFor(() => expect(restorePortableBackup).toHaveBeenCalledWith('{"schemaVersion":2}'));
   });
 
   it('updates and persists the profile avatar and signature', async () => {

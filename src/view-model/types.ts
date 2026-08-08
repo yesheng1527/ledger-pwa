@@ -196,6 +196,23 @@ export interface RecurringRule {
   pending: boolean;
 }
 
+export interface EntryPrefill {
+  id: string;
+  label: string;
+  type: 'expense' | 'income';
+  amountCents: number;
+  accountId: string;
+  categoryId: string;
+  name: string;
+  note: string;
+}
+
+export interface EntryShortcuts {
+  last: EntryPrefill | null;
+  templates: EntryPrefill[];
+  recentCategoryIds: string[];
+}
+
 export interface ManagedAccount {
   id: string;
   name: string;
@@ -212,10 +229,8 @@ export type LedgerQueryState<T> =
 
 export interface LedgerViewModelOptions {
   ledgerId: string;
-  repository: Pick<
-    LocalLedgerRepository,
-    'readLedgerSnapshot' | 'watchLedger' | 'undoTransactionDelete'
-  >;
+  repository: Pick<LocalLedgerRepository, 'readLedgerSnapshot' | 'watchLedger' | 'undoTransactionDelete'>
+    & Partial<Pick<LocalLedgerRepository, 'exportSnapshot' | 'restoreLedgerSnapshot' | 'listConflicts' | 'resolveConflict' | 'listHistory' | 'restoreHistory'>>;
   saveOperation(operation: LedgerOperation): Promise<void>;
   syncNow(): Promise<void>;
   now(): Date;

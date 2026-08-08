@@ -23,6 +23,7 @@
     "@phosphor-icons/react": "2.1.10",
     "@supabase/supabase-js": "2.110.7",
     "dexie": "4.4.4",
+    "exceljs": "^4.4.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "zod": "4.4.3"

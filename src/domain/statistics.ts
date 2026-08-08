@@ -22,6 +22,8 @@ export interface StatisticsSnapshot {
     name: string;
     amountCents: number;
     usedCents: number;
+    carriedCents: number;
+    overCents: number;
   }>;
   expenseCategories: Array<{
     categoryId: string;
@@ -308,25 +310,49 @@ export function selectStatistics(
         remainingCents: budgetAmountCents - metrics.periodNetExpenseCents,
       };
 
-  const categoryBudgetAmounts = new Map<string, number>();
+  const categoryBudgetAmounts = new Map<string, { amountCents: number; carriedCents: number }>();
+  const previousMonthKey = (month: string) => {
+    const [year, monthNumber] = month.split('-').map(Number);
+    return monthKey(new Date(year, monthNumber - 2, 1));
+  };
+  const categoryUsedInMonth = (categoryId: string, month: string) => transactions.reduce((total, transaction) => {
+    if (transaction.deletedAt !== null || transaction.categoryId !== categoryId || monthKey(new Date(transaction.occurredAt)) !== month) return total;
+    if (transaction.type === 'expense') return total + transaction.amountCents;
+    if (transaction.type === 'refund') return total - transaction.amountCents;
+    return total;
+  }, 0);
   for (const budget of snapshot.categoryBudgets) {
     if (
       budget.ledgerId !== ledgerId
       || budget.archivedAt !== null
       || !selectedMonths.has(budget.month)
     ) continue;
-    categoryBudgetAmounts.set(
-      budget.categoryId,
-      (categoryBudgetAmounts.get(budget.categoryId) ?? 0) + budget.amountCents,
-    );
+    const previousMonth = previousMonthKey(budget.month);
+    const previousBudget = snapshot.categoryBudgets.find((item) => (
+      item.ledgerId === ledgerId && item.archivedAt === null
+      && item.categoryId === budget.categoryId && item.month === previousMonth
+    ));
+    const carriedCents = previousBudget
+      ? Math.max(0, previousBudget.amountCents - Math.max(0, categoryUsedInMonth(budget.categoryId, previousMonth)))
+      : 0;
+    const current = categoryBudgetAmounts.get(budget.categoryId) ?? { amountCents: 0, carriedCents: 0 };
+    categoryBudgetAmounts.set(budget.categoryId, {
+      amountCents: current.amountCents + budget.amountCents + carriedCents,
+      carriedCents: current.carriedCents + carriedCents,
+    });
   }
   const categoryBudgets = [...categoryBudgetAmounts.entries()]
-    .map(([categoryId, amountCents]) => ({
-      categoryId,
-      name: categoryName(categoryMap.get(categoryId)),
-      amountCents,
-      usedCents: Math.max(0, categoryTotals.get(categoryId) ?? 0),
-    }))
+    .map(([categoryId, value]) => {
+      const usedCents = Math.max(0, categoryTotals.get(categoryId) ?? 0);
+      return {
+        categoryId,
+        name: categoryName(categoryMap.get(categoryId)),
+        amountCents: value.amountCents,
+        usedCents,
+        carriedCents: value.carriedCents,
+        overCents: Math.max(0, usedCents - value.amountCents),
+      };
+    })
     .sort((left, right) => left.categoryId.localeCompare(right.categoryId));
 
   const balances = new Map(

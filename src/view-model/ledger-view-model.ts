@@ -1,10 +1,11 @@
-import type { LedgerReadSnapshot } from '../db/records';
+import type { LedgerReadSnapshot, LocalLedgerSnapshot } from '../db/records';
 import { calculateMetrics } from '../domain/metrics';
 import { formatYuan } from '../domain/money';
 import type { LedgerOperation } from '../domain/operations';
 import { buildPosting } from '../domain/posting';
 import { selectStatistics } from '../domain/statistics';
 import { decodeTransactionText, encodeTransactionText } from '../domain/transaction-text';
+import { ledgerImportOperationId, type LedgerFileRow, type LedgerImportPreview } from '../features/data-transfer/ledger-files';
 import type {
   Account,
   Category,
@@ -15,6 +16,7 @@ import type {
 } from '../domain/types';
 import type {
   EntryOptions,
+  EntryShortcuts,
   CreditCardProfile,
   HomeSnapshot,
   LedgerViewModelOptions,
@@ -33,6 +35,30 @@ import type {
 
 const CREDIT_RECURRENCE = /^credit-card:v1:billing=(\d{1,2});repayment=(\d{1,2})$/;
 const RECURRING_RECURRENCE = /^recurring:v1:(expense|income):monthly:(\d{1,2})$/;
+const TEMPLATE_RECURRENCE = /^template:v1:(expense|income)$/;
+
+type PortableLedgerBackup = {
+  schemaVersion: 2;
+  exportedAt: string;
+  ledgerId: string;
+  accounts: Account[];
+  categories: Category[];
+  transactions: Array<Omit<Transaction, 'note'> & { name: string; note: string }>;
+  entries: LedgerEntryRecord[];
+  budgets: LedgerReadSnapshot['budgets'];
+  categoryBudgets: LedgerReadSnapshot['categoryBudgets'];
+  reminders: Reminder[];
+};
+
+function parsePortableBackup(text: string): PortableLedgerBackup {
+  const value = JSON.parse(text) as Partial<PortableLedgerBackup>;
+  if (value.schemaVersion !== 2 || typeof value.ledgerId !== 'string'
+    || !Array.isArray(value.accounts) || !Array.isArray(value.categories)
+    || !Array.isArray(value.transactions) || !Array.isArray(value.entries)
+    || !Array.isArray(value.budgets) || !Array.isArray(value.categoryBudgets)
+    || !Array.isArray(value.reminders)) throw new Error('备份文件格式无效');
+  return value as PortableLedgerBackup;
+}
 
 function assertReminderDay(value: number, label: string): void {
   if (!Number.isInteger(value) || value < 1 || value > 31) {
@@ -740,6 +766,38 @@ export class LedgerViewModel {
     });
   }
 
+  async getCategoryBudgetStatus(month: string): Promise<StatisticsSnapshot['categoryBudgets']> {
+    return (await this.getStatistics({ kind: 'month', month })).categoryBudgets;
+  }
+
+  async saveCategoryBudget(input: { month: string; categoryId: string; amountCents: number }): Promise<void> {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.month)) throw new Error('预算月份无效');
+    if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) throw new Error('分类预算必须大于0');
+    const snapshot = await this.readSnapshot();
+    this.requireActiveCategory(snapshot, input.categoryId, 'expense');
+    const current = snapshot.categoryBudgets.find((item) => (
+      item.month === input.month && item.categoryId === input.categoryId && item.archivedAt === null
+    ));
+    const createdAt = this.now().toISOString();
+    if (current) {
+      await this.saveOperation({
+        schemaVersion: 1, operationId: this.makeUuid(), ledgerId: this.ledgerId, createdAt,
+        kind: 'category-budget.update', categoryBudgetId: current.id, baseVersion: current.version,
+        categoryBudget: { ...current, amountCents: input.amountCents, version: current.version + 1 },
+      });
+      return;
+    }
+    const id = this.makeUuid();
+    await this.saveOperation({
+      schemaVersion: 1, operationId: id, ledgerId: this.ledgerId, createdAt,
+      kind: 'category-budget.create',
+      categoryBudget: {
+        id, ledgerId: this.ledgerId, categoryId: input.categoryId, month: input.month,
+        amountCents: input.amountCents, version: 1, archivedAt: null,
+      },
+    });
+  }
+
   async getCreditCardProfiles(): Promise<CreditCardProfile[]> {
     const snapshot = await this.readSnapshot();
     return snapshot.accounts
@@ -764,6 +822,71 @@ export class LedgerViewModel {
           nextRepaymentAt: reminder?.nextDueAt ?? nextMonthlyDate(this.now(), repaymentDay),
         };
       });
+  }
+
+  async getEntryShortcuts(): Promise<EntryShortcuts> {
+    const snapshot = await this.readSnapshot();
+    const recentTransactions = activeTransactions(snapshot).filter((item) => (
+      item.type === 'expense' || item.type === 'income'
+    ));
+    const recentCategoryIds = [...new Set(recentTransactions.flatMap((item) => item.categoryId ? [item.categoryId] : []))].slice(0, 6);
+    const latest = recentTransactions[0];
+    const latestEntry = latest ? snapshot.entries.find((item) => item.transactionId === latest.id) : undefined;
+    const latestText = latest ? decodeTransactionText(latest.id, latest.note) : null;
+    const last = latest && latestEntry && latest.categoryId && latestText ? {
+      id: latest.id,
+      label: '重复上一笔',
+      type: latest.type as 'expense' | 'income',
+      amountCents: latest.amountCents,
+      accountId: latestEntry.accountId,
+      categoryId: latest.categoryId,
+      name: latestText.name.trim() || fallbackTitle(latest, snapshot.categories.find((item) => item.id === latest.categoryId)),
+      note: latestText.note,
+    } : null;
+    const templates = snapshot.reminders.flatMap((reminder) => {
+      const match = reminder.archivedAt === null ? TEMPLATE_RECURRENCE.exec(reminder.recurrence) : null;
+      if (!match || reminder.amountCents === null || !reminder.accountId || !reminder.categoryId) return [];
+      return [{
+        id: reminder.id,
+        label: reminder.name,
+        type: match[1] as 'expense' | 'income',
+        amountCents: reminder.amountCents,
+        accountId: reminder.accountId,
+        categoryId: reminder.categoryId,
+        name: reminder.name,
+        note: '',
+      }];
+    });
+    return { last, templates, recentCategoryIds };
+  }
+
+  async saveEntryTemplate(input: {
+    label: string;
+    type: 'expense' | 'income';
+    amountCents: number;
+    accountId: string;
+    categoryId: string;
+  }): Promise<{ templateId: string }> {
+    const label = input.label.trim();
+    if (!label) throw new Error('请输入模板名称');
+    if (label.length > 50) throw new Error('模板名称不能超过50个字符');
+    if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) throw new Error('模板金额必须大于0');
+    const snapshot = await this.readSnapshot();
+    const account = this.requireActiveAccount(snapshot, input.accountId);
+    if (input.type === 'income' && account.accountClass !== 'asset') throw new Error('收入只能存入资产账户');
+    this.requireActiveCategory(snapshot, input.categoryId, input.type);
+    const id = this.makeUuid();
+    const reminder: Reminder = {
+      id, ledgerId: this.ledgerId, name: label, amountCents: input.amountCents,
+      categoryId: input.categoryId, accountId: input.accountId,
+      recurrence: `template:v1:${input.type}`, nextDueAt: this.now().toISOString(),
+      version: 1, archivedAt: null,
+    };
+    await this.saveOperation({
+      schemaVersion: 1, operationId: id, ledgerId: this.ledgerId,
+      createdAt: this.now().toISOString(), kind: 'reminder.create', reminder,
+    });
+    return { templateId: id };
   }
 
   async saveCreditCardProfile(input: {
@@ -948,6 +1071,178 @@ export class LedgerViewModel {
       createdAt: this.now().toISOString(), kind: 'reminder.archive',
       reminderId: reminder.id, baseVersion: reminder.version, archivedAt: this.now().toISOString(),
     });
+  }
+
+  async getExistingImportOperationIds(): Promise<Set<string>> {
+    const snapshot = await this.readSnapshot();
+    return new Set(snapshot.transactions.map((item) => item.operationId));
+  }
+
+  async exportPortableBackup(): Promise<string> {
+    const snapshot = await this.readSnapshot();
+    const backup: PortableLedgerBackup = {
+      schemaVersion: 2,
+      exportedAt: this.now().toISOString(),
+      ledgerId: this.ledgerId,
+      accounts: snapshot.accounts,
+      categories: snapshot.categories,
+      transactions: snapshot.transactions.map((transaction) => {
+        const text = decodeTransactionText(transaction.id, transaction.note);
+        return { ...transaction, name: text.name, note: text.note };
+      }),
+      entries: snapshot.entries,
+      budgets: snapshot.budgets,
+      categoryBudgets: snapshot.categoryBudgets,
+      reminders: snapshot.reminders,
+    };
+    return JSON.stringify(backup, null, 2);
+  }
+
+  async previewPortableBackup(text: string): Promise<{
+    exportedAt: string;
+    accounts: number;
+    transactions: number;
+    conflicts: number;
+    summary: string;
+  }> {
+    const backup = parsePortableBackup(text);
+    if (backup.ledgerId !== this.ledgerId) throw new Error('备份属于其他账本，不能直接覆盖');
+    const current = await this.readSnapshot();
+    const currentTransactions = new Map(current.transactions.map((item) => [item.id, item]));
+    const conflicts = backup.transactions.filter((item) => {
+      const local = currentTransactions.get(item.id);
+      return local && (local.version !== item.version
+        || decodeTransactionText(local.id, local.note).note !== item.note
+        || decodeTransactionText(local.id, local.note).name !== item.name);
+    }).length;
+    const deltas = [
+      `账户 ${backup.accounts.length - current.accounts.length >= 0 ? '+' : ''}${backup.accounts.length - current.accounts.length}`,
+      `类目 ${backup.categories.length - current.categories.length >= 0 ? '+' : ''}${backup.categories.length - current.categories.length}`,
+      `流水 ${backup.transactions.length - current.transactions.length >= 0 ? '+' : ''}${backup.transactions.length - current.transactions.length}`,
+      `预算 ${backup.budgets.length + backup.categoryBudgets.length - current.budgets.length - current.categoryBudgets.length >= 0 ? '+' : ''}${backup.budgets.length + backup.categoryBudgets.length - current.budgets.length - current.categoryBudgets.length}`,
+      `规则 ${backup.reminders.length - current.reminders.length >= 0 ? '+' : ''}${backup.reminders.length - current.reminders.length}`,
+    ].join(' · ');
+    return { exportedAt: backup.exportedAt, accounts: backup.accounts.length, transactions: backup.transactions.length, conflicts, summary: deltas };
+  }
+
+  async restorePortableBackup(text: string): Promise<void> {
+    if (typeof this.repository.exportSnapshot !== 'function' || typeof this.repository.restoreLedgerSnapshot !== 'function') {
+      throw new Error('当前环境不支持账本恢复');
+    }
+    const backup = parsePortableBackup(text);
+    if (backup.ledgerId !== this.ledgerId) throw new Error('备份属于其他账本，不能直接覆盖');
+    const current = await this.repository.exportSnapshot();
+    const restored: LocalLedgerSnapshot = {
+      ...current,
+      exportedAt: backup.exportedAt,
+      accounts: [...current.accounts.filter((item) => item.ledgerId !== this.ledgerId), ...backup.accounts],
+      categories: [...current.categories.filter((item) => item.ledgerId !== this.ledgerId), ...backup.categories],
+      transactions: [
+        ...current.transactions.filter((item) => item.ledgerId !== this.ledgerId),
+        ...backup.transactions.map(({ name, note, ...transaction }) => ({
+          ...transaction,
+          note: encodeTransactionText(transaction.id, name, note),
+        })),
+      ],
+      entries: [...current.entries.filter((item) => item.ledgerId !== this.ledgerId), ...backup.entries],
+      budgets: [...current.budgets.filter((item) => item.ledgerId !== this.ledgerId), ...backup.budgets],
+      categoryBudgets: [...current.categoryBudgets.filter((item) => item.ledgerId !== this.ledgerId), ...backup.categoryBudgets],
+      reminders: [...current.reminders.filter((item) => item.ledgerId !== this.ledgerId), ...backup.reminders],
+      outbox: current.outbox.filter((item) => item.ledgerId !== this.ledgerId),
+      conflicts: current.conflicts.filter((item) => item.ledgerId !== this.ledgerId),
+    };
+    await this.repository.restoreLedgerSnapshot(restored, this.ledgerId);
+  }
+
+  async getConflictSummaries(): Promise<Array<{ id: string; entityId: string; createdAt: string }>> {
+    if (typeof this.repository.listConflicts !== 'function') return [];
+    return (await this.repository.listConflicts(this.ledgerId)).map((item) => ({
+      id: item.id, entityId: item.entityId, createdAt: item.createdAt,
+    }));
+  }
+
+  async resolveConflict(id: string, resolution: 'local' | 'server'): Promise<void> {
+    if (typeof this.repository.resolveConflict !== 'function') throw new Error('当前环境不支持冲突处理');
+    await this.repository.resolveConflict(id, resolution);
+    await this.syncNow();
+  }
+
+  async getVersionHistory(): Promise<Array<{ id: string; createdAt: string; transactions: number }>> {
+    return typeof this.repository.listHistory === 'function' ? this.repository.listHistory(this.ledgerId) : [];
+  }
+
+  async restoreVersion(id: string): Promise<void> {
+    if (typeof this.repository.restoreHistory !== 'function') throw new Error('当前环境不支持版本恢复');
+    await this.repository.restoreHistory(this.ledgerId, id);
+  }
+
+  async getFileRows(filters: TransactionFilters): Promise<LedgerFileRow[]> {
+    const list = await this.getTransactions(filters);
+    const rows: LedgerFileRow[] = [];
+    for (const item of list.groups.flatMap((group) => group.rows)) {
+      if (item.type !== 'expense' && item.type !== 'income' && item.type !== 'transfer') continue;
+      const detail = await this.getTransactionDetail(item.id);
+      if (!detail) continue;
+      rows.push({
+        occurredAt: detail.occurredAt,
+        type: item.type,
+        amountYuan: (detail.amountCents / 100).toFixed(2),
+        name: detail.title,
+        note: detail.note,
+        account: detail.entries[0]?.accountName ?? '',
+        toAccount: detail.type === 'transfer' ? detail.entries[1]?.accountName ?? '' : '',
+        category: detail.categoryName ?? '',
+        source: '海风小账本',
+        externalId: detail.id,
+      });
+    }
+    return rows;
+  }
+
+  async importFileRows(rows: LedgerImportPreview['rows']): Promise<{
+    imported: number;
+    duplicates: number;
+    errors: Array<{ line: number; message: string }>;
+  }> {
+    const errors: Array<{ line: number; message: string }> = [];
+    let imported = 0;
+    let duplicates = 0;
+    for (const row of rows) {
+      const operationId = ledgerImportOperationId(row.fingerprint);
+      const snapshot = await this.readSnapshot();
+      if (row.duplicate || snapshot.transactions.some((item) => item.operationId === operationId)) {
+        duplicates += 1;
+        continue;
+      }
+      try {
+        const accounts = optionLists(snapshot).accounts;
+        const from = accounts.find((item) => item.name.toLocaleLowerCase() === row.account.toLocaleLowerCase())
+          ?? accounts.find((item) => item.accountClass === 'asset');
+        if (!from) throw new Error(`找不到账户“${row.account}”`);
+        const amountCents = Math.round(Number(row.amountYuan) * 100);
+        if (row.type === 'transfer') {
+          const to = accounts.find((item) => item.name.toLocaleLowerCase() === row.toAccount.toLocaleLowerCase());
+          if (!to) throw new Error(`找不到转入账户“${row.toAccount}”`);
+          await this.createTransaction({
+            type: 'transfer', operationId, amountCents, fromAccountId: from.id, toAccountId: to.id,
+            occurredAt: row.occurredAt, name: row.name, note: row.note,
+          });
+        } else {
+          const category = optionLists(snapshot).categories.find((item) => (
+            item.kind === row.type && item.name.toLocaleLowerCase() === row.category.toLocaleLowerCase()
+          )) ?? optionLists(snapshot).categories.find((item) => item.kind === row.type);
+          if (!category) throw new Error(`找不到${row.type === 'expense' ? '支出' : '收入'}分类“${row.category}”`);
+          await this.createTransaction({
+            type: row.type, operationId, amountCents, accountId: from.id, categoryId: category.id,
+            occurredAt: row.occurredAt, name: row.name, note: row.note,
+          });
+        }
+        imported += 1;
+      } catch (caught) {
+        errors.push({ line: row.line, message: caught instanceof Error ? caught.message : '导入失败' });
+      }
+    }
+    return { imported, duplicates, errors };
   }
 
   async createTransaction(
