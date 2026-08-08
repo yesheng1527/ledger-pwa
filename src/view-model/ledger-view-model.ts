@@ -10,12 +10,15 @@ import type {
   Category,
   LedgerEntry,
   LedgerEntryRecord,
+  Reminder,
   Transaction,
 } from '../domain/types';
 import type {
   EntryOptions,
+  CreditCardProfile,
   HomeSnapshot,
   LedgerViewModelOptions,
+  RecurringRule,
   ManagedAccount,
   StatisticsRange,
   StatisticsSnapshot,
@@ -27,6 +30,53 @@ import type {
   TransactionListSnapshot,
   TransactionRowModel,
 } from './types';
+
+const CREDIT_RECURRENCE = /^credit-card:v1:billing=(\d{1,2});repayment=(\d{1,2})$/;
+const RECURRING_RECURRENCE = /^recurring:v1:(expense|income):monthly:(\d{1,2})$/;
+
+function assertReminderDay(value: number, label: string): void {
+  if (!Number.isInteger(value) || value < 1 || value > 31) {
+    throw new Error(`${label}必须是1至31日`);
+  }
+}
+
+function nextMonthlyDate(now: Date, day: number): string {
+  const makeDate = (year: number, month: number) => new Date(
+    year,
+    month,
+    Math.min(day, new Date(year, month + 1, 0).getDate()),
+    9, 0, 0, 0,
+  );
+  let candidate = makeDate(now.getFullYear(), now.getMonth());
+  if (candidate.getTime() <= now.getTime()) candidate = makeDate(now.getFullYear(), now.getMonth() + 1);
+  return candidate.toISOString();
+}
+
+function advanceMonthlyDate(value: string, day: number): string {
+  const current = new Date(value);
+  const targetMonth = current.getMonth() + 1;
+  const next = new Date(
+    current.getFullYear(),
+    targetMonth,
+    Math.min(day, new Date(current.getFullYear(), targetMonth + 1, 0).getDate()),
+    9, 0, 0, 0,
+  );
+  return next.toISOString();
+}
+
+function recurringOccurrenceId(reminderId: string, nextDueAt: string): string {
+  const source = `${reminderId}:${nextDueAt}`;
+  let hex = '';
+  for (let salt = 0; salt < 4; salt += 1) {
+    let hash = 0x811c9dc5 ^ salt;
+    for (let index = 0; index < source.length; index += 1) {
+      hash ^= source.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    hex += (hash >>> 0).toString(16).padStart(8, '0');
+  }
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
 
 function localRanges(now: Date) {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -77,6 +127,7 @@ function scopeSnapshot(snapshot: LedgerReadSnapshot, ledgerId: string): LedgerRe
     )),
     budgets: snapshot.budgets.filter((item) => item.ledgerId === ledgerId),
     categoryBudgets: snapshot.categoryBudgets.filter((item) => item.ledgerId === ledgerId),
+    reminders: snapshot.reminders.filter((item) => item.ledgerId === ledgerId),
   };
 }
 
@@ -689,10 +740,226 @@ export class LedgerViewModel {
     });
   }
 
+  async getCreditCardProfiles(): Promise<CreditCardProfile[]> {
+    const snapshot = await this.readSnapshot();
+    return snapshot.accounts
+      .filter((account) => account.archivedAt === null && account.kind === 'credit_card')
+      .map((account) => {
+        const reminder = snapshot.reminders.find((item) => (
+          item.archivedAt === null
+          && item.accountId === account.id
+          && CREDIT_RECURRENCE.test(item.recurrence)
+        ));
+        const match = reminder ? CREDIT_RECURRENCE.exec(reminder.recurrence) : null;
+        const billingDay = match ? Number(match[1]) : 1;
+        const repaymentDay = match ? Number(match[2]) : 10;
+        return {
+          reminderId: reminder?.id ?? null,
+          accountId: account.id,
+          accountName: account.name,
+          creditLimitCents: reminder?.amountCents ?? 0,
+          billingDay,
+          repaymentDay,
+          dueCents: Math.max(0, -this.accountPresentedBalance(snapshot, account)),
+          nextRepaymentAt: reminder?.nextDueAt ?? nextMonthlyDate(this.now(), repaymentDay),
+        };
+      });
+  }
+
+  async saveCreditCardProfile(input: {
+    accountId: string;
+    creditLimitCents: number;
+    billingDay: number;
+    repaymentDay: number;
+  }): Promise<void> {
+    if (!Number.isSafeInteger(input.creditLimitCents) || input.creditLimitCents <= 0) {
+      throw new Error('信用额度必须大于0');
+    }
+    assertReminderDay(input.billingDay, '账单日');
+    assertReminderDay(input.repaymentDay, '还款日');
+    const snapshot = await this.readSnapshot();
+    const account = this.requireActiveAccount(snapshot, input.accountId);
+    if (account.kind !== 'credit_card' || account.accountClass !== 'liability') {
+      throw new Error('只有信用卡负债账户可以设置账单信息');
+    }
+    const current = snapshot.reminders.find((item) => (
+      item.archivedAt === null
+      && item.accountId === account.id
+      && CREDIT_RECURRENCE.test(item.recurrence)
+    ));
+    const createdAt = this.now().toISOString();
+    const reminder: Reminder = {
+      id: current?.id ?? this.makeUuid(),
+      ledgerId: this.ledgerId,
+      name: `${account.name}还款提醒`,
+      amountCents: input.creditLimitCents,
+      categoryId: null,
+      accountId: account.id,
+      recurrence: `credit-card:v1:billing=${input.billingDay};repayment=${input.repaymentDay}`,
+      nextDueAt: nextMonthlyDate(this.now(), input.repaymentDay),
+      version: current ? current.version + 1 : 1,
+      archivedAt: null,
+    };
+    await this.saveOperation(current ? {
+      schemaVersion: 1,
+      operationId: this.makeUuid(),
+      ledgerId: this.ledgerId,
+      createdAt,
+      kind: 'reminder.update',
+      reminderId: current.id,
+      baseVersion: current.version,
+      reminder,
+    } : {
+      schemaVersion: 1,
+      operationId: reminder.id,
+      ledgerId: this.ledgerId,
+      createdAt,
+      kind: 'reminder.create',
+      reminder,
+    });
+  }
+
+  async getRecurringRules(now = this.now()): Promise<RecurringRule[]> {
+    const snapshot = await this.readSnapshot();
+    return snapshot.reminders.flatMap((reminder) => {
+      if (reminder.archivedAt !== null || !reminder.accountId || !reminder.categoryId || reminder.amountCents === null) return [];
+      const match = RECURRING_RECURRENCE.exec(reminder.recurrence);
+      if (!match) return [];
+      return [{
+        id: reminder.id,
+        name: reminder.name,
+        type: match[1] as 'expense' | 'income',
+        amountCents: reminder.amountCents,
+        accountId: reminder.accountId,
+        categoryId: reminder.categoryId,
+        dayOfMonth: Number(match[2]),
+        nextDueAt: reminder.nextDueAt,
+        pending: Date.parse(reminder.nextDueAt) <= now.getTime(),
+      }];
+    });
+  }
+
+  async saveRecurringRule(input: {
+    id?: string;
+    name: string;
+    type: 'expense' | 'income';
+    amountCents: number;
+    accountId: string;
+    categoryId: string;
+    dayOfMonth: number;
+  }): Promise<{ reminderId: string }> {
+    const name = input.name.trim();
+    if (!name) throw new Error('请输入周期账单名称');
+    if (name.length > 50) throw new Error('周期账单名称不能超过50个字符');
+    if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) throw new Error('周期金额必须大于0');
+    assertReminderDay(input.dayOfMonth, '生成日');
+    const snapshot = await this.readSnapshot();
+    const account = this.requireActiveAccount(snapshot, input.accountId);
+    if (input.type === 'income' && account.accountClass !== 'asset') throw new Error('周期收入只能存入资产账户');
+    this.requireActiveCategory(snapshot, input.categoryId, input.type);
+    const current = input.id
+      ? snapshot.reminders.find((item) => item.id === input.id && item.archivedAt === null)
+      : undefined;
+    if (input.id && (!current || !RECURRING_RECURRENCE.test(current.recurrence))) throw new Error('周期账单不存在');
+    const reminder: Reminder = {
+      id: current?.id ?? this.makeUuid(),
+      ledgerId: this.ledgerId,
+      name,
+      amountCents: input.amountCents,
+      categoryId: input.categoryId,
+      accountId: input.accountId,
+      recurrence: `recurring:v1:${input.type}:monthly:${input.dayOfMonth}`,
+      nextDueAt: current?.nextDueAt ?? nextMonthlyDate(this.now(), input.dayOfMonth),
+      version: current ? current.version + 1 : 1,
+      archivedAt: null,
+    };
+    const createdAt = this.now().toISOString();
+    await this.saveOperation(current ? {
+      schemaVersion: 1, operationId: this.makeUuid(), ledgerId: this.ledgerId, createdAt,
+      kind: 'reminder.update', reminderId: current.id, baseVersion: current.version, reminder,
+    } : {
+      schemaVersion: 1, operationId: reminder.id, ledgerId: this.ledgerId, createdAt,
+      kind: 'reminder.create', reminder,
+    });
+    return { reminderId: reminder.id };
+  }
+
+  async confirmRecurringRule(id: string): Promise<{ transactionId: string }> {
+    const snapshot = await this.readSnapshot();
+    const reminder = snapshot.reminders.find((item) => item.id === id && item.archivedAt === null);
+    const match = reminder ? RECURRING_RECURRENCE.exec(reminder.recurrence) : null;
+    if (!reminder || !match || !reminder.accountId || !reminder.categoryId || reminder.amountCents === null) {
+      throw new Error('周期账单不存在');
+    }
+    if (Date.parse(reminder.nextDueAt) > this.now().getTime()) throw new Error('周期账单尚未到确认日期');
+    const type = match[1] as 'expense' | 'income';
+    const result = await this.createTransaction({
+      type,
+      operationId: recurringOccurrenceId(reminder.id, reminder.nextDueAt),
+      amountCents: reminder.amountCents,
+      accountId: reminder.accountId,
+      categoryId: reminder.categoryId,
+      occurredAt: this.now().toISOString(),
+      name: reminder.name,
+      note: '由周期账单确认生成',
+    });
+    const updated: Reminder = {
+      ...reminder,
+      nextDueAt: advanceMonthlyDate(reminder.nextDueAt, Number(match[2])),
+      version: reminder.version + 1,
+    };
+    await this.saveOperation({
+      schemaVersion: 1,
+      operationId: this.makeUuid(),
+      ledgerId: this.ledgerId,
+      createdAt: this.now().toISOString(),
+      kind: 'reminder.update',
+      reminderId: reminder.id,
+      baseVersion: reminder.version,
+      reminder: updated,
+    });
+    return result;
+  }
+
+  async skipRecurringRule(id: string): Promise<void> {
+    const snapshot = await this.readSnapshot();
+    const reminder = snapshot.reminders.find((item) => item.id === id && item.archivedAt === null);
+    const match = reminder ? RECURRING_RECURRENCE.exec(reminder.recurrence) : null;
+    if (!reminder || !match) throw new Error('周期账单不存在');
+    if (Date.parse(reminder.nextDueAt) > this.now().getTime()) throw new Error('周期账单尚未到确认日期');
+    const updated = {
+      ...reminder,
+      nextDueAt: advanceMonthlyDate(reminder.nextDueAt, Number(match[2])),
+      version: reminder.version + 1,
+    };
+    await this.saveOperation({
+      schemaVersion: 1, operationId: this.makeUuid(), ledgerId: this.ledgerId,
+      createdAt: this.now().toISOString(), kind: 'reminder.update',
+      reminderId: reminder.id, baseVersion: reminder.version, reminder: updated,
+    });
+  }
+
+  async archiveRecurringRule(id: string): Promise<void> {
+    const snapshot = await this.readSnapshot();
+    const reminder = snapshot.reminders.find((item) => item.id === id && item.archivedAt === null);
+    if (!reminder || !RECURRING_RECURRENCE.test(reminder.recurrence)) throw new Error('周期账单不存在');
+    await this.saveOperation({
+      schemaVersion: 1, operationId: this.makeUuid(), ledgerId: this.ledgerId,
+      createdAt: this.now().toISOString(), kind: 'reminder.archive',
+      reminderId: reminder.id, baseVersion: reminder.version, archivedAt: this.now().toISOString(),
+    });
+  }
+
   async createTransaction(
     input: TransactionCreateInput,
   ): Promise<{ transactionId: string }> {
     const snapshot = await this.readSnapshot();
+    if (input.operationId) {
+      const existing = snapshot.transactions.find((item) => (
+        item.id === input.operationId && item.operationId === input.operationId
+      ));
+      if (existing) return { transactionId: existing.id };
+    }
     let entries: LedgerEntry[];
     let categoryId: string | null = null;
     let originalTransactionId: string | null = null;
@@ -766,7 +1033,7 @@ export class LedgerViewModel {
         break;
     }
 
-    const operationId = this.makeUuid();
+    const operationId = input.operationId ?? this.makeUuid();
     const amountCents = input.type === 'adjustment'
       ? Math.abs(input.deltaCents)
       : input.amountCents;
@@ -1130,6 +1397,7 @@ export class LedgerViewModel {
 }
 
 export type {
+  CreditCardProfile,
   EntryOptions,
   HomeSnapshot,
   LedgerViewModelOptions,

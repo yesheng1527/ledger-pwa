@@ -48,17 +48,19 @@ export class LocalLedgerRepository {
       this.db.entries,
       this.db.budgets,
       this.db.categoryBudgets,
+      this.db.reminders,
     ];
     return this.db.transaction('r', tables, async () => {
-      const [accounts, categories, transactions, entries, budgets, categoryBudgets] = await Promise.all([
+      const [accounts, categories, transactions, entries, budgets, categoryBudgets, reminders] = await Promise.all([
         this.db.accounts.where('ledgerId').equals(ledgerId).toArray(),
         this.db.categories.where('ledgerId').equals(ledgerId).toArray(),
         this.db.transactions.where('ledgerId').equals(ledgerId).toArray(),
         this.db.entries.where('ledgerId').equals(ledgerId).toArray(),
         this.db.budgets.where('ledgerId').equals(ledgerId).toArray(),
         this.db.categoryBudgets.where('ledgerId').equals(ledgerId).toArray(),
+        this.db.reminders.where('ledgerId').equals(ledgerId).toArray(),
       ]);
-      return { ledgerId, accounts, categories, transactions, entries, budgets, categoryBudgets };
+      return { ledgerId, accounts, categories, transactions, entries, budgets, categoryBudgets, reminders };
     });
   }
 

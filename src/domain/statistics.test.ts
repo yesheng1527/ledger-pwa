@@ -112,6 +112,7 @@ describe('selectStatistics ranges, budgets and trends', () => {
       entries: [],
       budgets: [],
       categoryBudgets: [],
+      reminders: [],
     };
 
     const result = selectStatistics(snapshot, { kind: 'year', year: 2024 });

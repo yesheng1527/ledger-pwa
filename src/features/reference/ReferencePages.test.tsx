@@ -592,6 +592,81 @@ describe('reference five-page application', () => {
     expect(screen.getByRole('button', { name: '编辑账户 海风信用卡' })).toHaveTextContent('负债账户');
   });
 
+  it('edits persisted credit-card limit and statement dates through account UI', async () => {
+    const user = userEvent.setup();
+    const getAccounts = vi.fn().mockResolvedValue([{ id: 'credit-1', name: '海风信用卡', kind: 'credit_card', accountClass: 'liability', balanceCents: -68000, version: 1 }]);
+    const getCreditCardProfiles = vi.fn().mockResolvedValue([{
+      reminderId: 'reminder-1', accountId: 'credit-1', accountName: '海风信用卡',
+      creditLimitCents: 2000000, billingDay: 5, repaymentDay: 20,
+      dueCents: 68000, nextRepaymentAt: new Date(2024, 5, 20).toISOString(),
+    }]);
+    const updateAccount = vi.fn().mockResolvedValue(undefined);
+    const saveCreditCardProfile = vi.fn().mockResolvedValue(undefined);
+    const creditViewModel = {
+      subscribe: () => () => undefined,
+      getAccounts, getCreditCardProfiles, updateAccount, saveCreditCardProfile,
+      getAccountUsage: vi.fn().mockResolvedValue({ transactionCount: 2, balanceCents: -68000 }),
+    } as unknown as LedgerViewModel;
+    render(<AppShell viewModel={creditViewModel} />);
+
+    await user.click(screen.getByRole('button', { name: /^我的$/ }));
+    await user.click(screen.getByRole('button', { name: /账户管理/ }));
+    await user.click(await screen.findByRole('button', { name: '编辑账户 海风信用卡' }));
+    expect(screen.getByLabelText('信用额度')).toHaveValue('20000.00');
+    await user.clear(screen.getByLabelText('信用额度'));
+    await user.type(screen.getByLabelText('信用额度'), '30000.00');
+    await user.clear(screen.getByLabelText('账单日'));
+    await user.type(screen.getByLabelText('账单日'), '31');
+    await user.clear(screen.getByLabelText('还款日'));
+    await user.type(screen.getByLabelText('还款日'), '28');
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+
+    await waitFor(() => expect(saveCreditCardProfile).toHaveBeenCalledWith({
+      accountId: 'credit-1', creditLimitCents: 3000000, billingDay: 31, repaymentDay: 28,
+    }));
+    expect(updateAccount).toHaveBeenCalledWith(expect.objectContaining({ id: 'credit-1', kind: 'credit_card', accountClass: 'liability' }));
+  });
+
+  it('operates pending recurring items and creates a rule through reminder UI', async () => {
+    const user = userEvent.setup();
+    const dueRule = {
+      id: 'reminder-due', name: '每月房租', type: 'expense' as const, amountCents: 250000,
+      accountId: 'account-1', categoryId: 'category-1', dayOfMonth: 18,
+      nextDueAt: new Date(2024, 4, 18, 9).toISOString(), pending: true,
+    };
+    const getRecurringRules = vi.fn().mockResolvedValueOnce([dueRule]).mockResolvedValue([]);
+    const confirmRecurringRule = vi.fn().mockResolvedValue({ transactionId: 'transaction-1' });
+    const saveRecurringRule = vi.fn().mockResolvedValue({ reminderId: 'reminder-2' });
+    const reminderViewModel = {
+      getRecurringRules, confirmRecurringRule, saveRecurringRule,
+      skipRecurringRule: vi.fn(), archiveRecurringRule: vi.fn(),
+      getEntryOptions: vi.fn().mockResolvedValue({
+        accounts: [{ id: 'account-1', name: '现金', accountClass: 'asset', balanceCents: 100000 }],
+        expenseCategories: [{ id: 'category-1', name: '住房', iconKey: 'home' }],
+        incomeCategories: [{ id: 'category-2', name: '工资', iconKey: 'income' }],
+        refundableExpenses: [],
+      }),
+    } as unknown as LedgerViewModel;
+    render(<AppShell viewModel={reminderViewModel} />);
+
+    await user.click(screen.getByRole('button', { name: /^我的$/ }));
+    await user.click(screen.getByRole('button', { name: /记账提醒/ }));
+    expect(await screen.findByText('每月房租')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '跳过本期' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '确认记账' }));
+    await waitFor(() => expect(confirmRecurringRule).toHaveBeenCalledWith('reminder-due'));
+
+    await user.type(screen.getByLabelText('周期账单名称'), '固定早餐');
+    await user.type(screen.getByLabelText('周期账单金额'), '12.00');
+    await user.clear(screen.getByLabelText('每月生成日'));
+    await user.type(screen.getByLabelText('每月生成日'), '31');
+    await user.click(screen.getByRole('button', { name: '添加周期账单' }));
+    await waitFor(() => expect(saveRecurringRule).toHaveBeenCalledWith({
+      name: '固定早餐', type: 'expense', amountCents: 1200,
+      accountId: 'account-1', categoryId: 'category-1', dayOfMonth: 31,
+    }));
+  });
+
   it('updates and persists the profile avatar and signature', async () => {
     const user = userEvent.setup();
     render(<AppShell viewModel={viewModel} />);

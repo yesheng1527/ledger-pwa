@@ -89,6 +89,7 @@ export interface LedgerReadSnapshot {
   entries: LedgerEntryRecord[];
   budgets: Budget[];
   categoryBudgets: CategoryBudget[];
+  reminders: Reminder[];
 }
 
 type ChangeMeta = { entityId: string; version: number; tombstone: boolean };

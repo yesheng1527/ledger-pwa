@@ -407,6 +407,191 @@ describe('LedgerViewModel transaction projections', () => {
   });
 });
 
+describe('LedgerViewModel reminders and credit cards', () => {
+  it('stores credit limit and statement days in a synced reminder and derives the outstanding amount', async () => {
+    const { repository, saveOperation, viewModel } = createFixtureViewModelHarness();
+
+    await viewModel.saveCreditCardProfile({
+      accountId: fixtureIds.credit,
+      creditLimitCents: 2000000,
+      billingDay: 5,
+      repaymentDay: 20,
+    });
+
+    expect(saveOperation).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'reminder.create',
+      reminder: expect.objectContaining({
+        accountId: fixtureIds.credit,
+        amountCents: 2000000,
+        recurrence: 'credit-card:v1:billing=5;repayment=20',
+      }),
+    }));
+    const reloaded = new LedgerViewModel({
+      ledgerId: fixtureIds.ledger,
+      repository,
+      saveOperation: (operation) => repository.saveOperation(operation),
+      syncNow: async () => undefined,
+      now: () => new Date(fixtureNow),
+      makeUuid: sequentialUuidFactory(),
+    });
+    expect(await reloaded.getCreditCardProfiles()).toEqual([
+      expect.objectContaining({
+        accountId: fixtureIds.credit,
+        creditLimitCents: 2000000,
+        billingDay: 5,
+        repaymentDay: 20,
+        dueCents: 68000,
+      }),
+    ]);
+  });
+
+  it('updates credit-card due amount after purchase, refund, and repayment postings', async () => {
+    const { viewModel } = createFixtureViewModelHarness();
+    expect((await viewModel.getCreditCardProfiles())[0]?.dueCents).toBe(68000);
+
+    const purchase = await viewModel.createTransaction({
+      type: 'expense', amountCents: 10000, accountId: fixtureIds.credit,
+      categoryId: fixtureIds.foodCategory, occurredAt: fixtureTimes.todayExpense, note: '',
+    });
+    expect((await viewModel.getCreditCardProfiles())[0]?.dueCents).toBe(78000);
+    await viewModel.createTransaction({
+      type: 'refund', amountCents: 3000, originalTransactionId: purchase.transactionId,
+      occurredAt: fixtureTimes.todayExpense, note: '',
+    });
+    expect((await viewModel.getCreditCardProfiles())[0]?.dueCents).toBe(75000);
+    await viewModel.createTransaction({
+      type: 'transfer', amountCents: 10000, fromAccountId: fixtureIds.bank,
+      toAccountId: fixtureIds.credit, occurredAt: fixtureTimes.todayExpense, note: '还款',
+    });
+    expect((await viewModel.getCreditCardProfiles())[0]?.dueCents).toBe(65000);
+  });
+
+  it('clamps day 31 to the month end and rejects impossible reminder days', async () => {
+    const repository = createMutableLedgerFixture();
+    const now = new Date(2027, 0, 31, 10);
+    const viewModel = new LedgerViewModel({
+      ledgerId: fixtureIds.ledger,
+      repository,
+      saveOperation: (operation) => repository.saveOperation(operation),
+      syncNow: async () => undefined,
+      now: () => new Date(now),
+      makeUuid: sequentialUuidFactory(),
+    });
+    await viewModel.saveCreditCardProfile({
+      accountId: fixtureIds.credit, creditLimitCents: 1000000, billingDay: 31, repaymentDay: 31,
+    });
+    expect((await viewModel.getCreditCardProfiles())[0]).toMatchObject({
+      billingDay: 31,
+      repaymentDay: 31,
+      nextRepaymentAt: new Date(2027, 1, 28, 9).toISOString(),
+    });
+    await expect(viewModel.saveCreditCardProfile({
+      accountId: fixtureIds.credit, creditLimitCents: 1000000, billingDay: 0, repaymentDay: 20,
+    })).rejects.toThrow('账单日必须是1至31日');
+    await expect(viewModel.saveCreditCardProfile({
+      accountId: fixtureIds.credit, creditLimitCents: 1000000, billingDay: 5, repaymentDay: 32,
+    })).rejects.toThrow('还款日必须是1至31日');
+  });
+
+  it('creates due recurring items as pending and advances only after confirmation', async () => {
+    const reminderId = '00000000-0000-4000-8000-000000000750';
+    const { repository, viewModel } = createFixtureViewModelHarness({
+      reminders: [{
+        id: reminderId,
+        ledgerId: fixtureIds.ledger,
+        name: '每月房租',
+        amountCents: 250000,
+        categoryId: fixtureIds.foodCategory,
+        accountId: fixtureIds.bank,
+        recurrence: 'recurring:v1:expense:monthly:18',
+        nextDueAt: new Date(2026, 6, 18, 9).toISOString(),
+        version: 1,
+        archivedAt: null,
+      }],
+    });
+
+    expect(await viewModel.getRecurringRules()).toEqual([
+      expect.objectContaining({ id: reminderId, pending: true, amountCents: 250000 }),
+    ]);
+    const result = await viewModel.confirmRecurringRule(reminderId);
+    expect(repository.snapshot.transactions.find((item) => item.id === result.transactionId))
+      .toMatchObject({ type: 'expense', amountCents: 250000, categoryId: fixtureIds.foodCategory });
+    expect(repository.snapshot.reminders.find((item) => item.id === reminderId))
+      .toMatchObject({ nextDueAt: new Date(2026, 7, 18, 9).toISOString(), version: 2 });
+
+    const reloaded = new LedgerViewModel({
+      ledgerId: fixtureIds.ledger,
+      repository,
+      saveOperation: (operation) => repository.saveOperation(operation),
+      syncNow: async () => undefined,
+      now: () => new Date(fixtureNow),
+      makeUuid: sequentialUuidFactory(),
+    });
+    expect((await reloaded.getRecurringRules())[0]).toMatchObject({ pending: false });
+  });
+
+  it('deduplicates a recurring occurrence when confirmation is retried after a partial failure', async () => {
+    const reminderId = '00000000-0000-4000-8000-000000000751';
+    const repository = createMutableLedgerFixture({ reminders: [{
+      id: reminderId, ledgerId: fixtureIds.ledger, name: '固定早餐', amountCents: 1200,
+      categoryId: fixtureIds.foodCategory, accountId: fixtureIds.cash,
+      recurrence: 'recurring:v1:expense:monthly:18',
+      nextDueAt: new Date(2026, 6, 18, 9).toISOString(), version: 1, archivedAt: null,
+    }] });
+    let failReminderUpdate = true;
+    const saveOperation = vi.fn(async (operation: LedgerOperation) => {
+      if (operation.kind === 'reminder.update' && failReminderUpdate) {
+        failReminderUpdate = false;
+        throw new Error('simulated interruption');
+      }
+      await repository.saveOperation(operation);
+    });
+    const viewModel = new LedgerViewModel({
+      ledgerId: fixtureIds.ledger, repository, saveOperation, syncNow: async () => undefined,
+      now: () => new Date(fixtureNow), makeUuid: sequentialUuidFactory(),
+    });
+
+    await expect(viewModel.confirmRecurringRule(reminderId)).rejects.toThrow('simulated interruption');
+    await expect(viewModel.confirmRecurringRule(reminderId)).resolves.toEqual({ transactionId: expect.any(String) });
+    expect(repository.snapshot.transactions.filter((item) => (
+      decodeTransactionText(item.id, item.note).name === '固定早餐'
+    ))).toHaveLength(1);
+    expect((await viewModel.getRecurringRules())[0]).toMatchObject({ pending: false });
+  });
+
+  it('skips or deletes a due recurring rule without creating transactions', async () => {
+    const due = (id: string) => ({
+      id, ledgerId: fixtureIds.ledger, name: '待处理固定支出', amountCents: 1000,
+      categoryId: fixtureIds.foodCategory, accountId: fixtureIds.cash,
+      recurrence: 'recurring:v1:expense:monthly:18',
+      nextDueAt: new Date(2026, 6, 18, 9).toISOString(), version: 1, archivedAt: null,
+    });
+    const firstId = '00000000-0000-4000-8000-000000000752';
+    const secondId = '00000000-0000-4000-8000-000000000753';
+    const { repository, viewModel } = createFixtureViewModelHarness({ reminders: [due(firstId), due(secondId)] });
+    const transactionCount = repository.snapshot.transactions.length;
+
+    await viewModel.skipRecurringRule(firstId);
+    await viewModel.archiveRecurringRule(secondId);
+
+    expect(repository.snapshot.transactions).toHaveLength(transactionCount);
+    expect((await viewModel.getRecurringRules()).find((item) => item.id === firstId)).toMatchObject({ pending: false });
+    expect((await viewModel.getRecurringRules()).some((item) => item.id === secondId)).toBe(false);
+  });
+
+  it('validates credit card and recurring rule inputs before queuing operations', async () => {
+    const { saveOperation, viewModel } = createFixtureViewModelHarness();
+    await expect(viewModel.saveCreditCardProfile({
+      accountId: fixtureIds.bank, creditLimitCents: 100000, billingDay: 5, repaymentDay: 20,
+    })).rejects.toThrow('只有信用卡负债账户');
+    await expect(viewModel.saveRecurringRule({
+      name: '工资', type: 'income', amountCents: 100000,
+      accountId: fixtureIds.credit, categoryId: fixtureIds.incomeCategory, dayOfMonth: 8,
+    })).rejects.toThrow('周期收入只能存入资产账户');
+    expect(saveOperation).not.toHaveBeenCalled();
+  });
+});
+
 describe('LedgerViewModel transaction commands', () => {
   it('builds active entry options and remaining refundable expenses from one snapshot', async () => {
     const { repository, viewModel } = createFixtureViewModelHarness();

@@ -5,6 +5,7 @@ import type {
   Category,
   CategoryBudget,
   LedgerEntryRecord,
+  Reminder,
   Transaction,
 } from '../domain/types';
 import type { LedgerReadSnapshot } from '../db/records';
@@ -456,6 +457,8 @@ const categoryBudgets: CategoryBudget[] = [{
   archivedAt: null,
 }];
 
+const reminders: Reminder[] = [];
+
 function baseSnapshot(): LedgerReadSnapshot {
   return {
     ledgerId: ids.ledger,
@@ -465,6 +468,7 @@ function baseSnapshot(): LedgerReadSnapshot {
     entries: structuredClone(entries),
     budgets: structuredClone(budgets),
     categoryBudgets: structuredClone(categoryBudgets),
+    reminders: structuredClone(reminders),
   };
 }
 
@@ -500,6 +504,7 @@ export function createMutableLedgerFixture(
         categoryBudgets: fixture.snapshot.categoryBudgets.filter(
           (item) => item.ledgerId === ledgerId,
         ),
+        reminders: fixture.snapshot.reminders.filter((item) => item.ledgerId === ledgerId),
       });
     },
     watchLedger(ledgerId, listener) {
@@ -604,6 +609,20 @@ export function createMutableLedgerFixture(
         fixture.snapshot.budgets = fixture.snapshot.budgets.map((item) => (
           item.id === operation.budgetId && item.ledgerId === operation.ledgerId
             ? structuredClone(operation.budget)
+            : item
+        ));
+      } else if (operation.kind === 'reminder.create') {
+        fixture.snapshot.reminders.push(structuredClone(operation.reminder));
+      } else if (operation.kind === 'reminder.update') {
+        fixture.snapshot.reminders = fixture.snapshot.reminders.map((item) => (
+          item.id === operation.reminderId && item.ledgerId === operation.ledgerId
+            ? structuredClone(operation.reminder)
+            : item
+        ));
+      } else if (operation.kind === 'reminder.archive') {
+        fixture.snapshot.reminders = fixture.snapshot.reminders.map((item) => (
+          item.id === operation.reminderId && item.ledgerId === operation.ledgerId
+            ? { ...item, archivedAt: operation.archivedAt, version: item.version + 1 }
             : item
         ));
       }

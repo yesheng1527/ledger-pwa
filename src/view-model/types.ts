@@ -118,6 +118,7 @@ export type TransactionEditInput =
 export type TransactionCreateInput =
   | {
       type: 'expense' | 'income';
+      operationId?: string;
       amountCents: number;
       accountId: string;
       categoryId: string;
@@ -127,6 +128,7 @@ export type TransactionCreateInput =
     }
   | {
       type: 'transfer';
+      operationId?: string;
       amountCents: number;
       fromAccountId: string;
       toAccountId: string;
@@ -136,6 +138,7 @@ export type TransactionCreateInput =
     }
   | {
       type: 'refund';
+      operationId?: string;
       amountCents: number;
       originalTransactionId: string;
       occurredAt: string;
@@ -144,6 +147,7 @@ export type TransactionCreateInput =
     }
   | {
       type: 'adjustment';
+      operationId?: string;
       deltaCents: number;
       accountId: string;
       occurredAt: string;
@@ -167,6 +171,29 @@ export interface EntryOptions {
     remainingCents: number;
     occurredAt: string;
   }>;
+}
+
+export interface CreditCardProfile {
+  reminderId: string | null;
+  accountId: string;
+  accountName: string;
+  creditLimitCents: number;
+  billingDay: number;
+  repaymentDay: number;
+  dueCents: number;
+  nextRepaymentAt: string;
+}
+
+export interface RecurringRule {
+  id: string;
+  name: string;
+  type: 'expense' | 'income';
+  amountCents: number;
+  accountId: string;
+  categoryId: string;
+  dayOfMonth: number;
+  nextDueAt: string;
+  pending: boolean;
 }
 
 export interface ManagedAccount {

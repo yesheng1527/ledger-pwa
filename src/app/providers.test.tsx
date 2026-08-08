@@ -149,6 +149,7 @@ function createHarness(options: { online?: boolean; cachedLedgerId?: string | nu
     entries: [],
     budgets: [],
     categoryBudgets: [],
+    reminders: [],
   });
   const repo = {
     getPersonalLedgerId: vi.fn(async () => options.cachedLedgerId ?? null),

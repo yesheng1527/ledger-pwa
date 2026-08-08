@@ -19,8 +19,11 @@ import { formatYuan, parsePositiveYuan, parseYuan } from '../../domain/money';
 import type { LedgerViewModel } from '../../view-model/ledger-view-model';
 import { useLedgerQuery } from '../../view-model/use-ledger-query';
 import type {
+  CreditCardProfile,
+  EntryOptions,
   HomeSnapshot,
   ManagedAccount,
+  RecurringRule,
   StatisticsRange,
   StatisticsSnapshot,
   TransactionDetail,
@@ -103,8 +106,7 @@ function supportsLedgerQuery(
   method: keyof LedgerViewModel,
 ): boolean {
   const candidate = viewModel as Partial<LedgerViewModel>;
-  return !isStaticReferenceMode()
-    && typeof candidate.subscribe === 'function'
+  return typeof candidate.subscribe === 'function'
     && typeof candidate[method] === 'function';
 }
 
@@ -2446,6 +2448,7 @@ function ToggleRow({
 }
 
 function ProfileSubpage({
+  viewModel,
   section,
   avatar,
   ledgerName,
@@ -2479,6 +2482,7 @@ function ProfileSubpage({
   onBack,
   onFeedback,
 }: {
+  viewModel: LedgerViewModel;
   section: ProfileSection;
   avatar: string;
   ledgerName: string;
@@ -2497,7 +2501,7 @@ function ProfileSubpage({
   onRemoveAccount(index: number): Promise<void>;
   onPermanentDeleteAccount(index: number): Promise<void>;
   onGetAccountUsage(index: number): Promise<{ transactionCount: number; balanceCents: number }>;
-  onAddAccount(value: { name: string; openingBalanceCents: number; kind: ProfileAccount['kind']; accountClass: ProfileAccount['accountClass'] }): Promise<void>;
+  onAddAccount(value: { name: string; openingBalanceCents: number; kind: ProfileAccount['kind']; accountClass: ProfileAccount['accountClass'] }): Promise<string>;
   reminderEnabled: boolean;
   setReminderEnabled(value: boolean): void;
   reminderTime: string;
@@ -2528,6 +2532,47 @@ function ProfileSubpage({
   const [avatarSaving, setAvatarSaving] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
+  const [creditProfiles, setCreditProfiles] = useState<CreditCardProfile[]>([]);
+  const [creditLimitDraft, setCreditLimitDraft] = useState('');
+  const [billingDayDraft, setBillingDayDraft] = useState('5');
+  const [repaymentDayDraft, setRepaymentDayDraft] = useState('20');
+  const [recurringRules, setRecurringRules] = useState<RecurringRule[]>([]);
+  const [recurringOptions, setRecurringOptions] = useState<EntryOptions | null>(null);
+  const [recurringName, setRecurringName] = useState('');
+  const [recurringAmount, setRecurringAmount] = useState('');
+  const [recurringType, setRecurringType] = useState<'expense' | 'income'>('expense');
+  const [recurringDay, setRecurringDay] = useState('1');
+  const [recurringAccountId, setRecurringAccountId] = useState('');
+  const [recurringCategoryId, setRecurringCategoryId] = useState('');
+  const [reminderError, setReminderError] = useState<string | null>(null);
+  const [reminderSaving, setReminderSaving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const profiles = typeof viewModel.getCreditCardProfiles === 'function'
+          ? await viewModel.getCreditCardProfiles()
+          : [];
+        if (active) setCreditProfiles(profiles);
+        if (section === '记账提醒' && typeof viewModel.getRecurringRules === 'function') {
+          const [rules, options] = await Promise.all([
+            viewModel.getRecurringRules(),
+            viewModel.getEntryOptions(),
+          ]);
+          if (!active) return;
+          setRecurringRules(rules);
+          setRecurringOptions(options);
+          setRecurringAccountId((value) => value || options.accounts[0]?.id || '');
+          setRecurringCategoryId((value) => value || options.expenseCategories[0]?.id || '');
+        }
+      } catch (caught) {
+        if (active) setReminderError(caught instanceof Error ? caught.message : '提醒资料加载失败');
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, [section, viewModel]);
 
   let budgetDraftCents = 0;
   try {
@@ -2544,6 +2589,10 @@ function ProfileSubpage({
     setAccountBalanceDraft(formatYuan(account.balanceCents).replace('¥', ''));
     setAccountKindDraft(account.kind);
     setAccountClassDraft(account.accountClass);
+    const credit = creditProfiles.find((item) => item.accountId === account.id);
+    setCreditLimitDraft(credit?.creditLimitCents ? formatYuan(credit.creditLimitCents).replace('¥', '') : '');
+    setBillingDayDraft(String(credit?.billingDay ?? 5));
+    setRepaymentDayDraft(String(credit?.repaymentDay ?? 20));
     setAccountEditError(null);
   }
 
@@ -2553,6 +2602,9 @@ function ProfileSubpage({
     setAccountBalanceDraft('0.00');
     setAccountKindDraft('custom');
     setAccountClassDraft('asset');
+    setCreditLimitDraft('');
+    setBillingDayDraft('5');
+    setRepaymentDayDraft('20');
     setAccountEditError(null);
   }
 
@@ -2597,9 +2649,10 @@ function ProfileSubpage({
 
     setAccountSaving(true);
     try {
+      let savedAccountId: string;
       if (editingAccountIndex === -1) {
         if (nextBalanceCents < 0) throw new Error('初始余额不能为负数');
-        await onAddAccount({
+        savedAccountId = await onAddAccount({
           name: nextName,
           openingBalanceCents: nextBalanceCents,
           kind: accountKindDraft,
@@ -2612,6 +2665,17 @@ function ProfileSubpage({
           kind: accountKindDraft,
           accountClass: accountKindDraft === 'credit_card' ? 'liability' : accountClassDraft,
         });
+        savedAccountId = accounts[editingAccountIndex].id;
+      }
+      if (accountKindDraft === 'credit_card' && typeof viewModel.saveCreditCardProfile === 'function') {
+        const creditLimitCents = parsePositiveYuan(creditLimitDraft);
+        await viewModel.saveCreditCardProfile({
+          accountId: savedAccountId,
+          creditLimitCents,
+          billingDay: Number(billingDayDraft),
+          repaymentDay: Number(repaymentDayDraft),
+        });
+        setCreditProfiles(await viewModel.getCreditCardProfiles());
       }
       closeAccountEditor();
       onFeedback(editingAccountIndex === -1 ? '账户已添加' : '账户信息已更新', 'success');
@@ -2685,6 +2749,78 @@ function ProfileSubpage({
       setAvatarError(caught instanceof Error ? caught.message : '头像恢复失败，请重试');
     } finally {
       setAvatarSaving(false);
+    }
+  }
+
+  async function saveRecurring() {
+    if (typeof viewModel.saveRecurringRule !== 'function') {
+      setReminderError('当前账本暂不支持周期账单');
+      return;
+    }
+    setReminderSaving(true);
+    setReminderError(null);
+    try {
+      const amountCents = parsePositiveYuan(recurringAmount);
+      if (!recurringAccountId || !recurringCategoryId) throw new Error('请选择账户和分类');
+      await viewModel.saveRecurringRule({
+        name: recurringName,
+        type: recurringType,
+        amountCents,
+        accountId: recurringAccountId,
+        categoryId: recurringCategoryId,
+        dayOfMonth: Number(recurringDay),
+      });
+      setRecurringRules(await viewModel.getRecurringRules());
+      setRecurringName('');
+      setRecurringAmount('');
+      onFeedback('周期账单已保存，到期后会生成待确认记录', 'success');
+    } catch (caught) {
+      setReminderError(caught instanceof Error ? caught.message : '周期账单保存失败');
+    } finally {
+      setReminderSaving(false);
+    }
+  }
+
+  async function confirmRecurring(id: string) {
+    if (typeof viewModel.confirmRecurringRule !== 'function') return;
+    setReminderSaving(true);
+    setReminderError(null);
+    try {
+      await viewModel.confirmRecurringRule(id);
+      setRecurringRules(await viewModel.getRecurringRules());
+      onFeedback('周期账单已确认并记入流水', 'success');
+    } catch (caught) {
+      setReminderError(caught instanceof Error ? caught.message : '确认失败');
+    } finally {
+      setReminderSaving(false);
+    }
+  }
+
+  async function skipRecurring(id: string) {
+    setReminderSaving(true);
+    setReminderError(null);
+    try {
+      await viewModel.skipRecurringRule(id);
+      setRecurringRules(await viewModel.getRecurringRules());
+      onFeedback('本期已跳过，不会记入流水', 'success');
+    } catch (caught) {
+      setReminderError(caught instanceof Error ? caught.message : '跳过失败');
+    } finally {
+      setReminderSaving(false);
+    }
+  }
+
+  async function deleteRecurring(id: string) {
+    setReminderSaving(true);
+    setReminderError(null);
+    try {
+      await viewModel.archiveRecurringRule(id);
+      setRecurringRules(await viewModel.getRecurringRules());
+      onFeedback('周期账单已删除，未生成流水', 'success');
+    } catch (caught) {
+      setReminderError(caught instanceof Error ? caught.message : '删除失败');
+    } finally {
+      setReminderSaving(false);
     }
   }
 
@@ -2786,7 +2922,7 @@ function ProfileSubpage({
                   aria-label={`编辑账户 ${account.name}`}
                   onClick={() => openAccountEditor(index)}
                 >
-                  <span><strong>{account.name}</strong><small>{account.accountClass === 'liability' ? '负债账户' : '资产账户'}</small></span>
+                  <span><strong>{account.name}</strong><small>{account.accountClass === 'liability' ? '负债账户' : '资产账户'}{creditProfiles.find((item) => item.accountId === account.id) ? ` · 待还 ${formatReferenceYuan(creditProfiles.find((item) => item.accountId === account.id)!.dueCents)}` : ''}</small></span>
                 </button>
                 <button
                   type="button"
@@ -2811,6 +2947,32 @@ function ProfileSubpage({
           <section className={`${styles.card} ${styles.formCard}`}>
             <ToggleRow label="每日记账提醒" checked={reminderEnabled} onChange={setReminderEnabled} />
             <label><span>提醒时间</span><input type="time" aria-label="提醒时间" value={reminderTime} disabled={!reminderEnabled} onChange={(event) => setReminderTime(event.target.value)} /></label>
+            <h2>周期账单 / 固定收支</h2>
+            {recurringRules.length ? recurringRules.map((rule) => (
+              <div key={rule.id} className={styles.accountRow}>
+                <span><strong>{rule.name}</strong><small>每月{rule.dayOfMonth}日 · {formatReferenceYuan(rule.amountCents)}</small></span>
+                {rule.pending ? (
+                  <span className={styles.sheetFormActions}>
+                    <button type="button" disabled={reminderSaving} onClick={() => void confirmRecurring(rule.id)}>确认记账</button>
+                    <button type="button" disabled={reminderSaving} onClick={() => void skipRecurring(rule.id)}>跳过本期</button>
+                    <button type="button" disabled={reminderSaving} onClick={() => void deleteRecurring(rule.id)}>删除规则</button>
+                  </span>
+                ) : <span><small>下次 {new Date(rule.nextDueAt).toLocaleDateString('zh-CN')}</small><button type="button" disabled={reminderSaving} onClick={() => void deleteRecurring(rule.id)}>删除规则</button></span>}
+              </div>
+            )) : <p>暂无周期账单，到期记录会先等待你确认。</p>}
+            <label><span>名称</span><input aria-label="周期账单名称" value={recurringName} onChange={(event) => setRecurringName(event.target.value)} /></label>
+            <label><span>类型</span><select aria-label="周期账单类型" value={recurringType} onChange={(event) => {
+              const nextType = event.target.value as 'expense' | 'income';
+              setRecurringType(nextType);
+              const categories = nextType === 'expense' ? recurringOptions?.expenseCategories : recurringOptions?.incomeCategories;
+              setRecurringCategoryId(categories?.[0]?.id ?? '');
+            }}><option value="expense">固定支出</option><option value="income">固定收入</option></select></label>
+            <label><span>金额</span><input aria-label="周期账单金额" inputMode="decimal" value={recurringAmount} onChange={(event) => setRecurringAmount(event.target.value)} /></label>
+            <label><span>每月生成日</span><input aria-label="每月生成日" type="number" min="1" max="31" value={recurringDay} onChange={(event) => setRecurringDay(event.target.value)} /></label>
+            <label><span>账户</span><select aria-label="周期账单账户" value={recurringAccountId} onChange={(event) => setRecurringAccountId(event.target.value)}>{recurringOptions?.accounts.filter((item) => recurringType === 'expense' || item.accountClass === 'asset').map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+            <label><span>分类</span><select aria-label="周期账单分类" value={recurringCategoryId} onChange={(event) => setRecurringCategoryId(event.target.value)}>{(recurringType === 'expense' ? recurringOptions?.expenseCategories : recurringOptions?.incomeCategories)?.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+            {reminderError ? <p role="alert" className={styles.sheetFormError}>{reminderError}</p> : null}
+            <button type="button" className={styles.sheetPrimaryButton} disabled={reminderSaving} onClick={() => void saveRecurring()}>{reminderSaving ? '保存中...' : '添加周期账单'}</button>
           </section>
         ) : null}
         {section === '备份与恢复' ? (
@@ -2938,6 +3100,22 @@ function ProfileSubpage({
                 }}
               />
             </label>
+            {accountKindDraft === 'credit_card' ? (
+              <>
+                <label className={styles.sheetInputField}>
+                  <span>信用额度</span>
+                  <input aria-label="信用额度" inputMode="decimal" value={creditLimitDraft} onChange={(event) => { setCreditLimitDraft(event.target.value); setAccountEditError(null); }} />
+                </label>
+                <label className={styles.sheetInputField}>
+                  <span>账单日</span>
+                  <input aria-label="账单日" type="number" min="1" max="31" value={billingDayDraft} onChange={(event) => setBillingDayDraft(event.target.value)} />
+                </label>
+                <label className={styles.sheetInputField}>
+                  <span>还款日</span>
+                  <input aria-label="还款日" type="number" min="1" max="31" value={repaymentDayDraft} onChange={(event) => setRepaymentDayDraft(event.target.value)} />
+                </label>
+              </>
+            ) : null}
             {accountEditError ? <p className={styles.sheetFormError} role="alert">{accountEditError}</p> : null}
             <button type="submit" className={styles.sheetPrimaryButton} disabled={accountSaving}>{accountSaving ? '保存中...' : editingAccountIndex === -1 ? '创建账户' : '保存修改'}</button>
           </form>
@@ -3097,8 +3275,7 @@ export function ProfilePage({
     accountClass: ProfileAccount['accountClass'];
   }) {
     if (useLiveAccounts) {
-      await viewModel.createAccount(value);
-      return;
+      return (await viewModel.createAccount(value)).accountId;
     }
     const accountId = `profile-account-${Date.now()}-${accounts.length + 1}`;
     setAccounts((current) => [...current, {
@@ -3110,6 +3287,7 @@ export function ProfilePage({
       balanceCents: value.openingBalanceCents,
       balanceEdited: true,
     }]);
+    return accountId;
   }
 
   async function permanentlyDeleteProfileAccount(index: number) {
@@ -3190,6 +3368,7 @@ export function ProfilePage({
     return (
       <PageFrame background={backgrounds.profileSubpage ?? profileSubpageBackground} className={styles.profilePage}>
         <ProfileSubpage
+          viewModel={viewModel}
           section={activeSection}
           avatar={avatar}
           ledgerName={ledgerName}
