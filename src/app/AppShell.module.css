@@ -5,19 +5,25 @@
   overflow: hidden;
   display: grid;
   place-items: center;
-  background: #eee9df;
+  padding: clamp(0px, 2.5vh, 24px);
+  background:
+    radial-gradient(circle at 50% -10%, rgb(255 255 255 / 72%), transparent 44%),
+    #eee9df;
 }
 
 .phone {
   position: relative;
   width: 100%;
-  max-width: 400px;
-  height: min(100dvh, 982px);
+  max-width: 430px;
+  height: min(calc(100dvh - clamp(0px, 5vh, 48px)), 932px);
   min-height: 0;
   overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 64%);
+  border-radius: 28px;
   background: #fffaf2;
   color: #1f211f;
-  box-shadow: 0 12px 34px rgb(96 69 31 / 14%);
+  box-shadow: 0 20px 54px rgb(78 58 34 / 18%);
+  isolation: isolate;
 }
 
 .syncBanner {
@@ -37,6 +43,7 @@
   transform: translateX(-50%);
   backdrop-filter: blur(10px);
   pointer-events: none;
+  box-shadow: 0 3px 12px rgb(58 76 75 / 8%);
 }
 
 .syncBanner[data-mode='offline'],
@@ -48,27 +55,19 @@
   inset: 0;
   overflow: hidden;
   contain: layout paint;
-  view-transition-name: ledger-page;
-}
-
-.outgoingPageStage {
-  z-index: 40;
-  pointer-events: none;
-  animation: appPageOut 180ms ease-in both;
+  background: #fffaf2;
+  backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
 }
 
 .incomingPageStage {
-  animation: appPageIn 260ms cubic-bezier(0.22, 0.78, 0.24, 1) both;
-}
-
-@keyframes appPageOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
+  will-change: transform, opacity;
+  animation: appPageIn 320ms cubic-bezier(0.22, 0.78, 0.24, 1) both;
 }
 
 @keyframes appPageIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0.97; transform: translate3d(22px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 
 .feedback {
@@ -146,17 +145,22 @@
 }
 
 @media (max-width: 560px) {
+  .viewport {
+    padding: 0;
+  }
+
   .phone {
     max-width: none;
     width: 100vw;
     height: 100dvh;
+    border: 0;
+    border-radius: 0;
     box-shadow: none;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .feedback,
-  .outgoingPageStage,
   .incomingPageStage {
     animation: none;
     transition: none;

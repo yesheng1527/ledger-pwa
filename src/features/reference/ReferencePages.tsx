@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   ArrowCounterClockwise,
   CaretDown,
   CaretLeft,
   CaretRight,
   Check,
+  DownloadSimple,
   Eye,
   EyeSlash,
+  FileArrowUp,
   MagnifyingGlass,
   PencilSimple,
   Plus,
@@ -344,6 +346,8 @@ function ReferenceSheet({
   onClose(): void;
   dismissDisabled?: boolean;
 }) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const closeTimerRef = useRef<number | null>(null);
@@ -373,13 +377,34 @@ function ReferenceSheet({
     triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') requestClose();
+    const handleDialogKeys = (event: KeyboardEvent) => {
+      const dialogs = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'));
+      if (dialogs.at(-1) !== dialogRef.current) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        requestClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      ) ?? []).filter((element) => element.getClientRects().length > 0);
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) {
+        event.preventDefault();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    window.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('keydown', handleDialogKeys);
     queueMicrotask(() => closeButtonRef.current?.focus());
     return () => {
-      window.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('keydown', handleDialogKeys);
       if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
       document.body.style.overflow = previousOverflow;
       queueMicrotask(() => triggerRef.current?.focus());
@@ -394,9 +419,9 @@ function ReferenceSheet({
         if (event.currentTarget === event.target) requestClose();
       }}
     >
-      <section className={styles.actionSheet} role="dialog" aria-modal="true" aria-labelledby="reference-sheet-title">
+      <section ref={dialogRef} className={styles.actionSheet} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header className={styles.sheetHeader}>
-          <h2 id="reference-sheet-title">{title}</h2>
+          <h2 id={titleId}>{title}</h2>
           <button ref={closeButtonRef} type="button" aria-label={`关闭${title}`} disabled={dismissDisabled} onClick={requestClose}><X /></button>
         </header>
         <div className={styles.sheetBody}>{children}</div>
@@ -533,18 +558,41 @@ function MonthDatePicker({
   onApply(month: string, date: string | null): void;
   onClose(): void;
 }) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
   const [draftMonth, setDraftMonth] = useState(initialMonth);
   const [draftDate, setDraftDate] = useState(initialDate);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const days = useMemo(() => calendarDays(draftMonth), [draftMonth]);
 
   useEffect(() => {
+    triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     cancelRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+    const handleDialogKeys = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []);
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
+    window.addEventListener('keydown', handleDialogKeys);
+    return () => {
+      window.removeEventListener('keydown', handleDialogKeys);
+      queueMicrotask(() => triggerRef.current?.focus());
+    };
   }, [onClose]);
 
   function moveMonth(offset: number) {
@@ -559,13 +607,13 @@ function MonthDatePicker({
         if (event.currentTarget === event.target) onClose();
       }}
     >
-      <section className={styles.monthPicker} role="dialog" aria-modal="true" aria-labelledby="month-picker-title">
+      <section ref={dialogRef} className={styles.monthPicker} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <img className={styles.monthPickerFrame} src={monthPickerFrame} alt="" />
         <div className={styles.monthPickerPanel}>
           <header>
             <button type="button" aria-label="上一年" onClick={() => moveMonth(-12)}><CaretLeft /><CaretLeft /></button>
             <button type="button" aria-label="上个月" onClick={() => moveMonth(-1)}><CaretLeft /></button>
-            <h2 id="month-picker-title">{monthLabel(draftMonth)}</h2>
+            <h2 id={titleId}>{monthLabel(draftMonth)}</h2>
             <button type="button" aria-label="下个月" onClick={() => moveMonth(1)}><CaretRight /></button>
             <button type="button" aria-label="下一年" onClick={() => moveMonth(12)}><CaretRight /><CaretRight /></button>
           </header>
@@ -1987,59 +2035,65 @@ export function EntryPage({
         </div>
         <span />
       </header>
-      <label className={styles.amountInput}>
-        <span>¥</span>
-        <input
-          autoFocus
-          aria-label="金额"
-          aria-invalid={error ? 'true' : undefined}
-          inputMode="decimal"
-          maxLength={11}
-          value={amount}
-          onChange={(event) => {
-            setAmount(event.target.value);
-            setError(null);
-          }}
-        />
-      </label>
-      {(shortcuts.last || shortcuts.templates.length) ? (
-        <div className={styles.chipRow} aria-label="快捷记账">
-          {shortcuts.last ? <button type="button" onClick={() => applyShortcut(shortcuts.last!)}>重复上一笔</button> : null}
-          {shortcuts.templates.map((template) => <button key={template.id} type="button" onClick={() => applyShortcut(template)}>{template.label}</button>)}
-        </div>
-      ) : null}
-      {type !== '转账' && typeof viewModel.saveEntryTemplate === 'function' ? <button type="button" onClick={() => void saveCurrentTemplate()}>保存为模板</button> : null}
-      <button
-        type="button"
-        className={styles.categoryManageButton}
-        aria-label="编辑类目"
-        title="编辑类目"
-        onClick={() => {
-          setCategoryManagerKind(type === '支出' ? 'expense' : 'income');
-          setCategoryManagerOpen(true);
-        }}
-      >
-        <PencilSimple />
-      </button>
-      <div className={styles.entryCategoryGrid}>
-        {entryCategoryOptions.map((item) => (
-          <button key={item.label} type="button" data-active={selected === item.label} onClick={() => {
-            setSelected(item.label);
-            setError(null);
-          }}>
-            <EntryCategoryArt category={item.categoryKey} iconUrl={item.iconUrl} />
-            <span>{item.label}</span>
+      <div className={styles.entryScrollContent}>
+        <label className={styles.amountInput}>
+          <span>¥</span>
+          <input
+            autoFocus
+            aria-label="金额"
+            aria-invalid={error ? 'true' : undefined}
+            inputMode="decimal"
+            maxLength={11}
+            placeholder="0.00"
+            value={amount}
+            onChange={(event) => {
+              setAmount(event.target.value);
+              setError(null);
+            }}
+          />
+        </label>
+        {(shortcuts.last || shortcuts.templates.length || (type !== '转账' && typeof viewModel.saveEntryTemplate === 'function')) ? (
+          <div className={styles.entryShortcutRow} aria-label="快捷记账">
+            {shortcuts.last ? <button type="button" onClick={() => applyShortcut(shortcuts.last!)}>重复上一笔</button> : null}
+            {shortcuts.templates.map((template) => <button key={template.id} type="button" onClick={() => applyShortcut(template)}>{template.label}</button>)}
+            {type !== '转账' && typeof viewModel.saveEntryTemplate === 'function' ? <button type="button" onClick={() => void saveCurrentTemplate()}>保存为模板</button> : null}
+          </div>
+        ) : null}
+        <div className={styles.entryCategoryHeader}>
+          <strong>选择分类</strong>
+          <button
+            type="button"
+            className={styles.categoryManageButton}
+            aria-label="编辑类目"
+            title="编辑类目"
+            onClick={() => {
+              setCategoryManagerKind(type === '支出' ? 'expense' : 'income');
+              setCategoryManagerOpen(true);
+            }}
+          >
+            <PencilSimple />
           </button>
-        ))}
+        </div>
+        <div className={styles.entryCategoryGrid}>
+          {entryCategoryOptions.map((item) => (
+            <button key={item.label} type="button" data-active={selected === item.label} onClick={() => {
+              setSelected(item.label);
+              setError(null);
+            }}>
+              <EntryCategoryArt category={item.categoryKey} iconUrl={item.iconUrl} />
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+        <section className={`${styles.card} ${styles.entryDetails}`}>
+          <label><strong>名称</strong><input aria-label="名称" maxLength={80} placeholder="例如：午餐、地铁" value={name} onChange={(event) => setName(event.target.value)} /></label>
+          <label><strong>备注</strong><input aria-label="备注" placeholder="点击写备注..." value={note} onChange={(event) => setNote(event.target.value)} /></label>
+          <button type="button" onClick={() => setEntrySheet('date')}><strong>日期</strong><span>{occurredDateLabel}{occurredDate === localDateInput(entryNow) ? ' 今天' : ''} {occurredTime} <CaretRight /></span></button>
+          <button type="button" onClick={() => setEntrySheet('account')}><strong>{type === '转账' ? '转出账户' : '账户'}</strong><span>{accountName} <CaretRight /></span></button>
+          {type === '转账' ? <button type="button" onClick={() => setEntrySheet('toAccount')}><strong>转入账户</strong><span>{entryAccountOptions.find((item) => item.value === toAccountId)?.label ?? '请选择'} <CaretRight /></span></button> : null}
+        </section>
+        {error ? <p className={styles.entryError} role="alert">{error}</p> : null}
       </div>
-      <section className={`${styles.card} ${styles.entryDetails}`}>
-        <label><strong>名称</strong><input aria-label="名称" maxLength={80} placeholder="例如：午餐、地铁" value={name} onChange={(event) => setName(event.target.value)} /></label>
-        <label><strong>备注</strong><input aria-label="备注" placeholder="点击写备注..." value={note} onChange={(event) => setNote(event.target.value)} /></label>
-        <button type="button" onClick={() => setEntrySheet('date')}><strong>日期</strong><span>{occurredDateLabel}{occurredDate === localDateInput(entryNow) ? ' 今天' : ''} {occurredTime} <CaretRight /></span></button>
-        <button type="button" onClick={() => setEntrySheet('account')}><strong>{type === '转账' ? '转出账户' : '账户'}</strong><span>{accountName} <CaretRight /></span></button>
-        {type === '转账' ? <button type="button" onClick={() => setEntrySheet('toAccount')}><strong>转入账户</strong><span>{entryAccountOptions.find((item) => item.value === toAccountId)?.label ?? '请选择'} <CaretRight /></span></button> : null}
-      </section>
-      {error ? <p className={styles.entryError} role="alert">{error}</p> : null}
       <button type="button" className={styles.saveButton} disabled={saveState !== 'idle'} data-state={saveState} onClick={() => void saveEntry()}>
         {saveState === 'saved' ? <><Check weight="bold" /> 已保存</> : saveState === 'saving' ? '保存中...' : '保存'}
       </button>
@@ -3159,8 +3213,13 @@ function ProfileSubpage({
     }
   }
 
+  const hasPersistentSave = section !== '关于我们'
+    && section !== '备份与恢复'
+    && section !== '账户管理'
+    && section !== '背景设置';
+
   return (
-    <div className={styles.profileSubpage}>
+    <div className={styles.profileSubpage} data-has-save={hasPersistentSave ? 'true' : 'false'}>
       <header className={styles.subpageHeader}>
         <button type="button" aria-label={`返回我的页面`} onClick={onBack}><CaretLeft /></button>
         <h1>{section}</h1>
@@ -3205,17 +3264,19 @@ function ProfileSubpage({
           <section className={`${styles.card} ${styles.formCard}`}>
             <label><span>本月预算</span><input aria-label="本月预算" inputMode="decimal" value={budgetAmount} onChange={(event) => { setBudgetAmount(event.target.value); setBudgetSaveError(null); }} /></label>
             <div className={styles.budgetPreview}><span>已用 {formatReferenceYuan(budgetUsedCents)}</span><strong>剩余 {formatReferenceYuan(budgetDraftCents - budgetUsedCents)}</strong></div>
-            <h2>分类预算</h2>
-            {categoryBudgetOptions.map((category) => {
-              const status = categoryBudgetStatus.find((item) => item.categoryId === category.id);
-              return (
-                <div key={category.id} className={styles.accountRow}>
-                  <span><strong>{category.name}</strong><small>已用 {formatReferenceYuan(status?.usedCents ?? 0)}{status?.carriedCents ? ` · 结转 ${formatReferenceYuan(status.carriedCents)}` : ''}{status?.overCents ? ` · 超支 ${formatReferenceYuan(status.overCents)}` : ''}</small></span>
-                  <input aria-label={`${category.name}分类预算`} inputMode="decimal" value={categoryBudgetDrafts[category.id] ?? ''} onChange={(event) => setCategoryBudgetDrafts((current) => ({ ...current, [category.id]: event.target.value }))} />
-                  <button type="button" disabled={budgetSaving} onClick={() => void saveCategoryBudget(category.id)}>保存</button>
-                </div>
-              );
-            })}
+            <h2 className={styles.subsectionTitle}>分类预算</h2>
+            <div className={styles.categoryBudgetList}>
+              {categoryBudgetOptions.map((category) => {
+                const status = categoryBudgetStatus.find((item) => item.categoryId === category.id);
+                return (
+                  <div key={category.id} className={styles.categoryBudgetRow}>
+                    <span><strong>{category.name}</strong><small>已用 {formatReferenceYuan(status?.usedCents ?? 0)}{status?.carriedCents ? ` · 结转 ${formatReferenceYuan(status.carriedCents)}` : ''}{status?.overCents ? ` · 超支 ${formatReferenceYuan(status.overCents)}` : ''}</small></span>
+                    <input aria-label={`${category.name}分类预算`} inputMode="decimal" value={categoryBudgetDrafts[category.id] ?? ''} onChange={(event) => setCategoryBudgetDrafts((current) => ({ ...current, [category.id]: event.target.value }))} />
+                    <button type="button" disabled={budgetSaving} onClick={() => void saveCategoryBudget(category.id)}>保存</button>
+                  </div>
+                );
+              })}
+            </div>
             {budgetSaveError ? <p className={styles.budgetSaveError} role="alert">{budgetSaveError}</p> : null}
           </section>
         ) : null}
@@ -3254,7 +3315,10 @@ function ProfileSubpage({
           <section className={`${styles.card} ${styles.formCard}`}>
             <ToggleRow label="每日记账提醒" checked={reminderEnabled} onChange={setReminderEnabled} />
             <label><span>提醒时间</span><input type="time" aria-label="提醒时间" value={reminderTime} disabled={!reminderEnabled} onChange={(event) => setReminderTime(event.target.value)} /></label>
-            <h2>周期账单 / 固定收支</h2>
+            <div className={styles.subsectionIntro}>
+              <h2 className={styles.subsectionTitle}>周期账单 / 固定收支</h2>
+              <p>到期记录会先等待你确认，不会自动写入流水。</p>
+            </div>
             {recurringRules.length ? recurringRules.map((rule) => (
               <div key={rule.id} className={styles.accountRow}>
                 <span><strong>{rule.name}</strong><small>每月{rule.dayOfMonth}日 · {formatReferenceYuan(rule.amountCents)}</small></span>
@@ -3266,7 +3330,7 @@ function ProfileSubpage({
                   </span>
                 ) : <span><small>下次 {new Date(rule.nextDueAt).toLocaleDateString('zh-CN')}</small><button type="button" disabled={reminderSaving} onClick={() => void deleteRecurring(rule.id)}>删除规则</button></span>}
               </div>
-            )) : <p>暂无周期账单，到期记录会先等待你确认。</p>}
+            )) : <p className={styles.inlineEmptyState}>暂无周期账单，可以从下方添加第一条规则。</p>}
             <label><span>名称</span><input aria-label="周期账单名称" value={recurringName} onChange={(event) => setRecurringName(event.target.value)} /></label>
             <label><span>类型</span><select aria-label="周期账单类型" value={recurringType} onChange={(event) => {
               const nextType = event.target.value as 'expense' | 'income';
@@ -3284,9 +3348,14 @@ function ProfileSubpage({
         ) : null}
         {section === '备份与恢复' ? (
           <section className={`${styles.card} ${styles.backupActions}`}>
-            <button type="button" disabled={backupBusy} onClick={() => void exportBackup()}>导出完整账本备份</button>
-            <label>
+            <button className={styles.backupPrimaryAction} type="button" disabled={backupBusy} onClick={() => void exportBackup()}>
+              <span><DownloadSimple aria-hidden="true" />导出完整账本备份</span>
+              <small>保存 JSON 文件到本机</small>
+            </button>
+            <label className={styles.backupUploadAction}>
+              <FileArrowUp aria-hidden="true" />
               <span>{backupBusy ? '正在读取...' : '选择备份并预览'}</span>
+              <small>确认内容后才会恢复</small>
               <input
                 type="file"
                 accept="application/json"
@@ -3460,7 +3529,7 @@ function ProfileSubpage({
           </div>
         </ReferenceSheet>
       ) : null}
-      {section !== '关于我们' && section !== '备份与恢复' && section !== '账户管理' && section !== '背景设置' ? (
+      {hasPersistentSave ? (
         <button type="button" className={styles.subpageSaveButton} disabled={budgetSaving} onClick={() => void finish()}>{budgetSaving ? '保存中...' : '保存'}</button>
       ) : null}
     </div>

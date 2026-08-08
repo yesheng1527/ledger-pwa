@@ -4,6 +4,7 @@ import { Card } from '../design-system/components/Card';
 import { HandDrawnIcon } from '../design-system/components/HandDrawnIcon';
 import { PrimaryButton } from '../design-system/components/PrimaryButton';
 import { type AppRuntimeValue, useAppRuntime } from './providers';
+import styles from './AuthGate.module.css';
 
 type AuthGateViewProps = {
   runtime: AppRuntimeValue;
@@ -12,9 +13,10 @@ type AuthGateViewProps = {
 
 function BrandedLoadingState({ label }: { label: string }) {
   return (
-    <main>
-      <Card role="status" aria-live="polite">
+    <main className={styles.page} aria-busy="true">
+      <Card className={styles.stateCard} role="status" aria-live="polite">
         <HandDrawnIcon asset="brand:shell" label="海风小账本" />
+        <span className={styles.loadingMark} aria-hidden="true" />
         <p>{label}</p>
       </Card>
     </main>
@@ -23,8 +25,8 @@ function BrandedLoadingState({ label }: { label: string }) {
 
 function RecoveryLinkError({ onReturnToLogin }: { onReturnToLogin: () => void }) {
   return (
-    <main>
-      <Card>
+    <main className={styles.page}>
+      <Card className={styles.stateCard}>
         <HandDrawnIcon asset="brand:shell" label="海风小账本" />
         <h1>无法重置密码</h1>
         <p role="alert">重置链接无效或已过期</p>
@@ -39,8 +41,8 @@ function RecoveryLinkError({ onReturnToLogin }: { onReturnToLogin: () => void })
 
 function InitializationErrorState({ message, onRetry }: { message: string; onRetry: () => Promise<void> }) {
   return (
-    <main>
-      <Card>
+    <main className={styles.page}>
+      <Card className={styles.stateCard}>
         <HandDrawnIcon asset="brand:shell" label="海风小账本" />
         <h1>账本暂未准备好</h1>
         <p role="alert">{message}</p>

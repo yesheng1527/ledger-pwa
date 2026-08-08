@@ -949,7 +949,7 @@
   top: 512px;
   left: 13px;
   width: calc(100% - 26px);
-  bottom: calc(68px + env(safe-area-inset-bottom));
+  bottom: calc(84px + env(safe-area-inset-bottom));
   height: auto;
   overflow: hidden;
   padding: 0 12px;
@@ -1022,17 +1022,19 @@
 .bottomNav {
   position: absolute;
   z-index: 20;
-  right: 12px;
-  bottom: calc(8px + env(safe-area-inset-bottom));
-  left: 12px;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: grid;
-  height: 74px;
+  width: 100%;
+  height: calc(74px + env(safe-area-inset-bottom));
   grid-template-columns: repeat(5, 1fr);
   align-items: stretch;
   overflow: hidden;
   border: 1px solid rgb(255 255 255 / 72%);
-  border-radius: 28px;
-  padding: 6px;
+  border-bottom: 0;
+  border-radius: 28px 28px 0 0;
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
   background:
     linear-gradient(180deg, rgb(255 255 255 / 66%), rgb(245 249 250 / 42%));
   box-shadow:
@@ -1059,7 +1061,7 @@
   position: absolute;
   z-index: 0;
   top: 6px;
-  bottom: 6px;
+  bottom: calc(6px + env(safe-area-inset-bottom));
   left: 6px;
   width: calc((100% - 12px) / 5);
   border: 1px solid rgb(255 255 255 / 62%);
@@ -2174,6 +2176,7 @@
 .settingsCard span { color: #787d7d; font-size: 10px; }
 
 .logoutCard {
+  margin-top: 32px;
   padding: 0 16px;
 }
 
@@ -2562,10 +2565,673 @@
 
 .subpageSaveButton {
   position: absolute;
+  z-index: 45;
   right: 25px;
-  bottom: 28px;
+  bottom: max(16px, env(safe-area-inset-bottom));
   left: 25px;
   width: calc(100% - 50px);
+  min-height: 56px;
+  box-shadow: 0 10px 24px rgb(199 79 47 / 22%);
+}
+
+/* Shared layout pass: keep the five illustrated screens visually distinct,
+ * while making their spacing, surfaces and controls behave as one system. */
+.page {
+  --page-gutter-local: var(--page-gutter, 14px);
+  font-size: var(--text-body, 13px);
+}
+
+.entryPage {
+  overflow: hidden;
+}
+
+.entryPage::after {
+  display: none;
+}
+
+.entryScrollContent {
+  position: absolute;
+  top: 108px;
+  right: 0;
+  bottom: calc(92px + env(safe-area-inset-bottom));
+  left: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 18px var(--page-gutter-local) 26px;
+}
+
+.entryScrollContent .amountInput {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: min(100%, 300px);
+  height: 104px;
+  margin: 0 auto;
+  border: 1px solid rgb(218 193 157 / 34%);
+  border-radius: 18px;
+  background: rgb(255 253 248 / 58%);
+  box-shadow: inset 0 -1px 0 rgb(218 193 157 / 42%);
+}
+
+.entryScrollContent .amountInput input {
+  width: min(72%, 210px);
+  font-size: clamp(38px, 11vw, 48px);
+}
+
+.entryScrollContent .amountInput input::placeholder {
+  color: rgb(78 82 80 / 46%);
+  opacity: 1;
+}
+
+.entryShortcutRow {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  overflow-x: auto;
+  margin-top: 12px;
+  padding: 2px 1px 4px;
+  scroll-padding-inline: 1px;
+}
+
+.entryShortcutRow button {
+  min-width: 88px;
+  min-height: 44px;
+  flex: 0 0 auto;
+  border: 1px solid #e8d8c5;
+  border-radius: 11px;
+  padding: 0 14px;
+  background: rgb(255 253 249 / 88%);
+  color: #626866;
+  font-size: 12px;
+}
+
+.entryShortcutRow button:last-child {
+  color: #ca5646;
+}
+
+.entryCategoryHeader {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 14px 2px 2px;
+  color: #4c514f;
+}
+
+.entryCategoryHeader > strong {
+  font-size: 14px;
+}
+
+.entryCategoryHeader .categoryManageButton {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #eadaca;
+  border-radius: 12px;
+  background: rgb(255 253 249 / 84%);
+}
+
+.entryScrollContent .entryCategoryGrid {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: 100%;
+  max-height: none;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px 2px;
+  overflow: visible;
+}
+
+.entryScrollContent .entryCategoryGrid button {
+  min-width: 0;
+  height: 86px;
+}
+
+.entryScrollContent .entryDetails {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: 100%;
+  height: auto;
+  margin-top: 18px;
+}
+
+.entryScrollContent .entryDetails label,
+.entryScrollContent .entryDetails button {
+  min-height: 64px;
+  height: auto;
+  padding: 10px 0;
+}
+
+.entryScrollContent .entryDetails input,
+.entryScrollContent .entryDetails span {
+  max-width: 72%;
+}
+
+.entryScrollContent .entryError {
+  position: relative;
+  top: auto;
+  right: auto;
+  left: auto;
+  margin: 10px 4px 0;
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.entryPage > .saveButton {
+  z-index: 45;
+  top: auto;
+  right: var(--page-gutter-local);
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: var(--page-gutter-local);
+  width: auto;
+  height: 58px;
+  backface-visibility: hidden;
+  box-shadow: 0 10px 24px rgb(199 79 47 / 24%);
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+
+.card,
+.actionSheet,
+.filterDropdown,
+.searchField,
+.filterRow button,
+.statisticsFilters > button {
+  border-color: rgb(218 193 157 / 46%);
+  background-color: var(--color-surface-strong, rgb(255 253 248 / 96%));
+}
+
+.card {
+  border-radius: var(--radius-card, 16px);
+  box-shadow: var(--shadow-card, 0 6px 16px rgb(116 82 43 / 9%));
+}
+
+.balanceCard,
+.quickCard,
+.recentCard,
+.filterRow,
+.chipRow,
+.ledgerList,
+.statisticsFilters,
+.metricGrid,
+.donutCard,
+.trendCard,
+.compareCard,
+.settingsArea,
+.subpageContent {
+  right: var(--page-gutter-local);
+  left: var(--page-gutter-local);
+  width: auto;
+}
+
+.overlayBackdrop {
+  padding: clamp(10px, 4vw, 20px);
+  background: rgb(40 36 31 / 30%);
+}
+
+.actionSheet {
+  max-width: 390px;
+  max-height: calc(100% - 20px);
+  border-radius: 20px;
+  box-shadow: 0 18px 46px rgb(79 54 25 / 23%);
+}
+
+.sheetHeader {
+  min-height: 64px;
+  height: auto;
+  padding: 4px 14px;
+}
+
+.sheetHeader h2 {
+  line-height: 1.35;
+}
+
+.sheetBody {
+  padding: 14px clamp(14px, 4vw, 20px) 22px;
+}
+
+.detailActions,
+.sheetFormActions {
+  flex-wrap: wrap;
+}
+
+.detailActions button,
+.sheetFormActions button {
+  min-width: 104px;
+  min-height: var(--control-min-size, 44px);
+  flex: 1 1 104px;
+}
+
+.homeGreeting button,
+.assetAccountSummaryTopline button,
+.sectionTitle button,
+.backgroundSettingActions label,
+.backgroundSettingActions button,
+.profileAvatarAction {
+  min-width: var(--control-min-size, 44px);
+  min-height: var(--control-min-size, 44px);
+}
+
+.homeGreeting button {
+  right: var(--page-gutter-local);
+  width: 44px;
+  height: 44px;
+}
+
+.sectionTitle button {
+  justify-content: flex-end;
+  padding-left: 10px;
+}
+
+.simpleHeader,
+.centerHeader,
+.entryHeader,
+.subpageHeader {
+  padding-right: calc(var(--page-gutter-local) + 1px);
+  padding-left: calc(var(--page-gutter-local) + 1px);
+}
+
+.simpleHeader h1,
+.centerHeader h1,
+.subpageHeader h1 {
+  font-size: var(--text-title, 20px);
+  line-height: 1.25;
+}
+
+.transactionCopy small,
+.settingsCard span,
+.settingsCard small,
+.accountManager small,
+.choiceList small,
+.filterDropdown small,
+.backgroundSettingCopy small,
+.aboutPanel p {
+  font-size: var(--text-caption, 11px);
+  line-height: 1.45;
+}
+
+.settingsCard button {
+  min-height: 60px;
+  height: auto;
+  padding: 6px 0;
+}
+
+.settingsCard span {
+  max-width: 104px;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileSubpage[data-has-save='false'] .subpageContent {
+  bottom: max(22px, env(safe-area-inset-bottom));
+}
+
+.profileSubpage[data-has-save='true'] .subpageContent {
+  bottom: 94px;
+}
+
+.subpageContent {
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  padding-bottom: 18px;
+}
+
+.formCard {
+  overflow: hidden;
+}
+
+.subsectionTitle {
+  margin: 20px 0 8px;
+  color: #303432;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.subsectionIntro {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid #eee3d7;
+  padding: 0 0 14px;
+}
+
+.subsectionIntro .subsectionTitle {
+  margin-bottom: 0;
+}
+
+.subsectionIntro p,
+.inlineEmptyState {
+  margin: 0;
+  color: #747a77;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.inlineEmptyState {
+  border-bottom: 1px solid #eee3d7;
+  padding: 12px 0 16px;
+}
+
+.categoryBudgetList {
+  display: grid;
+}
+
+.categoryBudgetRow {
+  display: grid;
+  min-height: 70px;
+  grid-template-columns: minmax(0, 1fr) minmax(92px, 112px) 46px;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #eee3d7;
+  padding: 7px 0;
+}
+
+.categoryBudgetRow > span {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.categoryBudgetRow small {
+  overflow: hidden;
+  color: #777c7a;
+  font-size: 10px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.categoryBudgetRow input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid #e8daca;
+  border-radius: 11px;
+  padding: 0 9px;
+  background: #fffdf8;
+  text-align: right;
+}
+
+.categoryBudgetRow button {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 10px;
+  color: #ca5646;
+  font-size: 12px;
+}
+
+.formCard > label:not(.toggleRow),
+.toggleRow {
+  min-height: 68px;
+}
+
+.formCard input:not([type='checkbox']),
+.formCard select,
+.formCard textarea {
+  width: min(52%, 190px);
+  min-width: 0;
+  min-height: var(--control-min-size, 44px);
+  border: 1px solid #e8daca;
+  border-radius: var(--radius-control, 12px);
+  padding: 0 10px;
+  background: #fffdf8;
+  color: #303432;
+  text-align: right;
+}
+
+.formCard .categoryBudgetRow input {
+  width: 100%;
+}
+
+.toggleRow input:focus-visible + span {
+  outline: 3px solid var(--color-focus, #235e78);
+  outline-offset: 3px;
+}
+
+.profileAvatarAction {
+  height: 44px;
+}
+
+.formCard .accountRow {
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.formCard .accountRow > span {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+
+.formCard .accountRow input {
+  width: 96px;
+  flex: 0 0 96px;
+}
+
+.formCard .accountRow button,
+.backupActions button,
+.backupActions label,
+.themeOptions button,
+.accountManager button {
+  min-height: var(--control-min-size, 44px);
+}
+
+.backupActions {
+  padding-top: 4px;
+  padding-bottom: 12px;
+}
+
+.backupActions .backupPrimaryAction,
+.backupActions .backupUploadAction {
+  width: 100%;
+  min-height: 72px;
+  margin-top: 10px;
+  border: 1px solid #e5cfb5;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgb(255 251 244 / 92%);
+  color: #3f4643;
+}
+
+.backupActions .backupPrimaryAction {
+  display: grid;
+  align-content: center;
+  justify-content: stretch;
+  gap: 5px;
+  border-color: rgb(244 107 87 / 42%);
+  background: #fff2ea;
+  text-align: left;
+}
+
+.backupPrimaryAction > span {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #b84739;
+  font-weight: 700;
+}
+
+.backupActions .backupUploadAction {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  justify-content: stretch;
+  gap: 3px 9px;
+}
+
+.backupUploadAction > svg {
+  grid-row: 1 / 3;
+  width: 24px;
+  height: 24px;
+  color: #438a91;
+}
+
+.backupPrimaryAction svg {
+  width: 22px;
+  height: 22px;
+}
+
+.backupPrimaryAction small,
+.backupUploadAction small {
+  color: #777d79;
+  font-size: 10px;
+  line-height: 1.4;
+  text-align: left;
+}
+
+.backupUploadAction > span {
+  text-align: left;
+  font-weight: 650;
+}
+
+.backupActions > div[aria-label],
+.backupActions > div[role='alert'] {
+  display: grid;
+  gap: 9px;
+  margin: 12px 0 4px;
+  border: 1px solid #eadcca;
+  border-radius: 12px;
+  padding: 12px;
+  background: rgb(255 249 239 / 72%);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.backupActions > div[aria-label] p,
+.backupActions > div[role='alert'] p {
+  margin: 0;
+}
+
+.backupActions > div[aria-label] > div,
+.backupActions > div[role='alert'] > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.backupActions > div[aria-label] button,
+.backupActions > div[role='alert'] button {
+  width: auto;
+  min-width: 88px;
+  border: 1px solid #e4d2bc;
+  border-radius: 9px;
+  padding: 0 10px;
+  background: #fffdf8;
+  color: #c24d40;
+}
+
+.backgroundSettingActions label,
+.backgroundSettingActions button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.homeGreeting,
+.simpleHeader,
+.centerHeader,
+.entryHeader,
+.profileIdentity,
+.balanceCard,
+.filterRow,
+.statisticsFilters,
+.amountInput,
+.quickCard,
+.chipRow,
+.metricGrid,
+.entryCategoryGrid,
+.settingsArea > :first-child,
+.recentCard,
+.ledgerList,
+.donutCard,
+.entryDetails,
+.settingsArea > :nth-child(2),
+.trendCard,
+.saveButton,
+.logoutCard,
+.compareCard {
+  animation: none;
+}
+
+@media (max-width: 360px) {
+  .filterRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .filterRow button {
+    white-space: nowrap;
+  }
+
+  .chipRow {
+    top: 209px;
+  }
+
+  .ledgerList {
+    top: 258px;
+  }
+
+  .filterDropdown {
+    top: 205px;
+  }
+
+  .formCard > label:not(.toggleRow) {
+    display: grid;
+    justify-content: stretch;
+    gap: 7px;
+    padding: 10px 0;
+  }
+
+  .formCard input:not([type='checkbox']),
+  .formCard select,
+  .formCard textarea {
+    width: 100%;
+    text-align: left;
+  }
+
+  .formCard .accountRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 88px;
+  }
+
+  .formCard .accountRow > span {
+    grid-column: 1 / -1;
+  }
+
+  .formCard .accountRow input {
+    width: 100%;
+  }
+
+  .backupActions > div[aria-label] > div,
+  .backupActions > div[role='alert'] > div {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .categoryBudgetRow {
+    grid-template-columns: minmax(0, 1fr) 52px;
+    gap: 6px 8px;
+    padding: 10px 0;
+  }
+
+  .categoryBudgetRow > span {
+    grid-column: 1 / -1;
+  }
+
+  .categoryBudgetRow input {
+    grid-column: 1;
+    text-align: left;
+  }
+
+  .categoryBudgetRow button {
+    grid-column: 2;
+  }
 }
 
 .homeGreeting,
@@ -2573,14 +3239,14 @@
 .centerHeader,
 .entryHeader,
 .profileIdentity {
-  animation: contentEnter 300ms ease-out 35ms both;
+  animation: none;
 }
 
 .balanceCard,
 .filterRow,
 .statisticsFilters,
 .amountInput {
-  animation: contentEnter 340ms ease-out 70ms both;
+  animation: none;
 }
 
 .quickCard,
@@ -2588,7 +3254,7 @@
 .metricGrid,
 .entryCategoryGrid,
 .settingsArea > :first-child {
-  animation: contentEnter 360ms ease-out 115ms both;
+  animation: none;
 }
 
 .recentCard,
@@ -2596,17 +3262,22 @@
 .donutCard,
 .entryDetails,
 .settingsArea > :nth-child(2) {
-  animation: contentEnter 380ms ease-out 155ms both;
+  animation: none;
 }
 
 .trendCard,
 .saveButton,
 .logoutCard {
-  animation: contentEnter 400ms ease-out 195ms both;
+  animation: none;
 }
 
 .compareCard {
-  animation: contentEnter 420ms ease-out 235ms both;
+  animation: none;
+}
+
+.dayGroup,
+.emptyState {
+  animation: none;
 }
 
 @keyframes pageEnter {

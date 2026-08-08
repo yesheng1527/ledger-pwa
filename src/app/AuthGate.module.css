@@ -1,0 +1,71 @@
+.page {
+  display: grid;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-items: center;
+  overflow: auto;
+  padding: max(24px, env(safe-area-inset-top)) 18px max(24px, env(safe-area-inset-bottom));
+  background-color: var(--color-paper);
+  background-image:
+    linear-gradient(rgb(255 249 239 / 58%), rgb(255 249 239 / 76%)),
+    url('../assets/auth-login/login-background.webp');
+  background-position: center;
+  background-size: cover;
+}
+
+.stateCard {
+  display: grid;
+  width: min(100%, 390px);
+  justify-items: center;
+  gap: 14px;
+  border-radius: 20px;
+  padding: 30px 24px;
+  background: var(--color-surface-strong);
+  box-shadow: 0 18px 44px rgb(90 63 31 / 16%);
+  text-align: center;
+}
+
+.stateCard :global(.ds-hand-drawn-icon) {
+  width: 48px;
+  height: 48px;
+}
+
+.stateCard h1,
+.stateCard p {
+  margin: 0;
+}
+
+.stateCard h1 {
+  font-size: 1.3rem;
+}
+
+.stateCard p {
+  max-width: 30ch;
+  color: var(--color-muted);
+  line-height: 1.7;
+}
+
+.stateCard [role='alert'] {
+  color: #a23d31;
+}
+
+.loadingMark {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgb(131 207 233 / 35%);
+  border-top-color: var(--color-coral);
+  border-radius: 50%;
+  animation: gateSpin 720ms linear infinite;
+}
+
+@keyframes gateSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingMark {
+    animation: none;
+    border-color: var(--color-sea);
+  }
+}

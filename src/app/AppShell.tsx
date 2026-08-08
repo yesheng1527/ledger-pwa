@@ -29,10 +29,6 @@ export type AppShellProps = {
   guestMode?: boolean;
 };
 
-type ViewTransitionDocument = Document & {
-  startViewTransition?: (update: () => void) => void;
-};
-
 function shouldShowSplash(): boolean {
   const forced = new URLSearchParams(window.location.search).get('splash') === '1';
   const staticTestMode = import.meta.env.MODE === 'test'
@@ -49,9 +45,8 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
   const [backgrounds, setBackgrounds] = useState<BackgroundOverrides>({});
   const [splashVisible, setSplashVisible] = useState(shouldShowSplash);
   const feedbackTimer = useRef<number | null>(null);
-  const fallbackTransitionTimer = useRef<number | null>(null);
+  const pageTransitionTimer = useRef<number | null>(null);
   const backgroundRevision = useRef(0);
-  const phoneRef = useRef<HTMLDivElement>(null);
   const pageStageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -81,37 +76,32 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
 
   useEffect(() => () => {
     if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current);
-    if (fallbackTransitionTimer.current !== null) window.clearTimeout(fallbackTransitionTimer.current);
+    if (pageTransitionTimer.current !== null) window.clearTimeout(pageTransitionTimer.current);
   }, []);
 
-  function clearFallbackTransition() {
-    if (fallbackTransitionTimer.current !== null) {
-      window.clearTimeout(fallbackTransitionTimer.current);
-      fallbackTransitionTimer.current = null;
+  function clearPageTransition() {
+    if (pageTransitionTimer.current !== null) {
+      window.clearTimeout(pageTransitionTimer.current);
+      pageTransitionTimer.current = null;
     }
-    phoneRef.current?.querySelectorAll(`.${styles.outgoingPageStage}`).forEach((element) => element.remove());
     pageStageRef.current?.classList.remove(styles.incomingPageStage);
   }
 
-  function runFallbackTransition(update: () => void) {
-    const phone = phoneRef.current;
+  function runPageTransition(update: () => void) {
     const pageStage = pageStageRef.current;
-    if (!phone || !pageStage) {
+    if (!pageStage) {
       flushSync(update);
       return;
     }
 
-    clearFallbackTransition();
-    const outgoingStage = pageStage.cloneNode(true) as HTMLDivElement;
-    outgoingStage.classList.add(styles.outgoingPageStage);
-    outgoingStage.setAttribute('aria-hidden', 'true');
-    outgoingStage.setAttribute('inert', '');
-    outgoingStage.style.viewTransitionName = 'none';
-    phone.append(outgoingStage);
-
+    clearPageTransition();
     flushSync(update);
+    // Restart one lightweight compositor animation on the real page. Keeping a
+    // single DOM tree avoids the doubled paint cost and white flash caused by
+    // cloning the outgoing screen.
+    void pageStage.offsetWidth;
     pageStage.classList.add(styles.incomingPageStage);
-    fallbackTransitionTimer.current = window.setTimeout(clearFallbackTransition, 280);
+    pageTransitionTimer.current = window.setTimeout(clearPageTransition, 340);
   }
 
   function switchPage(next: AppPage, prepare?: () => void) {
@@ -120,7 +110,6 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
       prepare?.();
       setPage(next);
     };
-    const transitionDocument = document as ViewTransitionDocument;
     const reducedMotion = typeof window.matchMedia === 'function'
       && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const staticTestMode = import.meta.env.MODE === 'test'
@@ -130,11 +119,7 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
       flushSync(update);
       return;
     }
-    if (typeof transitionDocument.startViewTransition === 'function') {
-      transitionDocument.startViewTransition(() => flushSync(update));
-      return;
-    }
-    runFallbackTransition(update);
+    runPageTransition(update);
   }
 
   function openEntry(initialCategory?: string) {
@@ -171,7 +156,7 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
 
   return (
     <div className={styles.viewport}>
-      <div ref={phoneRef} className={styles.phone} data-page={page}>
+      <div className={styles.phone} data-page={page}>
         <div className={styles.syncBanner} data-mode={guestMode ? 'guest' : syncStatus?.mode ?? 'idle'} role="status" aria-live="polite">
           {guestMode ? '游客演示 · 数据仅保存在本机' : syncStatus?.mode === 'offline' ? `离线 · ${syncStatus.pendingCount} 项等待同步` : syncStatus?.mode === 'syncing' ? `同步中 · ${syncStatus.pendingCount} 项待处理` : syncStatus?.mode === 'conflict' ? '存在同步冲突，请在备份与恢复中处理' : syncStatus?.mode === 'error' ? (syncStatus.message ?? '同步失败') : syncStatus?.lastSyncedAt ? `已同步 · ${new Date(syncStatus.lastSyncedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : '本地数据已就绪'}
         </div>
