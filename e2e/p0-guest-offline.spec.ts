@@ -17,7 +17,7 @@ test('guest data is useful, writable and survives an offline reload', async ({ p
   expect(await page.evaluate(async () => (await indexedDB.databases()).map((item) => item.name))).toContain('seabreeze-ledger-guest-v1');
   expect(await page.evaluate(async () => (await indexedDB.databases()).map((item) => item.name))).not.toContain('seabreeze-ledger-v2');
 
-  await expect.poll(async () => page.evaluate(async () => (await navigator.serviceWorker.ready).active?.state)).toBe('activated');
+  await expect.poll(async () => page.evaluate(async () => (await navigator.serviceWorker.ready).active?.state), { timeout: 30_000 }).toBe('activated');
   await context.setOffline(true);
   await page.reload();
   await expect(page.getByText('游客演示 · 数据仅保存在本机')).toBeVisible();

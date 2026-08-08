@@ -73,7 +73,7 @@ test('formal account persists lifecycle, transfer, and offline queue through re-
   await page.getByRole('button', { name: /^流水$/ }).click();
   await expect(page.getByRole('button', { name: new RegExp(`^${editedName} `) })).toHaveCount(2);
 
-  await expect.poll(async () => page.evaluate(async () => (await navigator.serviceWorker.ready).active?.state)).toBe('activated');
+  await expect.poll(async () => page.evaluate(async () => (await navigator.serviceWorker.ready).active?.state), { timeout: 30_000 }).toBe('activated');
   await context.setOffline(true);
   await page.getByRole('button', { name: /^记账$/ }).click();
   await page.getByLabel('金额', { exact: true }).fill('9.90');

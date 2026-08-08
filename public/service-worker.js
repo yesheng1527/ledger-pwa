@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'ledger-pwa-shell-v20260808-2';
+const CACHE_VERSION = 'ledger-pwa-shell-v20260808-3';
 const SCOPE = new URL(self.registration.scope);
 const SHELL_URLS = [
   SCOPE.pathname,
@@ -8,10 +8,26 @@ const SHELL_URLS = [
   `${SCOPE.pathname}icons/icon-512-seabreeze.png`,
 ];
 
+async function cacheWithRetry(cache, url, attempts = 3) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, { cache: 'no-store' });
+      if (response.ok) {
+        await cache.put(url, response);
+        return true;
+      }
+    } catch {
+      // A later attempt or the runtime cache can recover an optional asset.
+    }
+  }
+  return false;
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_VERSION);
-    await cache.addAll(SHELL_URLS.slice(1));
+    await cache.addAll([`${SCOPE.pathname}index.html`]);
+    await Promise.all(SHELL_URLS.filter((url) => !url.endsWith('index.html')).map((url) => cacheWithRetry(cache, url)));
     const page = await fetch(SCOPE.pathname, { cache: 'no-store' });
     const html = await page.clone().text();
     await cache.put(SCOPE.pathname, page);
@@ -22,7 +38,8 @@ self.addEventListener('install', (event) => {
     const buildAssets = manifestResponse.ok
       ? (await manifestResponse.json()).map((asset) => new URL(asset, SCOPE).href)
       : [];
-    await cache.addAll([...new Set([...assets, ...buildAssets])]);
+    await cache.addAll([...new Set(assets)]);
+    await Promise.all([...new Set(buildAssets)].map((asset) => cacheWithRetry(cache, asset)));
   })());
   self.skipWaiting();
 });
