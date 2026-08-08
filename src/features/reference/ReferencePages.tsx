@@ -1581,16 +1581,17 @@ export function EntryPage({
   onFeedback(message: string, tone?: 'info' | 'success' | 'error'): void;
 }) {
   const [entryNow] = useState(referenceNow);
-  const [type, setType] = useState<'支出' | '收入'>('支出');
+  const [type, setType] = useState<'支出' | '收入' | '转账'>('支出');
   const [amount, setAmount] = useState('');
   const [name, setName] = useState('');
   const [selected, setSelected] = useState(initialCategory ?? '餐饮');
   const [note, setNote] = useState('');
   const [options, setOptions] = useState<ReferenceEntryOptions | null>(null);
   const [accountId, setAccountId] = useState<string | null>(null);
+  const [toAccountId, setToAccountId] = useState<string | null>(null);
   const [occurredDate, setOccurredDate] = useState(() => localDateInput(entryNow));
   const [occurredTime, setOccurredTime] = useState(() => localTimeInput(entryNow));
-  const [entrySheet, setEntrySheet] = useState<'date' | 'account' | null>(null);
+  const [entrySheet, setEntrySheet] = useState<'date' | 'account' | 'toAccount' | null>(null);
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [categoryManagerKind, setCategoryManagerKind] = useState<'expense' | 'income'>('expense');
   const [categoryEditor, setCategoryEditor] = useState<CategoryEditorState | null>(null);
@@ -1627,7 +1628,7 @@ export function EntryPage({
     };
   }) ?? [], [options, profileAccounts]);
   const entryCategoryOptions = useMemo<EntryCategoryOption[]>(() => {
-    const categoryKind = type === '支出' ? 'expense' : 'income';
+    const categoryKind = type === '收入' ? 'income' : 'expense';
     const loadedCategories = categoryKind === 'expense' ? options?.expenseCategories : options?.incomeCategories;
     if (loadedCategories) {
       return loadedCategories.map((category) => ({
@@ -1667,9 +1668,9 @@ export function EntryPage({
   const accountName = entryAccountOptions.find((account) => account.value === accountId)?.label ?? '默认账户';
   const occurredDateLabel = `${Number(occurredDate.slice(0, 4))}年${Number(occurredDate.slice(5, 7))}月${Number(occurredDate.slice(8, 10))}日`;
 
-  function selectEntryType(nextType: '支出' | '收入') {
-    const categories = nextType === '支出' ? options?.expenseCategories : options?.incomeCategories;
-    const fallback = nextType === '支出' ? entryCategories : entryIncomeCategories;
+  function selectEntryType(nextType: '支出' | '收入' | '转账') {
+    const categories = nextType === '收入' ? options?.incomeCategories : options?.expenseCategories;
+    const fallback = nextType === '收入' ? entryIncomeCategories : entryCategories;
     setType(nextType);
     setSelected(categories?.[0]?.name ?? fallback[0]?.label ?? '其他');
     setError(null);
@@ -1757,6 +1758,20 @@ export function EntryPage({
       const createTransaction = (viewModel as Partial<LedgerViewModel>).createTransaction;
       if (typeof createTransaction === 'function') {
         if (!options) throw new Error('账户信息正在加载，请稍后再试');
+        if (type === '转账') {
+          const from = options.accounts.find((item) => item.id === accountId) ?? options.accounts[0];
+          const to = options.accounts.find((item) => item.id === toAccountId)
+            ?? options.accounts.find((item) => item.id !== from?.id);
+          if (!from || !to) throw new Error('转账至少需要两个可用账户');
+          await createTransaction.call(viewModel, {
+            type: 'transfer', amountCents, fromAccountId: from.id, toAccountId: to.id,
+            occurredAt, name: name || '账户转账', note,
+          });
+          setSaveState('saved');
+          onFeedback(navigator.onLine ? '转账已保存，不计入收支统计' : '已保存到本机，等待同步', 'success');
+          window.setTimeout(onClose, 560);
+          return;
+        }
         const transactionType = type === '支出' ? 'expense' : 'income';
         const categories = transactionType === 'expense'
           ? options.expenseCategories
@@ -1792,7 +1807,7 @@ export function EntryPage({
       <header className={styles.entryHeader}>
         <button type="button" aria-label="关闭" onClick={onClose}><X /></button>
         <div className={styles.segmented}>
-          {(['支出', '收入'] as const).map((item) => (
+          {(['支出', '收入', '转账'] as const).map((item) => (
             <button key={item} type="button" data-active={type === item} onClick={() => selectEntryType(item)}>{item}</button>
           ))}
         </div>
@@ -1840,7 +1855,8 @@ export function EntryPage({
         <label><strong>名称</strong><input aria-label="名称" maxLength={80} placeholder="例如：午餐、地铁" value={name} onChange={(event) => setName(event.target.value)} /></label>
         <label><strong>备注</strong><input aria-label="备注" placeholder="点击写备注..." value={note} onChange={(event) => setNote(event.target.value)} /></label>
         <button type="button" onClick={() => setEntrySheet('date')}><strong>日期</strong><span>{occurredDateLabel}{occurredDate === localDateInput(entryNow) ? ' 今天' : ''} {occurredTime} <CaretRight /></span></button>
-        <button type="button" onClick={() => setEntrySheet('account')}><strong>账户</strong><span>{accountName} <CaretRight /></span></button>
+        <button type="button" onClick={() => setEntrySheet('account')}><strong>{type === '转账' ? '转出账户' : '账户'}</strong><span>{accountName} <CaretRight /></span></button>
+        {type === '转账' ? <button type="button" onClick={() => setEntrySheet('toAccount')}><strong>转入账户</strong><span>{entryAccountOptions.find((item) => item.value === toAccountId)?.label ?? '请选择'} <CaretRight /></span></button> : null}
       </section>
       {error ? <p className={styles.entryError} role="alert">{error}</p> : null}
       <button type="button" className={styles.saveButton} disabled={saveState !== 'idle'} data-state={saveState} onClick={() => void saveEntry()}>
@@ -1869,6 +1885,15 @@ export function EntryPage({
             ? entryAccountOptions
             : [{ value: '', label: '默认账户', detail: '余额加载中' }]}
           onSelect={(value) => setAccountId(value || null)}
+          onClose={() => setEntrySheet(null)}
+        />
+      ) : null}
+      {entrySheet === 'toAccount' ? (
+        <ChoiceSheet
+          title="选择转入账户"
+          value={toAccountId ?? ''}
+          options={entryAccountOptions.filter((item) => item.value !== accountId)}
+          onSelect={setToAccountId}
           onClose={() => setEntrySheet(null)}
         />
       ) : null}

@@ -275,6 +275,40 @@ describe('reference five-page application', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: '早上好，海风~' })).toBeInTheDocument());
   });
 
+  it('creates an account transfer with explicit source and destination accounts', async () => {
+    const user = userEvent.setup();
+    const getEntryOptions = vi.fn().mockResolvedValue({
+      accounts: [
+        { id: 'account-cash', name: '现金', accountClass: 'asset', balanceCents: 100000 },
+        { id: 'account-card', name: '信用卡', accountClass: 'liability', balanceCents: 20000 },
+      ],
+      expenseCategories: [],
+      incomeCategories: [],
+      refundableExpenses: [],
+    });
+    const createTransaction = vi.fn().mockResolvedValue({ transactionId: 'transfer-1' });
+    render(<AppShell viewModel={{ getEntryOptions, createTransaction } as unknown as LedgerViewModel} />);
+
+    await user.click(screen.getByRole('button', { name: /^记账$/ }));
+    await waitFor(() => expect(getEntryOptions).toHaveBeenCalledOnce());
+    await user.click(screen.getByRole('button', { name: '转账' }));
+    await user.clear(screen.getByLabelText('金额'));
+    await user.type(screen.getByLabelText('金额'), '88.66');
+    await user.click(screen.getByRole('button', { name: /转出账户 默认账户/ }));
+    await user.click(screen.getByRole('option', { name: /现金/ }));
+    await user.click(screen.getByRole('button', { name: /转入账户 请选择/ }));
+    await user.click(screen.getByRole('option', { name: /信用卡/ }));
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => expect(createTransaction).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'transfer',
+      amountCents: 8866,
+      fromAccountId: 'account-cash',
+      toAccountId: 'account-card',
+    })));
+    expect(screen.getByText('转账已保存，不计入收支统计')).toBeInTheDocument();
+  });
+
   it('uses a manually edited account balance in the entry account picker', async () => {
     localStorage.setItem('seabreeze-profile-accounts', JSON.stringify([{
       id: 'profile-cash',
