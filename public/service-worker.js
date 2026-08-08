@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'ledger-pwa-shell-v20260808-3';
+const CACHE_VERSION = 'ledger-pwa-shell-v20260808-4';
 const SCOPE = new URL(self.registration.scope);
 const SHELL_URLS = [
   SCOPE.pathname,
@@ -38,7 +38,10 @@ self.addEventListener('install', (event) => {
     const buildAssets = manifestResponse.ok
       ? (await manifestResponse.json()).map((asset) => new URL(asset, SCOPE).href)
       : [];
-    await cache.addAll([...new Set(assets)]);
+    const requiredAssets = assets.filter((asset) => /\.(?:js|css)(?:\?|$)/.test(asset));
+    const optionalAssets = assets.filter((asset) => !requiredAssets.includes(asset));
+    await cache.addAll([...new Set(requiredAssets)]);
+    await Promise.all([...new Set(optionalAssets)].map((asset) => cacheWithRetry(cache, asset)));
     await Promise.all([...new Set(buildAssets)].map((asset) => cacheWithRetry(cache, asset)));
   })());
   self.skipWaiting();

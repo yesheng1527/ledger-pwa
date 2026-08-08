@@ -17,7 +17,9 @@ describe('production service worker', () => {
     expect(source).toContain('manifestResponse.json()');
     expect(source).toContain('new URL(asset, SCOPE).href');
     expect(source).toContain('cacheWithRetry(cache, asset)');
-    expect(source).toContain('await cache.addAll([...new Set(assets)])');
+    expect(source).toContain("/\\.(?:js|css)(?:\\?|$)/");
+    expect(source).toContain('await cache.addAll([...new Set(requiredAssets)])');
+    expect(source).toContain('new Set(optionalAssets)');
   });
 
   it('does not unregister itself or purge the active cache', () => {
