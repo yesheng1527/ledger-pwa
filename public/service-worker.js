@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'ledger-pwa-shell-v20260808-4';
+const CACHE_VERSION = 'ledger-pwa-shell-v20260808-5';
 const SCOPE = new URL(self.registration.scope);
 const SHELL_URLS = [
   SCOPE.pathname,
@@ -26,21 +26,25 @@ async function cacheWithRetry(cache, url, attempts = 3) {
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_VERSION);
-    await cache.addAll([`${SCOPE.pathname}index.html`]);
-    await Promise.all(SHELL_URLS.filter((url) => !url.endsWith('index.html')).map((url) => cacheWithRetry(cache, url)));
-    const page = await fetch(SCOPE.pathname, { cache: 'no-store' });
+    await Promise.all(SHELL_URLS.map((url) => cacheWithRetry(cache, url, 5)));
+    const page = await cache.match(SCOPE.pathname) || await cache.match(`${SCOPE.pathname}index.html`);
+    if (!page) return;
     const html = await page.clone().text();
-    await cache.put(SCOPE.pathname, page);
     const assets = [...html.matchAll(/(?:src|href)="([^"]+)"/g)]
       .map((match) => new URL(match[1], SCOPE).href)
       .filter((url) => url.startsWith(SCOPE.href));
-    const manifestResponse = await fetch(`${SCOPE.pathname}asset-manifest.json`, { cache: 'no-store' });
-    const buildAssets = manifestResponse.ok
-      ? (await manifestResponse.json()).map((asset) => new URL(asset, SCOPE).href)
-      : [];
+    let buildAssets = [];
+    try {
+      const manifestResponse = await fetch(`${SCOPE.pathname}asset-manifest.json`, { cache: 'no-store' });
+      if (manifestResponse.ok) {
+        buildAssets = (await manifestResponse.json()).map((asset) => new URL(asset, SCOPE).href);
+      }
+    } catch {
+      // Runtime caching remains available if the optional manifest is unavailable.
+    }
     const requiredAssets = assets.filter((asset) => /\.(?:js|css)(?:\?|$)/.test(asset));
     const optionalAssets = assets.filter((asset) => !requiredAssets.includes(asset));
-    await cache.addAll([...new Set(requiredAssets)]);
+    await Promise.all([...new Set(requiredAssets)].map((asset) => cacheWithRetry(cache, asset, 5)));
     await Promise.all([...new Set(optionalAssets)].map((asset) => cacheWithRetry(cache, asset)));
     await Promise.all([...new Set(buildAssets)].map((asset) => cacheWithRetry(cache, asset)));
   })());
