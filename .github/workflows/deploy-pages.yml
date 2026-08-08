@@ -2,6 +2,9 @@ name: Deploy GitHub Pages
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -38,7 +41,10 @@ jobs:
         run: npm run test:run
 
       - name: Build Seabreeze Ledger
-        run: npm run build
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL || vars.VITE_SUPABASE_URL || secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY || secrets.VITE_SUPABASE_PUBLISHABLE_KEY || vars.SUPABASE_PUBLISHABLE_KEY || vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: npm run build -- --mode integration
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

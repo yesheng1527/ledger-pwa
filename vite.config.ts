@@ -13,12 +13,18 @@ const assetManifestPlugin: Plugin = {
 };
 
 export default defineConfig(({ mode }) => {
-  const connectedEnv = mode === 'integration'
+  const fileEnv = mode === 'integration'
     ? loadEnv(
         mode,
         '../..',
         ['SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY'],
       )
+    : null;
+  const connectedEnv = fileEnv
+    ? {
+        SUPABASE_URL: process.env.SUPABASE_URL || fileEnv.SUPABASE_URL,
+        SUPABASE_PUBLISHABLE_KEY: process.env.SUPABASE_PUBLISHABLE_KEY || fileEnv.SUPABASE_PUBLISHABLE_KEY,
+      }
     : null;
 
   if (connectedEnv && (!connectedEnv.SUPABASE_URL || !connectedEnv.SUPABASE_PUBLISHABLE_KEY)) {
