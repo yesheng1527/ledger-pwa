@@ -19,6 +19,7 @@ function createCommands(overrides: Partial<AuthPageCommands> = {}): AuthPageComm
     requestPasswordReset: vi.fn(async () => undefined),
     updatePassword: vi.fn(async () => undefined),
     finishPasswordRecovery: vi.fn(),
+    enterGuestMode: vi.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -60,6 +61,15 @@ describe('mapAuthError', () => {
 });
 
 describe('AuthPage', () => {
+  it('enters the isolated guest ledger without submitting credentials', async () => {
+    const user = userEvent.setup();
+    const commands = createCommands();
+    render(<AuthPage mode="login" commands={commands} />);
+    await user.click(screen.getByRole('button', { name: '游客体验' }));
+    expect(commands.enterGuestMode).toHaveBeenCalledOnce();
+    expect(commands.signIn).not.toHaveBeenCalled();
+  });
+
   it('keeps short-screen overflow inside the login page', () => {
     expect(authPageCss).toMatch(/height:\s*100%;[\s\S]*overflow-y:\s*auto;/);
     expect(authPageCss).toMatch(/overscroll-behavior-y:\s*contain;/);

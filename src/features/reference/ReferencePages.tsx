@@ -2318,13 +2318,15 @@ type ProfileAccount = {
   id: string;
   sourceName: string;
   name: string;
+  kind: 'cash' | 'wechat' | 'alipay' | 'debit_card' | 'credit_card' | 'custom';
+  accountClass: 'asset' | 'liability';
   balanceCents: number;
   balanceEdited: boolean;
 };
 
 const defaultProfileAccounts: ProfileAccount[] = [
-  { id: 'profile-cash', sourceName: '现金', name: '现金', balanceCents: 0, balanceEdited: false },
-  { id: 'profile-savings', sourceName: '储蓄卡', name: '储蓄卡', balanceCents: 0, balanceEdited: false },
+  { id: 'profile-cash', sourceName: '现金', name: '现金', kind: 'cash', accountClass: 'asset', balanceCents: 0, balanceEdited: false },
+  { id: 'profile-savings', sourceName: '储蓄卡', name: '储蓄卡', kind: 'debit_card', accountClass: 'asset', balanceCents: 0, balanceEdited: false },
 ];
 
 function parseAccountBalance(input: string): number {
@@ -2344,6 +2346,8 @@ function loadProfileAccounts(): ProfileAccount[] {
         id: `profile-migrated-${index + 1}`,
         sourceName: name,
         name,
+        kind: 'custom',
+        accountClass: 'asset',
         balanceCents: 0,
         balanceEdited: false,
       }));
@@ -2371,6 +2375,8 @@ function loadProfileAccounts(): ProfileAccount[] {
           id: account.id,
           sourceName: account.sourceName?.trim() || account.name,
           name: account.name,
+          kind: account.kind ?? 'custom',
+          accountClass: account.accountClass ?? (account.kind === 'credit_card' ? 'liability' : 'asset'),
           balanceCents: account.balanceCents,
           balanceEdited: account.balanceEdited ?? account.balanceCents !== 0,
         };
@@ -2428,6 +2434,8 @@ function ProfileSubpage({
   accounts,
   onSaveAccount,
   onRemoveAccount,
+  onPermanentDeleteAccount,
+  onGetAccountUsage,
   onAddAccount,
   reminderEnabled,
   setReminderEnabled,
@@ -2457,9 +2465,11 @@ function ProfileSubpage({
   budgetUsedCents: number;
   onSaveBudget(amountCents: number): Promise<void>;
   accounts: ProfileAccount[];
-  onSaveAccount(index: number, value: { name: string; balanceCents: number }): Promise<void>;
+  onSaveAccount(index: number, value: { name: string; balanceCents: number; kind: ProfileAccount['kind']; accountClass: ProfileAccount['accountClass'] }): Promise<void>;
   onRemoveAccount(index: number): Promise<void>;
-  onAddAccount(): Promise<void>;
+  onPermanentDeleteAccount(index: number): Promise<void>;
+  onGetAccountUsage(index: number): Promise<{ transactionCount: number; balanceCents: number }>;
+  onAddAccount(value: { name: string; openingBalanceCents: number; kind: ProfileAccount['kind']; accountClass: ProfileAccount['accountClass'] }): Promise<void>;
   reminderEnabled: boolean;
   setReminderEnabled(value: boolean): void;
   reminderTime: string;
@@ -2477,6 +2487,10 @@ function ProfileSubpage({
   const [editingAccountIndex, setEditingAccountIndex] = useState<number | null>(null);
   const [accountNameDraft, setAccountNameDraft] = useState('');
   const [accountBalanceDraft, setAccountBalanceDraft] = useState('0.00');
+  const [accountKindDraft, setAccountKindDraft] = useState<ProfileAccount['kind']>('custom');
+  const [accountClassDraft, setAccountClassDraft] = useState<ProfileAccount['accountClass']>('asset');
+  const [removingAccountIndex, setRemovingAccountIndex] = useState<number | null>(null);
+  const [removingAccountUsage, setRemovingAccountUsage] = useState<{ transactionCount: number; balanceCents: number } | null>(null);
   const [accountEditError, setAccountEditError] = useState<string | null>(null);
   const [accountSaving, setAccountSaving] = useState(false);
   const [budgetSaveError, setBudgetSaveError] = useState<string | null>(null);
@@ -2500,7 +2514,28 @@ function ProfileSubpage({
     setEditingAccountIndex(index);
     setAccountNameDraft(account.name);
     setAccountBalanceDraft(formatYuan(account.balanceCents).replace('¥', ''));
+    setAccountKindDraft(account.kind);
+    setAccountClassDraft(account.accountClass);
     setAccountEditError(null);
+  }
+
+  function openAccountCreator() {
+    setEditingAccountIndex(-1);
+    setAccountNameDraft('');
+    setAccountBalanceDraft('0.00');
+    setAccountKindDraft('custom');
+    setAccountClassDraft('asset');
+    setAccountEditError(null);
+  }
+
+  async function openAccountRemoval(index: number) {
+    setRemovingAccountIndex(index);
+    setRemovingAccountUsage(null);
+    try {
+      setRemovingAccountUsage(await onGetAccountUsage(index));
+    } catch {
+      setRemovingAccountUsage({ transactionCount: 0, balanceCents: accounts[index]?.balanceCents ?? 0 });
+    }
   }
 
   function closeAccountEditor() {
@@ -2534,9 +2569,24 @@ function ProfileSubpage({
 
     setAccountSaving(true);
     try {
-      await onSaveAccount(editingAccountIndex, { name: nextName, balanceCents: nextBalanceCents });
+      if (editingAccountIndex === -1) {
+        if (nextBalanceCents < 0) throw new Error('初始余额不能为负数');
+        await onAddAccount({
+          name: nextName,
+          openingBalanceCents: nextBalanceCents,
+          kind: accountKindDraft,
+          accountClass: accountKindDraft === 'credit_card' ? 'liability' : accountClassDraft,
+        });
+      } else {
+        await onSaveAccount(editingAccountIndex, {
+          name: nextName,
+          balanceCents: nextBalanceCents,
+          kind: accountKindDraft,
+          accountClass: accountKindDraft === 'credit_card' ? 'liability' : accountClassDraft,
+        });
+      }
       closeAccountEditor();
-      onFeedback('账户信息已更新', 'success');
+      onFeedback(editingAccountIndex === -1 ? '账户已添加' : '账户信息已更新', 'success');
     } catch (caught) {
       setAccountEditError(caught instanceof Error ? caught.message : '账户更新失败，请重试');
     } finally {
@@ -2708,26 +2758,22 @@ function ProfileSubpage({
                   aria-label={`编辑账户 ${account.name}`}
                   onClick={() => openAccountEditor(index)}
                 >
-                  <span><strong>{account.name}</strong><small>{index === 0 ? '默认账户' : '资产账户'}</small></span>
+                  <span><strong>{account.name}</strong><small>{account.accountClass === 'liability' ? '负债账户' : '资产账户'}</small></span>
                 </button>
                 <button
                   type="button"
                   className={styles.removeAccountButton}
-                  aria-label={`移除账户 ${account.name}`}
-                  onClick={() => void onRemoveAccount(index).catch((caught) => (
-                    onFeedback(caught instanceof Error ? caught.message : '账户移除失败，请重试', 'error')
-                  ))}
+                  aria-label={`管理账户 ${account.name}`}
+                  onClick={() => void openAccountRemoval(index)}
                 >
-                  移除
+                  管理
                 </button>
               </div>
             ))}
             <button
               type="button"
               className={styles.addAccountButton}
-              onClick={() => void onAddAccount().catch((caught) => (
-                onFeedback(caught instanceof Error ? caught.message : '账户添加失败，请重试', 'error')
-              ))}
+              onClick={openAccountCreator}
             >
               添加账户
             </button>
@@ -2821,7 +2867,7 @@ function ProfileSubpage({
         ) : null}
       </div>
       {editingAccountIndex !== null ? (
-        <ReferenceSheet title="编辑账户" onClose={closeAccountEditor}>
+        <ReferenceSheet title={editingAccountIndex === -1 ? '添加账户' : '编辑账户'} onClose={closeAccountEditor}>
           <form onSubmit={saveAccount}>
             <label className={styles.sheetInputField}>
               <span>账户名称</span>
@@ -2836,7 +2882,24 @@ function ProfileSubpage({
               />
             </label>
             <label className={styles.sheetInputField}>
-              <span>账户余额</span>
+              <span>账户种类</span>
+              <select aria-label="账户种类" value={accountKindDraft} onChange={(event) => {
+                const nextKind = event.target.value as ProfileAccount['kind'];
+                setAccountKindDraft(nextKind);
+                if (nextKind === 'credit_card') setAccountClassDraft('liability');
+              }}>
+                <option value="cash">现金</option><option value="wechat">微信</option><option value="alipay">支付宝</option>
+                <option value="debit_card">银行卡</option><option value="credit_card">信用卡</option><option value="custom">其他</option>
+              </select>
+            </label>
+            <label className={styles.sheetInputField}>
+              <span>账户类型</span>
+              <select aria-label="账户类型" value={accountKindDraft === 'credit_card' ? 'liability' : accountClassDraft} disabled={accountKindDraft === 'credit_card'} onChange={(event) => setAccountClassDraft(event.target.value as ProfileAccount['accountClass'])}>
+                <option value="asset">资产账户</option><option value="liability">负债账户</option>
+              </select>
+            </label>
+            <label className={styles.sheetInputField}>
+              <span>{editingAccountIndex === -1 ? '初始余额' : '账户余额'}</span>
               <input
                 aria-label="账户余额"
                 inputMode="decimal"
@@ -2848,8 +2911,24 @@ function ProfileSubpage({
               />
             </label>
             {accountEditError ? <p className={styles.sheetFormError} role="alert">{accountEditError}</p> : null}
-            <button type="submit" className={styles.sheetPrimaryButton} disabled={accountSaving}>{accountSaving ? '保存中...' : '保存修改'}</button>
+            <button type="submit" className={styles.sheetPrimaryButton} disabled={accountSaving}>{accountSaving ? '保存中...' : editingAccountIndex === -1 ? '创建账户' : '保存修改'}</button>
           </form>
+        </ReferenceSheet>
+      ) : null}
+      {removingAccountIndex !== null ? (
+        <ReferenceSheet title="账户管理确认" onClose={() => setRemovingAccountIndex(null)}>
+          <div className={styles.logoutConfirmation}>
+            <p>“{accounts[removingAccountIndex]?.name}”关联 {removingAccountUsage?.transactionCount ?? '…'} 笔流水。停用后历史流水保留，但不能再用于新记账。</p>
+            <div className={styles.sheetFormActions}>
+              <button type="button" onClick={() => setRemovingAccountIndex(null)}>取消</button>
+              <button type="button" onClick={() => void onRemoveAccount(removingAccountIndex).then(() => {
+                setRemovingAccountIndex(null); onFeedback('账户已停用，历史流水已保留', 'success');
+              }).catch((caught) => onFeedback(caught instanceof Error ? caught.message : '账户停用失败', 'error'))}>停用账户</button>
+              <button type="button" disabled={(removingAccountUsage?.transactionCount ?? 1) > 0} onClick={() => void onPermanentDeleteAccount(removingAccountIndex).then(() => {
+                setRemovingAccountIndex(null); onFeedback('空账户已永久删除', 'success');
+              }).catch((caught) => onFeedback(caught instanceof Error ? caught.message : '账户删除失败', 'error'))}>永久删除空账户</button>
+            </div>
+          </div>
         </ReferenceSheet>
       ) : null}
       {section !== '关于我们' && section !== '备份与恢复' && section !== '账户管理' && section !== '背景设置' ? (
@@ -2928,6 +3007,8 @@ export function ProfilePage({
         id: account.id,
         sourceName: account.name,
         name: account.name,
+        kind: account.kind,
+        accountClass: account.accountClass,
         balanceCents: account.balanceCents,
         balanceEdited: false,
       })));
@@ -2944,7 +3025,12 @@ export function ProfilePage({
     if (!useLiveAccounts) localStorage.setItem('seabreeze-profile-accounts', JSON.stringify(accounts));
   }, [accounts, useLiveAccounts]);
 
-  async function saveProfileAccount(index: number, value: { name: string; balanceCents: number }) {
+  async function saveProfileAccount(index: number, value: {
+    name: string;
+    balanceCents: number;
+    kind: ProfileAccount['kind'];
+    accountClass: ProfileAccount['accountClass'];
+  }) {
     const account = accounts[index];
     if (!account) throw new Error('账户不存在');
     if (useLiveAccounts) {
@@ -2957,6 +3043,8 @@ export function ProfilePage({
             ...item,
             sourceName: item.sourceName,
             name: value.name,
+            kind: value.kind,
+            accountClass: value.kind === 'credit_card' ? 'liability' : value.accountClass,
             balanceCents: value.balanceCents,
             balanceEdited: true,
           }
@@ -2974,20 +3062,43 @@ export function ProfilePage({
     setAccounts((current) => current.filter((_, accountIndex) => accountIndex !== index));
   }
 
-  async function addProfileAccount() {
-    const name = `新账户${accounts.length + 1}`;
+  async function addProfileAccount(value: {
+    name: string;
+    openingBalanceCents: number;
+    kind: ProfileAccount['kind'];
+    accountClass: ProfileAccount['accountClass'];
+  }) {
     if (useLiveAccounts) {
-      await viewModel.createAccount({ name, openingBalanceCents: 0 });
+      await viewModel.createAccount(value);
       return;
     }
     const accountId = `profile-account-${Date.now()}-${accounts.length + 1}`;
     setAccounts((current) => [...current, {
       id: accountId,
-      sourceName: name,
-      name,
-      balanceCents: 0,
+      sourceName: value.name,
+      name: value.name,
+      kind: value.kind,
+      accountClass: value.kind === 'credit_card' ? 'liability' : value.accountClass,
+      balanceCents: value.openingBalanceCents,
       balanceEdited: true,
     }]);
+  }
+
+  async function permanentlyDeleteProfileAccount(index: number) {
+    const account = accounts[index];
+    if (!account) return;
+    if (useLiveAccounts) {
+      await viewModel.deleteAccountPermanently(account.id);
+      return;
+    }
+    setAccounts((current) => current.filter((_, accountIndex) => accountIndex !== index));
+  }
+
+  async function getProfileAccountUsage(index: number) {
+    const account = accounts[index];
+    if (!account) return { transactionCount: 0, balanceCents: 0 };
+    if (useLiveAccounts) return viewModel.getAccountUsage(account.id);
+    return { transactionCount: 0, balanceCents: account.balanceCents };
   }
 
   async function saveProfileBudget(amountCents: number) {
@@ -3067,6 +3178,8 @@ export function ProfilePage({
           accounts={accounts}
           onSaveAccount={saveProfileAccount}
           onRemoveAccount={removeProfileAccount}
+          onPermanentDeleteAccount={permanentlyDeleteProfileAccount}
+          onGetAccountUsage={getProfileAccountUsage}
           onAddAccount={addProfileAccount}
           reminderEnabled={reminderEnabled}
           setReminderEnabled={setReminderEnabled}

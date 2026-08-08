@@ -17,7 +17,7 @@ type AuthViewMode = AuthPageMode | 'register';
 
 export type AuthPageCommands = Pick<
   AppRuntimeValue,
-  'signUp' | 'signIn' | 'requestPasswordReset' | 'updatePassword' | 'finishPasswordRecovery'
+  'signUp' | 'signIn' | 'requestPasswordReset' | 'updatePassword' | 'finishPasswordRecovery' | 'enterGuestMode'
 >;
 
 type AuthPageProps = {
@@ -366,7 +366,7 @@ export function AuthPage({ mode, commands }: AuthPageProps) {
               <div className={styles.divider}><span>或</span></div>
               <div className={styles.socialButtons}>
                 <button type="button" onClick={() => showNotice('微信登录暂未配置')}><img src={wechatIcon} alt="" />微信登录</button>
-                <button type="button" onClick={() => showNotice('游客体验将在正式环境开放')}><img src={guestIcon} alt="" />游客体验</button>
+                <button type="button" disabled={busy} onClick={() => void commands.enterGuestMode()}><img src={guestIcon} alt="" />游客体验</button>
               </div>
             </section>
           ) : null}

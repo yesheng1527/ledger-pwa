@@ -439,12 +439,18 @@ export class LedgerViewModel {
   async createAccount(input: {
     name: string;
     openingBalanceCents: number;
+    kind?: Account['kind'];
+    accountClass?: Account['accountClass'];
   }): Promise<{ accountId: string }> {
     const snapshot = await this.readSnapshot();
     const name = input.name.trim();
     if (!name) throw new Error('请输入账户名称');
     if (name.length > 30) throw new Error('账户名称不能超过30个字符');
-    if (!Number.isSafeInteger(input.openingBalanceCents)) throw new Error('账户余额无效');
+    if (!Number.isSafeInteger(input.openingBalanceCents) || input.openingBalanceCents < 0) {
+      throw new Error('初始余额必须是大于或等于0的有效金额');
+    }
+    const kind = input.kind ?? 'custom';
+    const accountClass = kind === 'credit_card' ? 'liability' : input.accountClass ?? 'asset';
     if (snapshot.accounts.some((account) => (
       account.archivedAt === null
       && account.name.toLocaleLowerCase() === name.toLocaleLowerCase()
@@ -457,8 +463,8 @@ export class LedgerViewModel {
       id: accountId,
       ledgerId: this.ledgerId,
       name,
-      kind: 'custom',
-      accountClass: 'asset',
+      kind,
+      accountClass,
       currency: 'CNY',
       openingBalanceCents: input.openingBalanceCents,
       sortOrder: snapshot.accounts.reduce((largest, item) => Math.max(largest, item.sortOrder), -1) + 1,
@@ -480,6 +486,8 @@ export class LedgerViewModel {
     id: string;
     name: string;
     balanceCents: number;
+    kind?: Account['kind'];
+    accountClass?: Account['accountClass'];
   }): Promise<void> {
     const snapshot = await this.readSnapshot();
     const current = this.requireActiveAccount(snapshot, input.id);
@@ -495,16 +503,19 @@ export class LedgerViewModel {
       throw new Error('账户名称不能重复');
     }
 
+    const kind = input.kind ?? current.kind;
+    const accountClass = kind === 'credit_card'
+      ? 'liability'
+      : input.accountClass ?? current.accountClass;
     const currentInternalBalance = this.accountInternalBalance(snapshot, current);
-    const desiredInternalBalance = current.accountClass === 'liability'
+    const desiredInternalBalance = accountClass === 'liability'
       ? -input.balanceCents
       : input.balanceCents;
     const account: Account = {
       ...current,
       name,
-      openingBalanceCents: current.openingBalanceCents
-        + desiredInternalBalance
-        - currentInternalBalance,
+      kind,
+      accountClass,
       version: current.version + 1,
     };
     await this.saveOperation({
@@ -517,14 +528,22 @@ export class LedgerViewModel {
       baseVersion: current.version,
       account,
     });
+    const deltaCents = desiredInternalBalance - currentInternalBalance;
+    if (deltaCents !== 0) {
+      await this.createTransaction({
+        type: 'adjustment',
+        deltaCents,
+        accountId: current.id,
+        occurredAt: this.now().toISOString(),
+        name: '余额校准',
+        note: '由账户管理发起',
+      });
+    }
   }
 
   async archiveAccount(id: string): Promise<void> {
     const snapshot = await this.readSnapshot();
     const current = this.requireActiveAccount(snapshot, id);
-    if (this.accountPresentedBalance(snapshot, current) !== 0) {
-      throw new Error('请先将账户余额调整为0再移除');
-    }
     const archivedAt = this.now().toISOString();
     await this.saveOperation({
       schemaVersion: 1,
@@ -855,6 +874,26 @@ export class LedgerViewModel {
       deltaCents: entry.deltaCents,
       accountId: entry.accountId,
     });
+  }
+
+  async getAccountUsage(id: string): Promise<{ transactionCount: number; balanceCents: number }> {
+    const snapshot = await this.readSnapshot();
+    const account = this.requireActiveAccount(snapshot, id);
+    const transactionIds = new Set(
+      snapshot.entries.filter((entry) => entry.accountId === id).map((entry) => entry.transactionId),
+    );
+    return {
+      transactionCount: transactionIds.size,
+      balanceCents: this.accountPresentedBalance(snapshot, account),
+    };
+  }
+
+  async deleteAccountPermanently(id: string): Promise<void> {
+    const usage = await this.getAccountUsage(id);
+    if (usage.transactionCount > 0) {
+      throw new Error(`该账户关联 ${usage.transactionCount} 笔流水，不能永久删除；请停用账户以保留记录`);
+    }
+    await this.archiveAccount(id);
   }
 
   async deleteTransaction(id: string): Promise<{ undoUntil: string }> {

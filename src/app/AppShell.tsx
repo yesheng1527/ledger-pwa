@@ -19,11 +19,14 @@ import {
 } from '../features/reference/background-preferences';
 import { type AppPage } from './navigation';
 import styles from './AppShell.module.css';
+import type { SyncStatus } from '../sync/sync-engine';
 
 export type AppShellProps = {
   viewModel: LedgerViewModel;
   displayName?: string;
   onSignOut?: () => Promise<void>;
+  syncStatus?: SyncStatus;
+  guestMode?: boolean;
 };
 
 type ViewTransitionDocument = Document & {
@@ -38,7 +41,7 @@ function shouldShowSplash(): boolean {
   return forced || sessionStorage.getItem('seabreeze-splash-seen') !== 'true';
 }
 
-export function AppShell({ viewModel, displayName = '海风', onSignOut = async () => undefined }: AppShellProps) {
+export function AppShell({ viewModel, displayName = '海风', onSignOut = async () => undefined, syncStatus, guestMode = false }: AppShellProps) {
   const [page, setPage] = useState<AppPage>('home');
   const [returnPage, setReturnPage] = useState<Exclude<AppPage, 'entry'>>('home');
   const [entryCategory, setEntryCategory] = useState<string | undefined>();
@@ -169,6 +172,9 @@ export function AppShell({ viewModel, displayName = '海风', onSignOut = async 
   return (
     <div className={styles.viewport}>
       <div ref={phoneRef} className={styles.phone} data-page={page}>
+        <div className={styles.syncBanner} data-mode={guestMode ? 'guest' : syncStatus?.mode ?? 'idle'} role="status" aria-live="polite">
+          {guestMode ? '游客演示 · 数据仅保存在本机' : syncStatus?.mode === 'offline' ? `离线 · ${syncStatus.pendingCount} 项等待同步` : syncStatus?.mode === 'syncing' ? `同步中 · ${syncStatus.pendingCount} 项待处理` : syncStatus?.mode === 'conflict' ? '存在同步冲突，请在备份与恢复中处理' : syncStatus?.mode === 'error' ? (syncStatus.message ?? '同步失败') : syncStatus?.lastSyncedAt ? `已同步 · ${new Date(syncStatus.lastSyncedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : '本地数据已就绪'}
+        </div>
         <div ref={pageStageRef} className={styles.pageStage}>
           {page === 'home' ? (
             <HomePage

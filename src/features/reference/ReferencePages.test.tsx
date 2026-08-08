@@ -508,8 +508,8 @@ describe('reference five-page application', () => {
     expect(screen.getByRole('button', { name: '编辑账户 日常现金' })).toBeInTheDocument();
     expect(screen.getByText('账户信息已更新')).toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem('seabreeze-profile-accounts') ?? '[]')).toEqual([
-      { id: 'profile-cash', sourceName: '现金', name: '日常现金', balanceCents: -128850, balanceEdited: true },
-      { id: 'profile-savings', sourceName: '储蓄卡', name: '储蓄卡', balanceCents: 0, balanceEdited: false },
+      { id: 'profile-cash', sourceName: '现金', name: '日常现金', kind: 'cash', accountClass: 'asset', balanceCents: -128850, balanceEdited: true },
+      { id: 'profile-savings', sourceName: '储蓄卡', name: '储蓄卡', kind: 'debit_card', accountClass: 'asset', balanceCents: 0, balanceEdited: false },
     ]);
 
     await user.click(screen.getByRole('button', { name: '返回我的页面' }));
@@ -519,6 +519,27 @@ describe('reference five-page application', () => {
     const assetDialog = screen.getByRole('dialog', { name: '我的资产账户' });
     expect(within(assetDialog).getByText('日常现金')).toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: '资产账户列表' })).getByText('-¥1,288.50')).toBeInTheDocument();
+  });
+
+  it('opens a complete account form and forces credit cards to liabilities', async () => {
+    const user = userEvent.setup();
+    render(<AppShell viewModel={viewModel} />);
+    await user.click(screen.getByRole('button', { name: /^我的$/ }));
+    await user.click(screen.getByRole('button', { name: /账户管理/ }));
+    await user.click(screen.getByRole('button', { name: '添加账户' }));
+
+    expect(screen.getByRole('dialog', { name: '添加账户' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '编辑账户 新账户3' })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('账户名称'), '海风信用卡');
+    await user.selectOptions(screen.getByLabelText('账户种类'), 'credit_card');
+    expect(screen.getByLabelText('账户类型')).toHaveValue('liability');
+    expect(screen.getByLabelText('账户类型')).toBeDisabled();
+    await user.clear(screen.getByLabelText('初始余额'));
+    await user.type(screen.getByLabelText('初始余额'), '200.00');
+    await user.click(screen.getByRole('button', { name: '创建账户' }));
+
+    expect(screen.getByRole('button', { name: '编辑账户 海风信用卡' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '编辑账户 海风信用卡' })).toHaveTextContent('负债账户');
   });
 
   it('updates and persists the profile avatar and signature', async () => {

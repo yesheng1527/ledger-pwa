@@ -46,6 +46,24 @@ function entry(transactionId: string, accountId: string, deltaCents: number): Le
 }
 
 describe('calculateMetrics', () => {
+  it('reports 1000 assets minus 200 liabilities as 800 without inventing income or expense', () => {
+    expect(calculateMetrics(
+      [account('asset', 'asset', 100000), account('credit', 'liability', 20000)],
+      [],
+      [],
+      {
+        start: '2026-07-01T00:00:00.000Z', end: '2026-08-01T00:00:00.000Z',
+        todayStart: '2026-07-18T00:00:00.000Z', todayEnd: '2026-07-19T00:00:00.000Z',
+      },
+    )).toEqual({
+      netWorthCents: 80000,
+      todayExpenseCents: 0,
+      periodIncomeCents: 0,
+      periodNetExpenseCents: 0,
+      periodBalanceCents: 0,
+    });
+  });
+
   it('separates net worth from income, expense, transfers, refunds and adjustments', () => {
     const transactions = [
       transaction('1', 'income', 50000),

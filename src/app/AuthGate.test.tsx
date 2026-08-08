@@ -41,6 +41,7 @@ function createRuntime(overrides: Partial<AppRuntimeValue> = {}): AppRuntimeValu
     initializing: false,
     initializationMessage: null,
     ledgerViewModel: null,
+    guestMode: false,
     syncStatus: {
       mode: 'idle',
       pendingCount: 0,
@@ -52,6 +53,8 @@ function createRuntime(overrides: Partial<AppRuntimeValue> = {}): AppRuntimeValu
     requestPasswordReset: vi.fn(async () => undefined),
     updatePassword: vi.fn(async () => undefined),
     signOut: vi.fn(async () => undefined),
+    enterGuestMode: vi.fn(async () => undefined),
+    exitGuestMode: vi.fn(),
     finishPasswordRecovery: vi.fn(),
     syncNow: vi.fn(async () => undefined),
     saveOperation: vi.fn(async () => undefined),

@@ -7,19 +7,22 @@
   "display": "standalone",
   "background_color": "#fffaf3",
   "theme_color": "#72cdd2",
-  "orientation": "portrait",
+  "orientation": "any",
   "icons": [
     {
       "src": "./icons/icon-192-seabreeze.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
       "src": "./icons/icon-512-seabreeze.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     }
+  ],
+  "shortcuts": [
+    { "name": "记一笔", "short_name": "记账", "url": "./?action=entry", "icons": [{ "src": "./icons/icon-192-seabreeze.png", "sizes": "192x192" }] }
   ]
 }

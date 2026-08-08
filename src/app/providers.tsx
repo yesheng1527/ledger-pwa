@@ -16,6 +16,7 @@ import { LedgerApi } from '../services/ledger-api';
 import { SyncEngine, type SyncStatus } from '../sync/sync-engine';
 import { LedgerViewModel } from '../view-model/ledger-view-model';
 import type { LedgerViewModelOptions } from '../view-model/types';
+import { createGuestLedgerViewModel } from './guest-runtime';
 
 const FIRST_LOGIN_OFFLINE_MESSAGE = '首次登录需要联网完成初始化';
 const INITIALIZATION_ERROR_MESSAGE = '初始化失败，请稍后重试';
@@ -67,11 +68,14 @@ export type AppRuntimeValue = {
   initializationMessage: string | null;
   syncStatus: SyncStatus;
   ledgerViewModel: LedgerViewModel | null;
+  guestMode: boolean;
   signUp(email: string, password: string): Promise<void>;
   signIn(email: string, password: string): Promise<void>;
   requestPasswordReset(email: string): Promise<void>;
   updatePassword(password: string): Promise<void>;
   signOut(): Promise<void>;
+  enterGuestMode(): Promise<void>;
+  exitGuestMode(): void;
   finishPasswordRecovery(): void;
   syncNow(): Promise<void>;
   saveOperation(operation: LedgerOperation): Promise<void>;
@@ -99,8 +103,24 @@ export function isPasswordRecoveryPath(
 }
 
 function createDefaultServices(): AppProviderServices {
-  const auth = new AuthService();
-  const api = new LedgerApi();
+  const configured = Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
+  const unavailable = async () => { throw new Error('在线账号服务暂未配置，请使用游客体验'); };
+  const auth: RuntimeAuthService = configured ? new AuthService() : {
+    onSessionChange(listener) {
+      queueMicrotask(() => void listener('INITIAL_SESSION', null));
+      return () => undefined;
+    },
+    signUp: unavailable,
+    signIn: unavailable,
+    requestPasswordReset: unavailable,
+    updatePassword: unavailable,
+    signOut: async () => undefined,
+  };
+  const api = configured ? new LedgerApi() : {
+    bootstrapPersonalLedger: unavailable,
+    applyOperation: unavailable,
+    pullChanges: unavailable,
+  };
   const repo = new LocalLedgerRepository(new LedgerDatabase());
   const isOnline = browserIsOnline;
   return {
@@ -128,6 +148,7 @@ export function AppProviders({
   const [initializationMessage, setInitializationMessage] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(idleStatus);
   const [ledgerViewModel, setLedgerViewModel] = useState<LedgerViewModel | null>(null);
+  const [guestMode, setGuestMode] = useState(false);
   const sessionRef = useRef<Session | null>(null);
   const engineRef = useRef<RuntimeSyncEngine | null>(null);
   const engineBootstrappedRef = useRef(false);
@@ -194,6 +215,26 @@ export function AppProviders({
     window.history.replaceState(null, '', cleanPath);
   }, []);
 
+  const enterGuestMode = useCallback(async () => {
+    stopEngineStatusRef.current?.();
+    stopEngineStatusRef.current = null;
+    engineRef.current = null;
+    replaceLedgerViewModel(await createGuestLedgerViewModel());
+    setGuestMode(true);
+    sessionStorage.setItem('seabreeze-guest-active', 'true');
+    setInitializationMessage(null);
+  }, [replaceLedgerViewModel]);
+
+  const exitGuestMode = useCallback(() => {
+    sessionStorage.removeItem('seabreeze-guest-active');
+    setGuestMode(false);
+    replaceLedgerViewModel(null);
+  }, [replaceLedgerViewModel]);
+
+  useEffect(() => {
+    if (sessionStorage.getItem('seabreeze-guest-active') === 'true') void enterGuestMode();
+  }, [enterGuestMode]);
+
   useEffect(() => {
     const stopEngineStatus = () => {
       stopEngineStatusRef.current?.();
@@ -203,6 +244,10 @@ export function AppProviders({
     };
 
     const initializeSession = async (nextSession: Session | null, force = false) => {
+      if (sessionStorage.getItem('seabreeze-guest-active') === 'true') {
+        setAuthReady(true);
+        return;
+      }
       if (!force && nextSession && sessionRef.current?.user.id === nextSession.user.id) {
         sessionRef.current = nextSession;
         setSession(nextSession);
@@ -308,11 +353,14 @@ export function AppProviders({
     initializationMessage,
     syncStatus,
     ledgerViewModel,
+    guestMode,
     signUp,
     signIn,
     requestPasswordReset,
     updatePassword,
     signOut,
+    enterGuestMode,
+    exitGuestMode,
     finishPasswordRecovery,
     syncNow,
     saveOperation,

@@ -52,6 +52,7 @@ function InitializationErrorState({ message, onRetry }: { message: string; onRet
 
 export function AuthGateView({ runtime, children }: AuthGateViewProps) {
   if (!runtime.authReady) return <BrandedLoadingState label="正在检查登录状态" />;
+  if (runtime.guestMode && runtime.ledgerViewModel) return <>{children}</>;
   if (runtime.passwordRecovery && !runtime.session) {
     return <RecoveryLinkError onReturnToLogin={runtime.finishPasswordRecovery} />;
   }

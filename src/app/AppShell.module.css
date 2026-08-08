@@ -20,6 +20,29 @@
   box-shadow: 0 12px 34px rgb(96 69 31 / 14%);
 }
 
+.syncBanner {
+  position: absolute;
+  z-index: 40;
+  top: max(6px, env(safe-area-inset-top));
+  left: 50%;
+  min-height: 24px;
+  max-width: calc(100% - 32px);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 78%);
+  color: #2c6266;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  transform: translateX(-50%);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.syncBanner[data-mode='offline'],
+.syncBanner[data-mode='error'],
+.syncBanner[data-mode='conflict'] { color: #8a3d32; background: rgb(255 239 228 / 92%); }
+
 .pageStage {
   position: absolute;
   inset: 0;

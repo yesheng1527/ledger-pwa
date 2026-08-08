@@ -466,11 +466,24 @@ describe('LedgerViewModel transaction commands', () => {
     expect((await viewModel.getAccounts()).find((item) => item.id === created.accountId))
       .toMatchObject({ name: '旅行金', balanceCents: 50000 });
 
-    await expect(viewModel.archiveAccount(created.accountId))
-      .rejects.toThrow('请先将账户余额调整为0再移除');
-    await viewModel.updateAccount({ id: created.accountId, name: '旅行金', balanceCents: 0 });
     await viewModel.archiveAccount(created.accountId);
     expect((await viewModel.getAccounts()).map((item) => item.id)).not.toContain(created.accountId);
+  });
+
+  it('forces credit cards to liabilities and blocks permanent deletion with linked transactions', async () => {
+    const { viewModel } = createFixtureViewModelHarness();
+    const created = await viewModel.createAccount({
+      name: '海风信用卡',
+      kind: 'credit_card',
+      accountClass: 'asset',
+      openingBalanceCents: 12345,
+    });
+    expect((await viewModel.getAccounts()).find((item) => item.id === created.accountId))
+      .toMatchObject({ kind: 'credit_card', accountClass: 'liability', balanceCents: -12345 });
+
+    await expect(viewModel.deleteAccountPermanently(fixtureIds.cash))
+      .rejects.toThrow(/关联 .* 笔流水/);
+    await expect(viewModel.deleteAccountPermanently(created.accountId)).resolves.toBeUndefined();
   });
 
   it('creates an expense with a shared transaction and operation id and a trimmed note', async () => {
