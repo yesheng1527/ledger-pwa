@@ -7,9 +7,15 @@ describe('production service worker', () => {
 
   it('caches the app shell and serves navigation offline', () => {
     expect(source).toContain("html.matchAll(/(?:src|href)");
-    expect(source).toContain("cache.addAll([...new Set(assets)])");
+    expect(source).toContain("fetch(`${SCOPE.pathname}asset-manifest.json`");
+    expect(source).toContain('...buildAssets');
     expect(source).toContain("request.mode === 'navigate'");
     expect(source).toContain('caches.match(SCOPE.pathname)');
+  });
+
+  it('pre-caches build assets needed after an offline navigation', () => {
+    expect(source).toContain('manifestResponse.json()');
+    expect(source).toContain('new URL(asset, SCOPE).href');
   });
 
   it('does not unregister itself or purge the active cache', () => {

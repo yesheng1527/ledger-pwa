@@ -1,5 +1,16 @@
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+
+const assetManifestPlugin: Plugin = {
+  name: 'ledger-asset-manifest',
+  generateBundle(_options, bundle) {
+    this.emitFile({
+      type: 'asset',
+      fileName: 'asset-manifest.json',
+      source: JSON.stringify(Object.values(bundle).map((item) => item.fileName).sort()),
+    });
+  },
+};
 
 export default defineConfig(({ mode }) => {
   const connectedEnv = mode === 'integration'
@@ -27,6 +38,6 @@ export default defineConfig(({ mode }) => {
           ),
         }
       : undefined,
-    plugins: [react()],
+    plugins: [react(), assetManifestPlugin],
   };
 });

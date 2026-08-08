@@ -3414,7 +3414,7 @@ function ProfileSubpage({
             <label className={styles.sheetInputField}>
               <span>{editingAccountIndex === -1 ? '初始余额' : '账户余额'}</span>
               <input
-                aria-label="账户余额"
+                aria-label={editingAccountIndex === -1 ? '初始余额' : '账户余额'}
                 inputMode="decimal"
                 value={accountBalanceDraft}
                 onChange={(event) => {

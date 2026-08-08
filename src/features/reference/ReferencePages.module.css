@@ -1258,14 +1258,15 @@
   left: 14px;
   display: grid;
   width: calc(100% - 28px);
-  grid-template-columns: 1.3fr 1fr 1.1fr;
+  grid-template-columns: minmax(0, 1.25fr) repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
 .filterRow button,
 .statisticsFilters > button {
   display: inline-flex;
-  height: 42px;
+  min-width: 0;
+  height: 44px;
   align-items: center;
   justify-content: center;
   gap: 5px;
