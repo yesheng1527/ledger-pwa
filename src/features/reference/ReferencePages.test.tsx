@@ -218,6 +218,8 @@ describe('reference five-page application', () => {
 
     await user.click(screen.getByRole('button', { name: /公交车.*-¥2\.00/ }));
     await user.click(screen.getByRole('button', { name: '删除流水' }));
+    expect(screen.getByRole('dialog', { name: '确认删除' })).toHaveTextContent('删除后 8 秒内可以撤销');
+    await user.click(screen.getByRole('button', { name: '确认删除' }));
     expect(screen.queryByRole('button', { name: /公交车.*-¥2\.00/ })).not.toBeInTheDocument();
     expect(screen.getByText('已删除“公交车”')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '撤销' }));
@@ -251,11 +253,12 @@ describe('reference five-page application', () => {
     await user.clear(screen.getByLabelText('金额'));
     await user.type(screen.getByLabelText('金额'), '0');
     await user.click(screen.getByRole('button', { name: '保存' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('请输入大于0的有效金额');
+    expect(screen.getByRole('alert')).toHaveTextContent('金额必须大于0');
 
     await user.clear(screen.getByLabelText('金额'));
     await user.type(screen.getByLabelText('金额'), '25.50');
-    await user.type(screen.getByLabelText('备注'), '午餐');
+    await user.type(screen.getByLabelText('名称'), '午餐');
+    await user.type(screen.getByLabelText('备注'), '和小陈一起');
     await user.click(screen.getByRole('button', { name: '保存' }));
 
     await waitFor(() => expect(createTransaction).toHaveBeenCalledWith(expect.objectContaining({
@@ -264,7 +267,8 @@ describe('reference five-page application', () => {
       categoryId: 'category-food',
       accountId: 'account-1',
       occurredAt: new Date('2024-05-22T18:35:00').toISOString(),
-      note: '午餐',
+      name: '午餐',
+      note: '和小陈一起',
     })));
     expect(screen.getByText('记账已保存')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '已保存' })).toBeInTheDocument();

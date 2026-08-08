@@ -81,6 +81,7 @@ export type TransactionEditInput =
       accountId: string;
       categoryId: string;
       occurredAt: string;
+      name?: string;
       note: string;
     }
   | {
@@ -91,6 +92,7 @@ export type TransactionEditInput =
       fromAccountId: string;
       toAccountId: string;
       occurredAt: string;
+      name?: string;
       note: string;
     }
   | {
@@ -99,6 +101,7 @@ export type TransactionEditInput =
       type: 'refund';
       amountCents: number;
       occurredAt: string;
+      name?: string;
       note: string;
     }
   | {
@@ -108,6 +111,7 @@ export type TransactionEditInput =
       deltaCents: number;
       accountId: string;
       occurredAt: string;
+      name?: string;
       note: string;
     };
 
@@ -118,6 +122,7 @@ export type TransactionCreateInput =
       accountId: string;
       categoryId: string;
       occurredAt: string;
+      name?: string;
       note: string;
     }
   | {
@@ -126,6 +131,7 @@ export type TransactionCreateInput =
       fromAccountId: string;
       toAccountId: string;
       occurredAt: string;
+      name?: string;
       note: string;
     }
   | {
@@ -133,6 +139,7 @@ export type TransactionCreateInput =
       amountCents: number;
       originalTransactionId: string;
       occurredAt: string;
+      name?: string;
       note: string;
     }
   | {
@@ -140,6 +147,7 @@ export type TransactionCreateInput =
       deltaCents: number;
       accountId: string;
       occurredAt: string;
+      name?: string;
       note: string;
     };
 

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as metrics from '../domain/metrics';
 import { validateOperation, type LedgerOperation } from '../domain/operations';
+import { decodeTransactionText } from '../domain/transaction-text';
 import type { LedgerReadSnapshot } from '../db/records';
 import {
   createMutableLedgerFixture,
@@ -229,7 +230,7 @@ describe('LedgerViewModel transaction projections', () => {
       query: ' 午餐 ',
     });
     expect(result.groups.flatMap((group) => group.rows).map((row) => row.title))
-      .toEqual(['午餐']);
+      .toEqual(['餐饮']);
   });
 
   it('searches note, category and entry account names case-insensitively', async () => {
@@ -239,11 +240,11 @@ describe('LedgerViewModel transaction projections', () => {
     const accountResult = await viewModel.getTransactions({ ...defaultFilters, query: '现金' });
 
     expect(noteResult.groups.flatMap((group) => group.rows).map((row) => row.title))
-      .toEqual(['July PAYCHECK']);
+      .toEqual(['工资']);
     expect(categoryResult.groups.flatMap((group) => group.rows).map((row) => row.title))
-      .toEqual(['午餐']);
+      .toEqual(['餐饮']);
     expect(accountResult.groups.flatMap((group) => group.rows).map((row) => row.title))
-      .toEqual(['午餐', '取现']);
+      .toEqual(['餐饮', '转账']);
   });
 
   it('returns no rows when the selected date is outside the selected month', async () => {
@@ -506,6 +507,31 @@ describe('LedgerViewModel transaction commands', () => {
         deletedAt: null,
       },
       entries: [{ accountId: fixtureIds.credit, deltaCents: 2500 }],
+    });
+  });
+
+  it('stores a named transaction in one envelope and presents name and note separately', async () => {
+    const { saveOperation, viewModel } = createFixtureViewModelHarness();
+    const created = await viewModel.createTransaction({
+      type: 'expense',
+      amountCents: 2500,
+      accountId: fixtureIds.cash,
+      categoryId: fixtureIds.foodCategory,
+      occurredAt: fixtureTimes.todayExpense,
+      name: '海边午餐 🍜',
+      note: '第一行\n“第二行”',
+    });
+    const operation = saveOperation.mock.calls[0][0];
+    expect(operation.kind).toBe('transaction.create');
+    if (operation.kind !== 'transaction.create') throw new Error('unexpected operation');
+    expect(decodeTransactionText(created.transactionId, operation.transaction.note)).toEqual({
+      name: '海边午餐 🍜',
+      note: '第一行\n“第二行”',
+      legacy: false,
+    });
+    await expect(viewModel.getTransactionDetail(created.transactionId)).resolves.toMatchObject({
+      title: '海边午餐 🍜',
+      note: '第一行\n“第二行”',
     });
   });
 

@@ -4,6 +4,8 @@ function assertSafeCents(cents: number): void {
   }
 }
 
+export const MAX_TRANSACTION_CENTS = 9_999_999_999;
+
 export function parseYuan(input: string): number {
   const value = input.trim();
   if (/^\d+\.\d{3,}$/.test(value)) {
@@ -19,6 +21,13 @@ export function parseYuan(input: string): number {
     throw new Error('金额超出可记录范围');
   }
   return Number(cents);
+}
+
+export function parsePositiveYuan(input: string): number {
+  const cents = parseYuan(input);
+  if (cents <= 0) throw new Error('金额必须大于0');
+  if (cents > MAX_TRANSACTION_CENTS) throw new Error('金额不能超过99,999,999.99元');
+  return cents;
 }
 
 export function formatYuan(cents: number): string {

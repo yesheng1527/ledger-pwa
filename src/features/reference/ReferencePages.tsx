@@ -15,7 +15,7 @@ import {
 } from '@phosphor-icons/react';
 import type { AppPage } from '../../app/navigation';
 import { navigationItems } from '../../app/navigation';
-import { formatYuan, parseYuan } from '../../domain/money';
+import { formatYuan, parsePositiveYuan, parseYuan } from '../../domain/money';
 import type { LedgerViewModel } from '../../view-model/ledger-view-model';
 import { useLedgerQuery } from '../../view-model/use-ledger-query';
 import type {
@@ -652,11 +652,13 @@ function TransactionDetailPanel({
   dateLabel,
   onEdit,
   onDelete,
+  onCopy,
 }: {
   transaction: TransactionPresentation;
   dateLabel?: string;
   onEdit?(): void;
   onDelete?(): void;
+  onCopy?(): void;
 }) {
   const categoryLabel = transaction.meta.split('　')[0];
   const timeLabel = transaction.meta.split('　')[1] ?? '';
@@ -673,9 +675,10 @@ function TransactionDetailPanel({
         <div><dt>时间</dt><dd>{dateLabel ? `${dateLabel}　${timeLabel}` : timeLabel}</dd></div>
         <div><dt>备注</dt><dd>{transaction.note || '无备注'}</dd></div>
       </dl>
-      {onEdit || onDelete ? (
+      {onEdit || onDelete || onCopy ? (
         <div className={styles.detailActions}>
           {onEdit ? <button type="button" onClick={onEdit}>编辑流水</button> : null}
+          {onCopy ? <button type="button" onClick={onCopy}>复制流水</button> : null}
           {onDelete ? <button type="button" onClick={onDelete}>删除流水</button> : null}
         </div>
       ) : null}
@@ -729,8 +732,7 @@ function TransactionEditPanel({
       event.preventDefault();
       let amountCents: number;
       try {
-        amountCents = parseYuan(amount);
-        if (amountCents <= 0) throw new Error('请输入大于0的有效金额');
+        amountCents = parsePositiveYuan(amount);
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : '请输入有效金额');
         return;
@@ -746,7 +748,7 @@ function TransactionEditPanel({
       });
     }}>
       <label><span>名称</span><input autoFocus aria-label="流水名称" value={title} onChange={(event) => setTitle(event.target.value)} /></label>
-      <label><span>金额</span><input aria-label="流水金额" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setError(null); }} /></label>
+      <label><span>金额</span><input aria-label="流水金额" inputMode="decimal" maxLength={11} value={amount} onChange={(event) => { setAmount(event.target.value); setError(null); }} /></label>
       <label><span>分类</span><select aria-label="流水分类" value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item}>{item}</option>)}</select></label>
       <label><span>账户</span><select aria-label="流水账户" value={account} onChange={(event) => setAccount(event.target.value)}>{accounts.map((item) => <option key={item}>{item}</option>)}</select></label>
       <label><span>备注</span><input aria-label="流水备注" value={note} onChange={(event) => setNote(event.target.value)} /></label>
@@ -1043,7 +1045,7 @@ export function TransactionsPage({ viewModel, backgrounds, onNavigate, onFeedbac
     date: string;
     detail?: TransactionDetail;
   } | null>(null);
-  const [detailMode, setDetailMode] = useState<'detail' | 'edit'>('detail');
+  const [detailMode, setDetailMode] = useState<'detail' | 'edit' | 'delete'>('detail');
   const [transactionOverrides, setTransactionOverrides] = useState<Record<string, TransactionPresentation>>({});
   const [deletedTransactionIds, setDeletedTransactionIds] = useState<Set<string>>(() => new Set());
   const [undoTransaction, setUndoTransaction] = useState<{ row: TransactionPresentation; date: string } | null>(null);
@@ -1173,7 +1175,8 @@ export function TransactionsPage({ viewModel, backgrounds, onNavigate, onFeedbac
         accountId: accountOption.id,
         categoryId: categoryOption.id,
         occurredAt: detail.occurredAt,
-        note: transaction.title.trim() || transaction.note?.trim() || '',
+        name: transaction.title,
+        note: transaction.note?.trim() || '',
       });
       const refreshed = await viewModel.getTransactionDetail(detail.id);
       setSelectedTransaction((current) => refreshed && current
@@ -1227,6 +1230,17 @@ export function TransactionsPage({ viewModel, backgrounds, onNavigate, onFeedbac
     if (undoTimerRef.current !== null) window.clearTimeout(undoTimerRef.current);
     undoTimerRef.current = null;
     onFeedback('删除已撤销', 'success');
+  }
+
+  async function copySelectedTransaction() {
+    if (!selectedTransaction) return;
+    try {
+      if (useLiveTransactions) await viewModel.duplicateTransaction(selectedTransaction.row.id);
+      closeTransactionSheet();
+      onFeedback('流水已复制，时间更新为现在', 'success');
+    } catch (caught) {
+      onFeedback(caught instanceof Error ? caught.message : '流水复制失败，请重试', 'error');
+    }
   }
 
   return (
@@ -1313,7 +1327,7 @@ export function TransactionsPage({ viewModel, backgrounds, onNavigate, onFeedbac
         />
       ) : null}
       {selectedTransaction ? (
-        <ReferenceSheet title={detailMode === 'detail' ? '流水详情' : '编辑流水'} onClose={closeTransactionSheet}>
+        <ReferenceSheet title={detailMode === 'detail' ? '流水详情' : detailMode === 'edit' ? '编辑流水' : '确认删除'} onClose={closeTransactionSheet}>
           {detailMode === 'detail' ? (
             <TransactionDetailPanel
               transaction={selectedTransaction.row}
@@ -1322,11 +1336,14 @@ export function TransactionsPage({ viewModel, backgrounds, onNavigate, onFeedbac
                 selectedTransaction.detail?.type === 'expense'
                 || selectedTransaction.detail?.type === 'income'
               ) ? () => setDetailMode('edit') : undefined}
+              onCopy={!useLiveTransactions || selectedTransaction.detail
+                ? () => void copySelectedTransaction()
+                : undefined}
               onDelete={!useLiveTransactions || selectedTransaction.detail
-                ? () => void deleteSelectedTransaction()
+                ? () => setDetailMode('delete')
                 : undefined}
             />
-          ) : (
+          ) : detailMode === 'edit' ? (
             <TransactionEditPanel
               transaction={selectedTransaction.row}
               categoryOptions={selectedTransaction.detail?.categoryOptions
@@ -1336,6 +1353,14 @@ export function TransactionsPage({ viewModel, backgrounds, onNavigate, onFeedbac
               onCancel={() => setDetailMode('detail')}
               onSave={(transaction) => void saveTransactionEdit(transaction)}
             />
+          ) : (
+            <div className={styles.logoutConfirmation}>
+              <p>确定删除“{selectedTransaction.row.title}”吗？删除后 8 秒内可以撤销。</p>
+              <div className={styles.sheetFormActions}>
+                <button type="button" onClick={() => setDetailMode('detail')}>取消</button>
+                <button type="button" onClick={() => void deleteSelectedTransaction()}>确认删除</button>
+              </div>
+            </div>
           )}
         </ReferenceSheet>
       ) : null}
@@ -1558,6 +1583,7 @@ export function EntryPage({
   const [entryNow] = useState(referenceNow);
   const [type, setType] = useState<'支出' | '收入'>('支出');
   const [amount, setAmount] = useState('');
+  const [name, setName] = useState('');
   const [selected, setSelected] = useState(initialCategory ?? '餐饮');
   const [note, setNote] = useState('');
   const [options, setOptions] = useState<ReferenceEntryOptions | null>(null);
@@ -1712,8 +1738,7 @@ export function EntryPage({
     let amountCents: number;
     let occurredAt: string;
     try {
-      amountCents = parseYuan(amount);
-      if (amountCents <= 0) throw new Error('请输入大于0的有效金额');
+      amountCents = parsePositiveYuan(amount);
       const occurredDateTime = new Date(`${occurredDate}T${occurredTime}:00`);
       if (!occurredDate || !/^([01]\d|2[0-3]):[0-5]\d$/.test(occurredTime) || Number.isNaN(occurredDateTime.getTime())) {
         throw new Error('请选择有效的日期和时间');
@@ -1747,6 +1772,7 @@ export function EntryPage({
           categoryId: category.id,
           accountId: account.id,
           occurredAt,
+          name,
           note,
         });
       }
@@ -1779,6 +1805,7 @@ export function EntryPage({
           aria-label="金额"
           aria-invalid={error ? 'true' : undefined}
           inputMode="decimal"
+          maxLength={11}
           value={amount}
           onChange={(event) => {
             setAmount(event.target.value);
@@ -1810,6 +1837,7 @@ export function EntryPage({
         ))}
       </div>
       <section className={`${styles.card} ${styles.entryDetails}`}>
+        <label><strong>名称</strong><input aria-label="名称" maxLength={80} placeholder="例如：午餐、地铁" value={name} onChange={(event) => setName(event.target.value)} /></label>
         <label><strong>备注</strong><input aria-label="备注" placeholder="点击写备注..." value={note} onChange={(event) => setNote(event.target.value)} /></label>
         <button type="button" onClick={() => setEntrySheet('date')}><strong>日期</strong><span>{occurredDateLabel}{occurredDate === localDateInput(entryNow) ? ' 今天' : ''} {occurredTime} <CaretRight /></span></button>
         <button type="button" onClick={() => setEntrySheet('account')}><strong>账户</strong><span>{accountName} <CaretRight /></span></button>

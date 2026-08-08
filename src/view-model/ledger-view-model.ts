@@ -4,6 +4,7 @@ import { formatYuan } from '../domain/money';
 import type { LedgerOperation } from '../domain/operations';
 import { buildPosting } from '../domain/posting';
 import { selectStatistics } from '../domain/statistics';
+import { decodeTransactionText, encodeTransactionText } from '../domain/transaction-text';
 import type {
   Account,
   Category,
@@ -170,10 +171,11 @@ function toRow(
     accountMap.get(entry.accountId)?.name ?? '未知账户'
   ));
   const date = new Date(transaction.occurredAt);
+  const text = decodeTransactionText(transaction.id, transaction.note);
   return {
     id: transaction.id,
     type: transaction.type,
-    title: transaction.note.trim() || fallbackTitle(transaction, category),
+    title: text.name.trim() || fallbackTitle(transaction, category),
     categoryName: category?.name ?? null,
     categoryIconKey: category?.iconKey ?? transaction.type,
     occurredAt: transaction.occurredAt,
@@ -395,7 +397,8 @@ export class LedgerViewModel {
           : undefined;
         return [{
           id: transaction.id,
-          title: transaction.note.trim() || fallbackTitle(transaction, category),
+          title: decodeTransactionText(transaction.id, transaction.note).name.trim()
+            || fallbackTitle(transaction, category),
           accountId: originalEntry.accountId,
           remainingCents,
           occurredAt: transaction.occurredAt,
@@ -747,7 +750,9 @@ export class LedgerViewModel {
       amountCents,
       categoryId,
       occurredAt: input.occurredAt,
-      note: input.note.trim(),
+      note: input.name === undefined
+        ? input.note.trim()
+        : encodeTransactionText(operationId, input.name, input.note),
       originalTransactionId,
       version: 1,
       deletedAt: null,
@@ -784,7 +789,9 @@ export class LedgerViewModel {
         ? input.categoryId
         : current.categoryId,
       occurredAt: input.occurredAt,
-      note: input.note.trim(),
+      note: input.name === undefined
+        ? input.note.trim()
+        : encodeTransactionText(current.id, input.name, input.note),
       version: input.baseVersion + 1,
       deletedAt: null,
     };
@@ -800,6 +807,54 @@ export class LedgerViewModel {
       entries,
     };
     await this.saveOperation(operation);
+  }
+
+  async duplicateTransaction(id: string): Promise<{ transactionId: string }> {
+    const detail = await this.getTransactionDetail(id);
+    if (!detail) throw new Error('流水不存在或已删除');
+    const common = {
+      occurredAt: this.now().toISOString(),
+      name: detail.title,
+      note: detail.note,
+    };
+    if (detail.type === 'expense' || detail.type === 'income') {
+      const entry = detail.entries[0];
+      if (!entry || !detail.categoryId) throw new Error('流水分录不完整');
+      return this.createTransaction({
+        ...common,
+        type: detail.type,
+        amountCents: detail.amountCents,
+        accountId: entry.accountId,
+        categoryId: detail.categoryId,
+      });
+    }
+    if (detail.type === 'transfer') {
+      if (detail.entries.length !== 2) throw new Error('转账分录不完整');
+      return this.createTransaction({
+        ...common,
+        type: 'transfer',
+        amountCents: detail.amountCents,
+        fromAccountId: detail.entries[0].accountId,
+        toAccountId: detail.entries[1].accountId,
+      });
+    }
+    if (detail.type === 'refund') {
+      if (!detail.originalTransactionId) throw new Error('退款原流水不存在');
+      return this.createTransaction({
+        ...common,
+        type: 'refund',
+        amountCents: detail.amountCents,
+        originalTransactionId: detail.originalTransactionId,
+      });
+    }
+    const entry = detail.entries[0];
+    if (!entry) throw new Error('余额校准分录不完整');
+    return this.createTransaction({
+      ...common,
+      type: 'adjustment',
+      deltaCents: entry.deltaCents,
+      accountId: entry.accountId,
+    });
   }
 
   async deleteTransaction(id: string): Promise<{ undoUntil: string }> {
@@ -906,7 +961,8 @@ export class LedgerViewModel {
           const accountNames = transactionEntries.map((entry) => (
             accountMap.get(entry.accountId)?.name ?? ''
           ));
-          return [transaction.note, categoryName, ...accountNames]
+          const text = decodeTransactionText(transaction.id, transaction.note);
+          return [text.name, text.note, categoryName, ...accountNames]
             .some((value) => value.toLocaleLowerCase().includes(query));
         })
       : [];
@@ -962,14 +1018,16 @@ export class LedgerViewModel {
       ? categoryMap.get(originalTransaction.categoryId)
       : undefined;
     const options = optionLists(snapshot);
+    const text = decodeTransactionText(transaction.id, transaction.note);
     return {
       ...toRow(transaction, accountMap, categoryMap, transactionEntries),
       ledgerId: transaction.ledgerId,
       categoryId: transaction.categoryId,
-      note: transaction.note,
+      note: text.note,
       originalTransactionId: transaction.originalTransactionId,
       originalTransactionTitle: originalTransaction
-        ? originalTransaction.note.trim() || fallbackTitle(originalTransaction, originalCategory)
+        ? decodeTransactionText(originalTransaction.id, originalTransaction.note).name.trim()
+          || fallbackTitle(originalTransaction, originalCategory)
         : null,
       entries: transactionEntries.map((entry) => ({
         accountId: entry.accountId,

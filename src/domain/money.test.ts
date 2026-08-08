@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatYuan, parseYuan } from './money';
+import { formatYuan, parsePositiveYuan, parseYuan } from './money';
 
 describe('yuan money helpers', () => {
   it('parses yuan without floating point drift', () => {
@@ -16,5 +16,12 @@ describe('yuan money helpers', () => {
   it('formats integer cents as CNY', () => {
     expect(formatYuan(6800)).toBe('¥68.00');
     expect(formatYuan(-10)).toBe('-¥0.10');
+  });
+
+  it('enforces the positive transaction amount range', () => {
+    expect(parsePositiveYuan('0.01')).toBe(1);
+    expect(parsePositiveYuan('99999999.99')).toBe(9_999_999_999);
+    expect(() => parsePositiveYuan('0')).toThrow('金额必须大于0');
+    expect(() => parsePositiveYuan('100000000')).toThrow('金额不能超过99,999,999.99元');
   });
 });
