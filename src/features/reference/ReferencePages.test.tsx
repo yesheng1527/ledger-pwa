@@ -293,11 +293,27 @@ describe('reference five-page application', () => {
     await waitFor(() => expect(getEntryOptions).toHaveBeenCalledOnce());
     await user.click(screen.getByRole('button', { name: '转账' }));
     await user.clear(screen.getByLabelText('金额'));
-    await user.type(screen.getByLabelText('金额'), '88.66');
-    await user.click(screen.getByRole('button', { name: /转出账户 默认账户/ }));
-    await user.click(screen.getByRole('option', { name: /现金/ }));
+    await user.type(screen.getByLabelText('金额'), '-1');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('请输入有效金额');
+
+    await user.clear(screen.getByLabelText('金额'));
+    await user.type(screen.getByLabelText('金额'), '1000.01');
     await user.click(screen.getByRole('button', { name: /转入账户 请选择/ }));
     await user.click(screen.getByRole('option', { name: /信用卡/ }));
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('转出金额不能超过账户可用余额');
+    expect(createTransaction).not.toHaveBeenCalled();
+
+    await user.clear(screen.getByLabelText('金额'));
+    await user.type(screen.getByLabelText('金额'), '88.66');
+    await user.click(screen.getByRole('button', { name: /转出账户 默认账户/ }));
+    await user.click(screen.getByRole('option', { name: /信用卡/ }));
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('转出和转入账户不能相同');
+
+    await user.click(screen.getByRole('button', { name: /转出账户 信用卡/ }));
+    await user.click(screen.getByRole('option', { name: /现金/ }));
     await user.click(screen.getByRole('button', { name: '保存' }));
 
     await waitFor(() => expect(createTransaction).toHaveBeenCalledWith(expect.objectContaining({

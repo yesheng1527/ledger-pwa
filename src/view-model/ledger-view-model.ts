@@ -710,14 +710,23 @@ export class LedgerViewModel {
         categoryId = input.categoryId;
         break;
       }
-      case 'transfer':
+      case 'transfer': {
+        const from = this.requireActiveAccount(snapshot, input.fromAccountId);
+        const to = this.requireActiveAccount(snapshot, input.toAccountId);
+        if (from.id === to.id) throw new Error('转出和转入账户不能相同');
+        if (from.accountClass !== 'asset') throw new Error('转出账户必须是资产账户');
+        const availableCents = this.accountPresentedBalance(snapshot, from);
+        if (input.amountCents > availableCents) {
+          throw new Error('转出金额不能超过账户可用余额');
+        }
         entries = buildPosting({
           type: 'transfer',
           amountCents: input.amountCents,
-          from: this.requireActiveAccount(snapshot, input.fromAccountId),
-          to: this.requireActiveAccount(snapshot, input.toAccountId),
+          from,
+          to,
         });
         break;
+      }
       case 'refund': {
         const original = snapshot.transactions.find((transaction) => (
           transaction.id === input.originalTransactionId

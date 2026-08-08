@@ -613,6 +613,116 @@ describe('LedgerViewModel transaction commands', () => {
     expect(rejected.saveOperation).not.toHaveBeenCalled();
   });
 
+  it('keeps net worth, income, expense, category statistics, and budget unchanged after a persisted transfer', async () => {
+    const { repository, viewModel } = createFixtureViewModelHarness();
+    const beforeHome = await viewModel.getHomeSnapshot({ now: fixtureNow });
+    const beforeStatistics = await viewModel.getStatistics({ kind: 'month', month: '2026-07' });
+    const beforeAccounts = new Map((await viewModel.getEntryOptions()).accounts.map((item) => [item.id, item.balanceCents]));
+
+    await viewModel.createTransaction({
+      type: 'transfer',
+      amountCents: 10000,
+      fromAccountId: fixtureIds.bank,
+      toAccountId: fixtureIds.cash,
+      occurredAt: fixtureTimes.todayExpense,
+      note: '验收转账',
+    });
+
+    const reloaded = new LedgerViewModel({
+      ledgerId: fixtureIds.ledger,
+      repository,
+      saveOperation: (operation) => repository.saveOperation(operation),
+      syncNow: async () => undefined,
+      now: () => new Date(fixtureNow),
+      makeUuid: sequentialUuidFactory(),
+    });
+    const afterHome = await reloaded.getHomeSnapshot({ now: fixtureNow });
+    const afterStatistics = await reloaded.getStatistics({ kind: 'month', month: '2026-07' });
+    const afterAccounts = new Map((await reloaded.getEntryOptions()).accounts.map((item) => [item.id, item.balanceCents]));
+
+    expect(afterAccounts.get(fixtureIds.bank)).toBe(beforeAccounts.get(fixtureIds.bank)! - 10000);
+    expect(afterAccounts.get(fixtureIds.cash)).toBe(beforeAccounts.get(fixtureIds.cash)! + 10000);
+    expect(afterHome).toMatchObject({
+      totalAssetsCents: beforeHome.totalAssetsCents,
+      monthIncomeCents: beforeHome.monthIncomeCents,
+      monthExpenseCents: beforeHome.monthExpenseCents,
+      monthBalanceCents: beforeHome.monthBalanceCents,
+      budget: beforeHome.budget,
+    });
+    expect(afterStatistics).toMatchObject({
+      expenseCents: beforeStatistics.expenseCents,
+      incomeCents: beforeStatistics.incomeCents,
+      balanceCents: beforeStatistics.balanceCents,
+      totalBudget: beforeStatistics.totalBudget,
+      categoryBudgets: beforeStatistics.categoryBudgets,
+      expenseCategories: beforeStatistics.expenseCategories,
+      trend: beforeStatistics.trend,
+      monthlyComparison: beforeStatistics.monthlyComparison,
+    });
+  });
+
+  it('persists balance calibration as adjustment without changing income, expense, categories, or budget', async () => {
+    const { repository, viewModel } = createFixtureViewModelHarness();
+    const beforeHome = await viewModel.getHomeSnapshot({ now: fixtureNow });
+    const beforeStatistics = await viewModel.getStatistics({ kind: 'month', month: '2026-07' });
+    const beforeAccounts = new Map((await viewModel.getEntryOptions()).accounts.map((item) => [item.id, item.balanceCents]));
+
+    await viewModel.createTransaction({
+      type: 'adjustment',
+      deltaCents: 2500,
+      accountId: fixtureIds.cash,
+      occurredAt: fixtureTimes.todayExpense,
+      note: '验收校准',
+    });
+
+    const reloaded = new LedgerViewModel({
+      ledgerId: fixtureIds.ledger,
+      repository,
+      saveOperation: (operation) => repository.saveOperation(operation),
+      syncNow: async () => undefined,
+      now: () => new Date(fixtureNow),
+      makeUuid: sequentialUuidFactory(),
+    });
+    const afterHome = await reloaded.getHomeSnapshot({ now: fixtureNow });
+    const afterStatistics = await reloaded.getStatistics({ kind: 'month', month: '2026-07' });
+    const afterAccounts = new Map((await reloaded.getEntryOptions()).accounts.map((item) => [item.id, item.balanceCents]));
+
+    expect(afterAccounts.get(fixtureIds.cash)).toBe(beforeAccounts.get(fixtureIds.cash)! + 2500);
+    expect(afterAccounts.get(fixtureIds.bank)).toBe(beforeAccounts.get(fixtureIds.bank));
+    expect(afterHome).toMatchObject({
+      totalAssetsCents: beforeHome.totalAssetsCents + 2500,
+      monthIncomeCents: beforeHome.monthIncomeCents,
+      monthExpenseCents: beforeHome.monthExpenseCents,
+      monthBalanceCents: beforeHome.monthBalanceCents,
+      budget: beforeHome.budget,
+    });
+    expect(afterStatistics).toMatchObject({
+      expenseCents: beforeStatistics.expenseCents,
+      incomeCents: beforeStatistics.incomeCents,
+      balanceCents: beforeStatistics.balanceCents,
+      totalBudget: beforeStatistics.totalBudget,
+      categoryBudgets: beforeStatistics.categoryBudgets,
+      expenseCategories: beforeStatistics.expenseCategories,
+      trend: beforeStatistics.trend,
+      monthlyComparison: beforeStatistics.monthlyComparison,
+    });
+  });
+
+  it('rejects transfers that exceed the current asset balance', async () => {
+    const { saveOperation, viewModel } = createFixtureViewModelHarness();
+    const bank = (await viewModel.getEntryOptions()).accounts.find((item) => item.id === fixtureIds.bank)!;
+
+    await expect(viewModel.createTransaction({
+      type: 'transfer',
+      amountCents: bank.balanceCents + 1,
+      fromAccountId: fixtureIds.bank,
+      toAccountId: fixtureIds.cash,
+      occurredAt: fixtureTimes.todayExpense,
+      note: '',
+    })).rejects.toThrow('转出金额不能超过账户可用余额');
+    expect(saveOperation).not.toHaveBeenCalled();
+  });
+
   it('creates a refund with inherited account and category and enforces the remaining amount', async () => {
     const success = createFixtureViewModelHarness();
     await success.viewModel.createTransaction({

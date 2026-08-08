@@ -1763,6 +1763,9 @@ export function EntryPage({
           const to = options.accounts.find((item) => item.id === toAccountId)
             ?? options.accounts.find((item) => item.id !== from?.id);
           if (!from || !to) throw new Error('转账至少需要两个可用账户');
+          if (from.id === to.id) throw new Error('转出和转入账户不能相同');
+          if (from.accountClass !== 'asset') throw new Error('转出账户必须是资产账户');
+          if (amountCents > from.balanceCents) throw new Error('转出金额不能超过账户可用余额');
           await createTransaction.call(viewModel, {
             type: 'transfer', amountCents, fromAccountId: from.id, toAccountId: to.id,
             occurredAt, name: name || '账户转账', note,
