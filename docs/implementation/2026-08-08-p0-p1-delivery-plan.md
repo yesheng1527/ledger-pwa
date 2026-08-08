@@ -41,7 +41,7 @@
 | D-转账 | 已完成 | `34a0ca0`、`1d7a5d6`；A→B 双边余额、重载、净资产/收支/类目/预算中性；同账户、负数、超余额 UI 错误。 |
 | D-信用卡/周期 | 已完成 | `d5e6f43`；信用资料使用同步 Reminder；待还随消费/退款/还款；31 日短月边界；周期待确认 occurrence 幂等、确认/跳过/删除及组件 UI。 |
 | E | 本地实现完成，待本提交号 | 微信/支付宝/银行卡/海风模板识别，CSV/XLSX 预览/去重/批量分类/行级错误；筛选导出往返；分类预算结转/超支/月比；重复/模板/最近类目；便携备份、12 版历史、恢复预览、outbox 策略与冲突双分支。 |
-| F | 进行中 | 当前全量：28 文件、373 测试通过；typecheck/build 通过；本地真实 Chromium 游客 5/5 与正式账号 connected 1/1 通过，覆盖 390×844 游客隔离、离线刷新/离线新增、正式登录、流水生命周期、账户、转账、真实同步、刷新/退出重登，以及 320×568、844×390、1440×900。截图位于任务 `outputs/ledger-pwa-p0-p1-evidence/`。Pages 工作流已改为 main/手动触发并从 repo variables/secrets 注入公开 Supabase 配置；尚需部署后线上证据。 |
+| F | 已完成 | 全量 28 文件、373 测试通过，typecheck 与 production build 通过；本地真实 Chromium 游客 PWA 5/5 与正式账号 connected 1/1 通过。Pages 运行 `31252599354` 已成功部署应用提交 `1d10f0460105a4c16761ae8ee015f6136f4193d8`；线上按固定顺序 6/6 通过，覆盖正式登录、流水生命周期、账户、转账、同步、刷新/重登、390×844 游客隔离与离线刷新/离线新增，以及 320×568、844×390、1440×900。线上资源为 `index-CJZSY_W5.js`，Service Worker 缓存版本为 `ledger-pwa-shell-v20260808-6`。证据与逐条结论见 `docs/verification/2026-08-08-p0-p1-release.md`。 |
 
 Excel `.xlsx` 仅在用户实际选择 Excel 导入/导出时动态加载；首屏主 JS 与 Excel 解析 chunk 分离。当前 `npm audit --omit=dev` 剩余 2 个 moderate，均来自 ExcelJS 间接 `uuid` 的未使用 v3/v5 buffer 路径，无 high/critical；发布前继续记录，不以强制降级破坏工作簿能力。
 
