@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'ledger-pwa-shell-v20260808-5';
+const CACHE_VERSION = 'ledger-pwa-shell-v20260808-6';
 const SCOPE = new URL(self.registration.scope);
 const SHELL_URLS = [
   SCOPE.pathname,
@@ -8,16 +8,20 @@ const SHELL_URLS = [
   `${SCOPE.pathname}icons/icon-512-seabreeze.png`,
 ];
 
-async function cacheWithRetry(cache, url, attempts = 3) {
+async function cacheWithRetry(cache, url, attempts = 2) {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6_000);
     try {
-      const response = await fetch(url, { cache: 'no-store' });
+      const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
       if (response.ok) {
         await cache.put(url, response);
         return true;
       }
     } catch {
       // A later attempt or the runtime cache can recover an optional asset.
+    } finally {
+      clearTimeout(timeout);
     }
   }
   return false;
@@ -26,7 +30,7 @@ async function cacheWithRetry(cache, url, attempts = 3) {
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_VERSION);
-    await Promise.all(SHELL_URLS.map((url) => cacheWithRetry(cache, url, 5)));
+    await Promise.all(SHELL_URLS.map((url) => cacheWithRetry(cache, url, 3)));
     const page = await cache.match(SCOPE.pathname) || await cache.match(`${SCOPE.pathname}index.html`);
     if (!page) return;
     const html = await page.clone().text();
@@ -37,14 +41,16 @@ self.addEventListener('install', (event) => {
     try {
       const manifestResponse = await fetch(`${SCOPE.pathname}asset-manifest.json`, { cache: 'no-store' });
       if (manifestResponse.ok) {
-        buildAssets = (await manifestResponse.json()).map((asset) => new URL(asset, SCOPE).href);
+        buildAssets = (await manifestResponse.json())
+          .filter((asset) => !asset.includes('exceljs.min-'))
+          .map((asset) => new URL(asset, SCOPE).href);
       }
     } catch {
       // Runtime caching remains available if the optional manifest is unavailable.
     }
     const requiredAssets = assets.filter((asset) => /\.(?:js|css)(?:\?|$)/.test(asset));
     const optionalAssets = assets.filter((asset) => !requiredAssets.includes(asset));
-    await Promise.all([...new Set(requiredAssets)].map((asset) => cacheWithRetry(cache, asset, 5)));
+    await Promise.all([...new Set(requiredAssets)].map((asset) => cacheWithRetry(cache, asset, 3)));
     await Promise.all([...new Set(optionalAssets)].map((asset) => cacheWithRetry(cache, asset)));
     await Promise.all([...new Set(buildAssets)].map((asset) => cacheWithRetry(cache, asset)));
   })());

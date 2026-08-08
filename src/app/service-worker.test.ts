@@ -21,6 +21,9 @@ describe('production service worker', () => {
     expect(source).toContain('new Set(requiredAssets)');
     expect(source).toContain('new Set(optionalAssets)');
     expect(source).not.toContain('cache.addAll');
+    expect(source).toContain('new AbortController()');
+    expect(source).toContain('controller.abort()');
+    expect(source).toContain("!asset.includes('exceljs.min-')");
   });
 
   it('does not unregister itself or purge the active cache', () => {
