@@ -28,6 +28,15 @@ describe('reference five-page application', () => {
     expect(screen.getByRole('heading', { name: '早上好，海风~' })).toBeInTheDocument();
   });
 
+  it('automatically removes the splash screen without blocking navigation', async () => {
+    window.history.replaceState(null, '', '/?splash=1');
+    render(<AppShell viewModel={viewModel} />);
+
+    expect(screen.getByLabelText('开屏页')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByLabelText('开屏页')).not.toBeInTheDocument(), { timeout: 1_500 });
+    expect(screen.getByRole('button', { name: '记账' })).toBeEnabled();
+  });
+
   it('keeps the five navigation destinations in the reference order', () => {
     render(<AppShell viewModel={viewModel} />);
 

@@ -7,6 +7,7 @@ import {
   Check,
   Eye,
   EyeSlash,
+  MagnifyingGlass,
   PencilSimple,
   Plus,
   SignOut,
@@ -64,7 +65,6 @@ import medicalArt from '../../assets/reference-ui-v2/medical.webp';
 import otherArt from '../../assets/reference-ui-v2/other.webp';
 import profileArt from '../../assets/reference-ui-v2/profile.webp';
 import salaryArt from '../../assets/reference-ui-v2/salary.webp';
-import searchArt from '../../assets/reference-ui-v2/search.webp';
 import settingsArt from '../../assets/reference-ui-v2/settings.webp';
 import shoppingArt from '../../assets/reference-ui-v2/shopping.webp';
 import statisticsArt from '../../assets/reference-ui-v2/statistics.webp';
@@ -1338,7 +1338,7 @@ export function TransactionsPage({ viewModel, backgrounds, onNavigate, onFeedbac
       <header className={styles.simpleHeader} data-search={searchOpen ? 'true' : 'false'}>
         {searchOpen ? (
           <label className={styles.searchField}>
-            <img src={searchArt} alt="" aria-hidden="true" />
+            <MagnifyingGlass aria-hidden="true" />
             <input
               autoFocus
               aria-label="搜索流水"
@@ -1349,7 +1349,7 @@ export function TransactionsPage({ viewModel, backgrounds, onNavigate, onFeedbac
           </label>
         ) : <h1>流水</h1>}
         <button type="button" aria-label={searchOpen ? '关闭搜索' : '搜索'} onClick={toggleSearch}>
-          {searchOpen ? <X /> : <img className={styles.actionArt} src={searchArt} alt="" />}
+          {searchOpen ? <X /> : <MagnifyingGlass aria-hidden="true" />}
         </button>
       </header>
       <div className={styles.filterRow}>

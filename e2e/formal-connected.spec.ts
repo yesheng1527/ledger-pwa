@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -7,6 +7,14 @@ const password = process.env.LEDGER_TEST_PASSWORD;
 const evidence = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../outputs/ledger-pwa-p0-p1-evidence');
 
 test.skip(!email || !password, '需要显式提供正式测试账号环境变量');
+
+async function dismissSplash(page: Page) {
+  const splash = page.getByRole('region', { name: '开屏页' });
+  if (await splash.isVisible().catch(() => false)) {
+    await page.getByRole('button', { name: '跳过开屏页' }).click();
+  }
+  await expect(splash).toBeHidden({ timeout: 3_000 });
+}
 
 test('formal account persists lifecycle, transfer, and offline queue through re-login', async ({ page, context }) => {
   const suffix = Date.now().toString(36);
@@ -22,8 +30,15 @@ test('formal account persists lifecycle, transfer, and offline queue through re-
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(page.getByRole('heading', { name: /好，/ })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText('游客演示 · 数据仅保存在本机')).toHaveCount(0);
+  await dismissSplash(page);
 
   await page.getByRole('button', { name: /^记账$/ }).click();
+  const categoryName = `测试支出-${suffix}`;
+  await page.getByRole('button', { name: '编辑类目' }).click();
+  await page.getByRole('button', { name: /添加自定义类目/ }).click();
+  await page.getByLabel('类目名称').fill(categoryName);
+  await page.getByRole('button', { name: '添加类目' }).click();
+  await expect(page.getByRole('button', { name: categoryName })).toHaveAttribute('data-active', 'true');
   await page.getByLabel('金额', { exact: true }).fill('21.00');
   await page.getByLabel('名称').fill(transactionName);
   await page.getByLabel('备注').fill('正式账号\n名称备注往返');
@@ -92,6 +107,7 @@ test('formal account persists lifecycle, transfer, and offline queue through re-
   await page.getByLabel('密码', { exact: true }).fill(password!);
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(page.getByRole('heading', { name: /好，/ })).toBeVisible({ timeout: 20_000 });
+  await dismissSplash(page);
   await page.getByRole('button', { name: /^流水$/ }).click();
   await expect(page.getByText(offlineName)).toBeVisible();
   await expect(page.getByRole('button', { name: new RegExp(`^${editedName} `) })).toHaveCount(2);

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -6,11 +6,20 @@ const evidence = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../
 
 test.use({ viewport: { width: 390, height: 844 }, serviceWorkers: 'allow' });
 
+async function dismissSplash(page: Page) {
+  const splash = page.getByRole('region', { name: '开屏页' });
+  if (await splash.isVisible().catch(() => false)) {
+    await page.getByRole('button', { name: '跳过开屏页' }).click();
+  }
+  await expect(splash).toBeHidden({ timeout: 3_000 });
+}
+
 test('guest data is useful, writable and survives an offline reload', async ({ page, context }) => {
   await page.goto('./');
   expect(await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 390, height: 844 });
   await page.getByRole('button', { name: '游客体验' }).click();
   await expect(page.getByText('游客演示 · 数据仅保存在本机')).toBeVisible();
+  await dismissSplash(page);
   await expect(page.getByText('海边午餐')).toBeVisible();
   await page.screenshot({ path: path.join(evidence, 'p0-guest-home-390x844.png'), fullPage: true });
 

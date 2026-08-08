@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -6,10 +6,19 @@ const evidence = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../
 
 test.use({ viewport: { width: 390, height: 844 }, serviceWorkers: 'allow' });
 
+async function dismissSplash(page: Page) {
+  const splash = page.getByRole('region', { name: '开屏页' });
+  if (await splash.isVisible().catch(() => false)) {
+    await page.getByRole('button', { name: '跳过开屏页' }).click();
+  }
+  await expect(splash).toBeHidden({ timeout: 3_000 });
+}
+
 test('guest completes transaction lifecycle, accounts, transfer, and import preview', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('button', { name: '游客体验' }).click();
   await expect(page.getByText('游客演示 · 数据仅保存在本机')).toBeVisible();
+  await dismissSplash(page);
 
   await page.getByRole('button', { name: /^记账$/ }).click();
   await page.getByLabel('金额', { exact: true }).fill('10.00');
@@ -75,6 +84,7 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     await page.goto('./');
     await page.getByRole('button', { name: '游客体验' }).click();
+    await dismissSplash(page);
     await expect(page.getByRole('button', { name: /^记账$/ })).toBeVisible();
     await page.getByRole('button', { name: /^流水$/ }).click();
     await expect(page.getByRole('heading', { name: '流水' })).toBeVisible();
